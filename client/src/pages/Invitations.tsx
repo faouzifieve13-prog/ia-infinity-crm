@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Mail, Copy, UserPlus, Clock, CheckCircle, XCircle, RotateCcw, Trash2, Link2 } from 'lucide-react';
+import { Mail, Copy, UserPlus, Clock, CheckCircle, XCircle, RotateCcw, Trash2, Link2, Send, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -47,7 +48,9 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { format, formatDistanceToNow } from 'date-fns';
 import type { Invitation, Account, Vendor, UserRole, Space } from '@shared/schema';
 
-type InvitationWithLink = Invitation & { inviteLink?: string; token?: string };
+type InvitationWithLink = Invitation & { inviteLink?: string; token?: string; emailSent?: boolean };
+
+type GmailStatus = { connected: boolean; email?: string; error?: string };
 
 const roleLabels: Record<UserRole, string> = {
   admin: 'Administrator',
@@ -85,6 +88,7 @@ export default function Invitations() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newInviteLink, setNewInviteLink] = useState<string | null>(null);
+  const [lastEmailSent, setLastEmailSent] = useState<boolean>(false);
   const [formData, setFormData] = useState({
     email: '',
     role: 'client_member' as UserRole,
@@ -92,6 +96,7 @@ export default function Invitations() {
     expiresInMinutes: 30,
     accountId: '',
     vendorId: '',
+    sendEmail: true,
   });
 
   const { data: invitations, isLoading } = useQuery<Invitation[]>({
@@ -106,6 +111,10 @@ export default function Invitations() {
     queryKey: ['/api/vendors'],
   });
 
+  const { data: gmailStatus } = useQuery<GmailStatus>({
+    queryKey: ['/api/gmail/status'],
+  });
+
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       const response = await apiRequest('POST', '/api/invitations', {
@@ -115,15 +124,22 @@ export default function Invitations() {
         expiresInMinutes: data.expiresInMinutes,
         accountId: data.accountId || undefined,
         vendorId: data.vendorId || undefined,
+        sendEmail: data.sendEmail,
       });
       return response.json() as Promise<InvitationWithLink>;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/invitations'] });
       setNewInviteLink(data.inviteLink || null);
+      setLastEmailSent(data.emailSent || false);
+      const emailInfo = data.emailSent 
+        ? ' Email sent successfully!' 
+        : formData.sendEmail && !data.emailSent 
+          ? ' Email could not be sent.' 
+          : '';
       toast({
         title: 'Invitation created',
-        description: `An invitation has been created for ${formData.email}`,
+        description: `An invitation has been created for ${formData.email}.${emailInfo}`,
       });
     },
     onError: (error: Error) => {
@@ -176,6 +192,7 @@ export default function Invitations() {
   const handleCloseDialog = () => {
     setIsDialogOpen(false);
     setNewInviteLink(null);
+    setLastEmailSent(false);
     setFormData({
       email: '',
       role: 'client_member',
@@ -183,6 +200,7 @@ export default function Invitations() {
       expiresInMinutes: 30,
       accountId: '',
       vendorId: '',
+      sendEmail: true,
     });
   };
 
@@ -233,10 +251,19 @@ export default function Invitations() {
                 <DialogHeader>
                   <DialogTitle>Invitation Created</DialogTitle>
                   <DialogDescription>
-                    Share this link with {formData.email} to grant them access.
+                    {lastEmailSent 
+                      ? `An email has been sent to ${formData.email}.`
+                      : `Share this link with ${formData.email} to grant them access.`
+                    }
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
+                  {lastEmailSent && (
+                    <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 rounded-md">
+                      <CheckCircle className="h-4 w-4 shrink-0" />
+                      <span className="text-sm">Email sent successfully to {formData.email}</span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 p-3 bg-muted rounded-md">
                     <Link2 className="h-4 w-4 text-muted-foreground shrink-0" />
                     <code className="text-xs break-all flex-1">{newInviteLink}</code>
@@ -374,6 +401,31 @@ export default function Invitations() {
                         <SelectItem value="525600">1 year</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="flex items-center space-x-3 pt-2">
+                    <Checkbox
+                      id="sendEmail"
+                      checked={formData.sendEmail}
+                      onCheckedChange={(checked) => setFormData({ ...formData, sendEmail: checked === true })}
+                      disabled={!gmailStatus?.connected}
+                      data-testid="checkbox-send-email"
+                    />
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor="sendEmail" className="cursor-pointer flex items-center gap-2">
+                        <Send className="h-4 w-4" />
+                        Send invitation by email
+                      </Label>
+                      {gmailStatus?.connected ? (
+                        <span className="text-xs text-muted-foreground">
+                          Sending from {gmailStatus.email}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-destructive flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" />
+                          Gmail not connected
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <DialogFooter>
