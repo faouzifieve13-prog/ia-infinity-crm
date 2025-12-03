@@ -15,7 +15,7 @@ const DEFAULT_ORG_ID = "default-org";
 async function ensureDefaultOrg() {
   let org = await storage.getOrganization(DEFAULT_ORG_ID);
   if (!org) {
-    await storage.createOrganization({ name: "IA Infinity" });
+    await storage.createOrganizationWithId(DEFAULT_ORG_ID, { name: "IA Infinity" });
   }
 }
 
@@ -810,12 +810,17 @@ export async function registerRoutes(
   app.patch("/api/contracts/:id", async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const contract = await storage.updateContract(req.params.id, orgId, req.body);
+      const updateSchema = insertContractSchema.partial().omit({ orgId: true, contractNumber: true });
+      const validatedData = updateSchema.parse(req.body);
+      const contract = await storage.updateContract(req.params.id, orgId, validatedData);
       if (!contract) {
         return res.status(404).json({ error: "Contract not found" });
       }
       res.json(contract);
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
       console.error("Update contract error:", error);
       res.status(500).json({ error: "Failed to update contract" });
     }
