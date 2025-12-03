@@ -172,9 +172,16 @@ Preferred communication style: Simple, everyday language.
    - Settings and Help available
    - Visual: Wrench icon, emerald color badge
 
+**Gmail Integration for Invitations**
+- Connected via Replit Gmail connector (googleapis)
+- Sends invitation emails automatically when enabled
+- HTML email template with French localization
+- Shows role, space, and expiration in email
+- CTA button with fallback plaintext link
+- API endpoint: `/api/gmail/status` to check connection
+
 **Planned Enhancement**
 - Full session-based authentication after accepting invitation
-- Email delivery integration for sending invitation links
 - Password setup option for users who prefer password auth
 
 ### Notion Synchronization
