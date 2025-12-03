@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { motion } from 'framer-motion';
 import {
   DollarSign,
   TrendingUp,
@@ -7,6 +8,7 @@ import {
   Zap,
   Users,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 import { MetricCard } from '@/components/dashboard/MetricCard';
 import { ActivityFeed } from '@/components/ActivityFeed';
@@ -16,6 +18,21 @@ import { InvoiceTable } from '@/components/finance/InvoiceTable';
 import { useSpace } from '@/hooks/use-space';
 import { MissionCard } from '@/components/vendor/MissionCard';
 import type { DashboardStats, Project, Activity, WorkflowRun, Invoice, Mission, Account } from '@/lib/types';
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.1
+    }
+  }
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0 }
+};
 
 function InternalDashboard() {
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
@@ -53,7 +70,12 @@ function InternalDashboard() {
   if (statsLoading || projectsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+        >
+          <Loader2 className="h-8 w-8 text-primary" />
+        </motion.div>
       </div>
     );
   }
@@ -63,35 +85,55 @@ function InternalDashboard() {
   const winRate = stats?.totalDeals ? Math.round((stats.wonDeals / stats.totalDeals) * 100) : 0;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold" data-testid="text-page-title">Dashboard</h1>
-        <p className="text-muted-foreground">Overview of your business performance</p>
-      </div>
+    <motion.div 
+      className="space-y-6"
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+    >
+      <motion.div variants={itemVariants}>
+        <div className="flex items-center gap-3 mb-1">
+          <div className="p-2 rounded-xl gradient-admin">
+            <Sparkles className="h-5 w-5 text-white" />
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight" data-testid="text-page-title">
+            Tableau de bord
+          </h1>
+        </div>
+        <p className="text-muted-foreground">Aperçu de vos performances commerciales</p>
+      </motion.div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
-          title="Won Revenue"
+          title="Revenu gagné"
           value={wonValue}
           icon={DollarSign}
           format="currency"
+          index={0}
+          accentColor="success"
         />
         <MetricCard
-          title="Pipeline Value"
+          title="Pipeline"
           value={totalPipeline}
           icon={TrendingUp}
           format="currency"
+          index={1}
+          accentColor="primary"
         />
         <MetricCard
-          title="Win Rate"
+          title="Taux de conversion"
           value={winRate}
           icon={Target}
           format="percent"
+          index={2}
+          accentColor="warning"
         />
         <MetricCard
-          title="Active Projects"
+          title="Projets actifs"
           value={stats?.activeProjects || 0}
           icon={CheckCircle2}
+          index={3}
+          accentColor="info"
         />
       </div>
 
