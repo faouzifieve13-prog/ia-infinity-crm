@@ -3,7 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { 
   RefreshCw, Database, Users, Receipt, Check, AlertCircle, Loader2, 
   Settings2, UserCircle, Briefcase, FolderKanban, ListTodo, FileText,
-  Building, ClipboardList, File
+  Building, ClipboardList, File, Target, ClipboardCheck, Bot
 } from 'lucide-react';
 import { SiNotion } from 'react-icons/si';
 import { Button } from '@/components/ui/button';
@@ -52,7 +52,7 @@ interface SyncResult {
   errors: string[];
 }
 
-type EntityType = 'accounts' | 'contacts' | 'deals' | 'projects' | 'tasks' | 'invoices' | 'expenses' | 'vendors' | 'missions' | 'documents';
+type EntityType = 'accounts' | 'prospects' | 'audit-clients' | 'automation-clients' | 'contacts' | 'deals' | 'projects' | 'tasks' | 'invoices' | 'expenses' | 'vendors' | 'missions' | 'documents';
 
 interface EntityConfig {
   key: EntityType;
@@ -74,6 +74,33 @@ const ENTITY_CONFIGS: EntityConfig[] = [
     fields: ['Nom / Name / Company', 'Contact / Responsable', 'Email', 'Website / Domain', 'Status / Statut'],
     cacheKey: '/api/accounts',
     description: 'Base de données clients',
+  },
+  {
+    key: 'prospects',
+    label: 'Prospect',
+    labelPlural: 'Prospects',
+    icon: Target,
+    fields: ['Nom / Name / Company', 'Contact / Responsable', 'Email', 'Website / Domain', 'Status / Statut'],
+    cacheKey: '/api/accounts',
+    description: 'Entreprises en phase de prospection',
+  },
+  {
+    key: 'audit-clients',
+    label: 'Client Audit',
+    labelPlural: 'Clients Audit',
+    icon: ClipboardCheck,
+    fields: ['Nom / Name / Company', 'Contact / Responsable', 'Email', 'Website / Domain', 'Status / Statut'],
+    cacheKey: '/api/accounts',
+    description: 'Clients en phase d\'audit IA',
+  },
+  {
+    key: 'automation-clients',
+    label: 'Client Automatisation',
+    labelPlural: 'Clients Automatisation',
+    icon: Bot,
+    fields: ['Nom / Name / Company', 'Contact / Responsable', 'Email', 'Website / Domain', 'Status / Statut'],
+    cacheKey: '/api/accounts',
+    description: 'Clients pour projets d\'automatisation',
   },
   {
     key: 'contacts',
@@ -258,6 +285,9 @@ export default function NotionSync() {
   const { toast } = useToast();
   const [selectedDbs, setSelectedDbs] = useState<Record<EntityType, string>>({
     accounts: '',
+    prospects: '',
+    'audit-clients': '',
+    'automation-clients': '',
     contacts: '',
     deals: '',
     projects: '',
@@ -312,6 +342,9 @@ export default function NotionSync() {
   };
 
   const syncAccountsMutation = createSyncMutation('accounts');
+  const syncProspectsMutation = createSyncMutation('prospects');
+  const syncAuditClientsMutation = createSyncMutation('audit-clients');
+  const syncAutomationClientsMutation = createSyncMutation('automation-clients');
   const syncContactsMutation = createSyncMutation('contacts');
   const syncDealsMutation = createSyncMutation('deals');
   const syncProjectsMutation = createSyncMutation('projects');
@@ -324,6 +357,9 @@ export default function NotionSync() {
 
   const mutations: Record<EntityType, ReturnType<typeof createSyncMutation>> = {
     accounts: syncAccountsMutation,
+    prospects: syncProspectsMutation,
+    'audit-clients': syncAuditClientsMutation,
+    'automation-clients': syncAutomationClientsMutation,
     contacts: syncContactsMutation,
     deals: syncDealsMutation,
     projects: syncProjectsMutation,
@@ -348,7 +384,7 @@ export default function NotionSync() {
 
   const recentJobs = importJobs.slice(0, 10);
 
-  const crmEntities = ENTITY_CONFIGS.filter(c => ['accounts', 'contacts', 'deals'].includes(c.key));
+  const crmEntities = ENTITY_CONFIGS.filter(c => ['accounts', 'prospects', 'audit-clients', 'automation-clients', 'contacts', 'deals'].includes(c.key));
   const deliveryEntities = ENTITY_CONFIGS.filter(c => ['projects', 'tasks', 'invoices'].includes(c.key));
   const financeEntities = ENTITY_CONFIGS.filter(c => ['expenses'].includes(c.key));
   const vendorEntities = ENTITY_CONFIGS.filter(c => ['vendors', 'missions'].includes(c.key));

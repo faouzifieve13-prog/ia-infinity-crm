@@ -1056,6 +1056,125 @@ export async function registerRoutes(
     }
   });
 
+  // Helper function to sync accounts with a specific plan type
+  async function syncAccountsWithPlan(req: Request, res: Response, planType: string, sourceLabel: string) {
+    try {
+      const orgId = getOrgId(req);
+      const parsed = notionSyncSchema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      
+      const { databaseId, fieldMapping } = parsed.data;
+
+      const { queryDatabase, getPropertyValue, findPropertyByPossibleNames } = await import("./notion");
+      
+      const importJob = await storage.createImportJob({
+        orgId,
+        source: `notion:${sourceLabel}:${databaseId}`,
+        status: 'running',
+        totalRecords: 0,
+        processedRecords: 0,
+        errorCount: 0,
+      });
+
+      let nextCursor: string | null = null;
+      let totalProcessed = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      do {
+        const { results, nextCursor: cursor, hasMore } = await queryDatabase(databaseId, nextCursor || undefined);
+        
+        for (const page of results) {
+          try {
+            const properties = page.properties || {};
+            
+            const mapping = fieldMapping || {
+              name: findPropertyByPossibleNames(properties, ['Name', 'Nom', 'Company', 'Entreprise', 'Client', 'Société']) || 'Name',
+              contactName: findPropertyByPossibleNames(properties, ['Contact', 'Contact Name', 'Nom du contact', 'Responsable']) || 'Contact',
+              contactEmail: findPropertyByPossibleNames(properties, ['Email', 'E-mail', 'Mail']) || 'Email',
+              domain: findPropertyByPossibleNames(properties, ['Domain', 'Website', 'Site', 'URL']) || 'Website',
+              status: findPropertyByPossibleNames(properties, ['Status', 'Statut', 'État']) || 'Status',
+            };
+
+            const name = getPropertyValue(page, mapping.name) || 'Unknown';
+            const contactName = getPropertyValue(page, mapping.contactName) || name;
+            const contactEmail = getPropertyValue(page, mapping.contactEmail) || `contact@${name.toLowerCase().replace(/\s+/g, '')}.com`;
+            const domain = getPropertyValue(page, mapping.domain);
+            const statusRaw = getPropertyValue(page, mapping.status);
+            
+            let status: 'active' | 'inactive' | 'churned' = 'active';
+            if (statusRaw) {
+              const statusLower = String(statusRaw).toLowerCase();
+              if (statusLower.includes('inactif') || statusLower.includes('inactive')) {
+                status = 'inactive';
+              } else if (statusLower.includes('churned') || statusLower.includes('perdu') || statusLower.includes('lost')) {
+                status = 'churned';
+              }
+            }
+
+            await storage.upsertAccountByNotionId(page.id, orgId, {
+              orgId,
+              name,
+              domain: domain || null,
+              plan: planType,
+              status,
+              contactName,
+              contactEmail,
+              notionPageId: page.id,
+              notionLastEditedAt: page.last_edited_time ? new Date(page.last_edited_time) : null,
+            });
+            
+            totalProcessed++;
+          } catch (err) {
+            errorCount++;
+            errors.push(`Page ${page.id}: ${err}`);
+          }
+        }
+
+        nextCursor = cursor;
+        if (!cursor) break;
+      } while (true);
+
+      await storage.updateImportJob(importJob.id, orgId, {
+        status: 'completed',
+        totalRecords: totalProcessed + errorCount,
+        processedRecords: totalProcessed,
+        errorCount,
+        completedAt: new Date(),
+        errors: errors.length > 0 ? errors.join('\n') : null,
+      });
+
+      res.json({
+        success: true,
+        importJobId: importJob.id,
+        totalProcessed,
+        errorCount,
+        errors: errors.slice(0, 10),
+      });
+    } catch (error) {
+      console.error(`Sync Notion ${sourceLabel} error:`, error);
+      res.status(500).json({ error: `Failed to sync ${sourceLabel} from Notion` });
+    }
+  }
+
+  // Sync prospects from Notion
+  app.post("/api/notion/sync/prospects", async (req: Request, res: Response) => {
+    await syncAccountsWithPlan(req, res, 'prospect', 'prospects');
+  });
+
+  // Sync audit clients from Notion
+  app.post("/api/notion/sync/audit-clients", async (req: Request, res: Response) => {
+    await syncAccountsWithPlan(req, res, 'audit', 'audit-clients');
+  });
+
+  // Sync automation clients from Notion
+  app.post("/api/notion/sync/automation-clients", async (req: Request, res: Response) => {
+    await syncAccountsWithPlan(req, res, 'automation', 'automation-clients');
+  });
+
   app.post("/api/notion/sync/expenses", async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);

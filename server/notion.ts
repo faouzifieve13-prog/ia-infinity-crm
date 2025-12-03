@@ -450,12 +450,12 @@ function mapAccountStatus(status: string | null): 'active' | 'inactive' | 'prosp
   return 'prospect';
 }
 
-function mapDealStage(stage: string | null): 'prospect' | 'meeting' | 'proposal' | 'audit' | 'closing' | 'won' | 'lost' {
+function mapDealStage(stage: string | null): 'prospect' | 'meeting' | 'proposal' | 'audit' | 'negotiation' | 'won' | 'lost' {
   if (!stage) return 'prospect';
   const normalized = stage.toLowerCase();
   if (normalized.includes('gagn') || normalized.includes('won') || normalized.includes('signé')) return 'won';
   if (normalized.includes('perdu') || normalized.includes('lost') || normalized.includes('fermé')) return 'lost';
-  if (normalized.includes('closing') || normalized.includes('négociation') || normalized.includes('final')) return 'closing';
+  if (normalized.includes('closing') || normalized.includes('négociation') || normalized.includes('final')) return 'negotiation';
   if (normalized.includes('audit') || normalized.includes('analyse')) return 'audit';
   if (normalized.includes('proposal') || normalized.includes('proposition') || normalized.includes('devis')) return 'proposal';
   if (normalized.includes('meeting') || normalized.includes('rdv') || normalized.includes('rendez')) return 'meeting';
@@ -471,12 +471,12 @@ function mapProjectStatus(status: string | null): 'active' | 'completed' | 'on_h
   return 'active';
 }
 
-function mapTaskStatus(status: string | null): 'pending' | 'in_progress' | 'completed' | 'cancelled' {
+function mapTaskStatus(status: string | null): 'pending' | 'in_progress' | 'review' | 'completed' {
   if (!status) return 'pending';
   const normalized = status.toLowerCase();
   if (normalized.includes('termin') || normalized.includes('complet') || normalized.includes('done') || normalized.includes('fait')) return 'completed';
+  if (normalized.includes('review') || normalized.includes('révision') || normalized.includes('validation') || normalized.includes('vérif')) return 'review';
   if (normalized.includes('cours') || normalized.includes('progress') || normalized.includes('doing')) return 'in_progress';
-  if (normalized.includes('annul') || normalized.includes('cancel')) return 'cancelled';
   return 'pending';
 }
 
@@ -499,20 +499,20 @@ function mapInvoiceStatus(status: string | null): 'draft' | 'sent' | 'paid' | 'o
   return 'draft';
 }
 
-function mapVendorAvailability(availability: string | null): 'available' | 'partially_available' | 'unavailable' {
+function mapVendorAvailability(availability: string | null): 'available' | 'busy' | 'unavailable' {
   if (!availability) return 'available';
   const normalized = availability.toLowerCase();
-  if (normalized.includes('indisponible') || normalized.includes('unavailable') || normalized.includes('occupé')) return 'unavailable';
-  if (normalized.includes('partiel') || normalized.includes('partial') || normalized.includes('limité')) return 'partially_available';
+  if (normalized.includes('indisponible') || normalized.includes('unavailable')) return 'unavailable';
+  if (normalized.includes('occupé') || normalized.includes('busy') || normalized.includes('partiel') || normalized.includes('partial') || normalized.includes('limité')) return 'busy';
   return 'available';
 }
 
-function mapMissionStatus(status: string | null): 'pending' | 'active' | 'completed' | 'cancelled' {
+function mapMissionStatus(status: string | null): 'pending' | 'in_progress' | 'review' | 'completed' {
   if (!status) return 'pending';
   const normalized = status.toLowerCase();
   if (normalized.includes('termin') || normalized.includes('complet') || normalized.includes('done') || normalized.includes('livré')) return 'completed';
-  if (normalized.includes('cours') || normalized.includes('active') || normalized.includes('doing')) return 'active';
-  if (normalized.includes('annul') || normalized.includes('cancel')) return 'cancelled';
+  if (normalized.includes('review') || normalized.includes('révision') || normalized.includes('validation') || normalized.includes('vérif')) return 'review';
+  if (normalized.includes('cours') || normalized.includes('active') || normalized.includes('doing') || normalized.includes('progress')) return 'in_progress';
   return 'pending';
 }
 
