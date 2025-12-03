@@ -13,6 +13,8 @@ import {
   UserCog,
   Settings,
   HelpCircle,
+  FileSignature,
+  ExternalLink,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -43,6 +45,7 @@ const navItems: NavItem[] = [
   { title: 'Contacts', url: '/contacts', icon: Users, spaces: ['internal'] },
   { title: 'Projects', url: '/projects', icon: FolderKanban, spaces: ['internal', 'client'] },
   { title: 'Tasks', url: '/tasks', icon: ListTodo, spaces: ['internal', 'client', 'vendor'] },
+  { title: 'Contrats', url: '/contracts', icon: FileSignature, spaces: ['internal', 'client'] },
   { title: 'Workflows', url: '/workflows', icon: Workflow, spaces: ['internal', 'client'] },
   { title: 'Documents', url: '/documents', icon: FileText, spaces: ['internal', 'client'] },
   { title: 'Invoices', url: '/invoices', icon: Receipt, spaces: ['internal', 'client'] },
@@ -101,6 +104,17 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  data-testid="nav-website"
+                >
+                  <a href="https://i-a-infinity.com" target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-4 w-4" />
+                    <span>Site IA Infinity</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               {filteredSecondaryItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton

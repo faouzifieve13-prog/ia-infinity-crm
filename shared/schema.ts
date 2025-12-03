@@ -17,6 +17,8 @@ export const missionStatusEnum = pgEnum('mission_status', ['pending', 'in_progre
 export const activityTypeEnum = pgEnum('activity_type', ['call', 'email', 'meeting', 'note']);
 export const workflowStatusEnum = pgEnum('workflow_status', ['active', 'paused', 'error', 'success', 'failed']);
 export const storageProviderEnum = pgEnum('storage_provider', ['drive', 'local']);
+export const contractTypeEnum = pgEnum('contract_type', ['audit', 'prestation', 'formation', 'suivi']);
+export const contractStatusEnum = pgEnum('contract_status', ['draft', 'sent', 'signed', 'active', 'completed', 'cancelled']);
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -268,6 +270,43 @@ export const importJobs = pgTable("import_jobs", {
   index("import_jobs_org_idx").on(table.orgId),
 ]);
 
+export const contracts = pgTable("contracts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  accountId: varchar("account_id").references(() => accounts.id),
+  dealId: varchar("deal_id").references(() => deals.id),
+  projectId: varchar("project_id").references(() => projects.id),
+  contractNumber: text("contract_number").notNull(),
+  title: text("title").notNull(),
+  type: contractTypeEnum("type").notNull().default('audit'),
+  status: contractStatusEnum("status").notNull().default('draft'),
+  clientName: text("client_name").notNull(),
+  clientEmail: text("client_email").notNull(),
+  clientCompany: text("client_company"),
+  clientAddress: text("client_address"),
+  clientSiret: text("client_siret"),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull().default("0"),
+  currency: text("currency").notNull().default('EUR'),
+  description: text("description"),
+  scope: text("scope"),
+  deliverables: text("deliverables").array().default(sql`ARRAY[]::text[]`),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  paymentTerms: text("payment_terms"),
+  signedAt: timestamp("signed_at"),
+  signedByClient: text("signed_by_client"),
+  documentUrl: text("document_url"),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("contracts_org_idx").on(table.orgId),
+  index("contracts_account_idx").on(table.orgId, table.accountId),
+  index("contracts_deal_idx").on(table.dealId),
+  index("contracts_status_idx").on(table.orgId, table.status),
+  index("contracts_type_idx").on(table.orgId, table.type),
+]);
+
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   memberships: many(memberships),
   accounts: many(accounts),
@@ -396,6 +435,29 @@ export const missionsRelations = relations(missions, ({ one }) => ({
   }),
 }));
 
+export const contractsRelations = relations(contracts, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [contracts.orgId],
+    references: [organizations.id],
+  }),
+  account: one(accounts, {
+    fields: [contracts.accountId],
+    references: [accounts.id],
+  }),
+  deal: one(deals, {
+    fields: [contracts.dealId],
+    references: [deals.id],
+  }),
+  project: one(projects, {
+    fields: [contracts.projectId],
+    references: [projects.id],
+  }),
+  createdBy: one(users, {
+    fields: [contracts.createdById],
+    references: [users.id],
+  }),
+}));
+
 export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertMembershipSchema = createInsertSchema(memberships).omit({ id: true, createdAt: true });
@@ -412,6 +474,7 @@ export const insertMissionSchema = createInsertSchema(missions).omit({ id: true,
 export const insertDocumentSchema = createInsertSchema(documents).omit({ id: true, createdAt: true });
 export const insertWorkflowRunSchema = createInsertSchema(workflowRuns).omit({ id: true });
 export const insertImportJobSchema = createInsertSchema(importJobs).omit({ id: true, startedAt: true });
+export const insertContractSchema = createInsertSchema(contracts).omit({ id: true, createdAt: true, updatedAt: true });
 
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -429,6 +492,7 @@ export type InsertMission = z.infer<typeof insertMissionSchema>;
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
 export type InsertWorkflowRun = z.infer<typeof insertWorkflowRunSchema>;
 export type InsertImportJob = z.infer<typeof insertImportJobSchema>;
+export type InsertContract = z.infer<typeof insertContractSchema>;
 
 export type Organization = typeof organizations.$inferSelect;
 export type User = typeof users.$inferSelect;
@@ -446,6 +510,7 @@ export type Mission = typeof missions.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 export type WorkflowRun = typeof workflowRuns.$inferSelect;
 export type ImportJob = typeof importJobs.$inferSelect;
+export type Contract = typeof contracts.$inferSelect;
 
 export type UserRole = 'admin' | 'sales' | 'delivery' | 'finance' | 'client_admin' | 'client_member' | 'vendor';
 export type Space = 'internal' | 'client' | 'vendor';
@@ -459,3 +524,5 @@ export type VendorAvailability = 'available' | 'busy' | 'unavailable';
 export type MissionStatus = 'pending' | 'in_progress' | 'review' | 'completed';
 export type ActivityType = 'call' | 'email' | 'meeting' | 'note';
 export type WorkflowStatus = 'active' | 'paused' | 'error' | 'success' | 'failed';
+export type ContractType = 'audit' | 'prestation' | 'formation' | 'suivi';
+export type ContractStatus = 'draft' | 'sent' | 'signed' | 'active' | 'completed' | 'cancelled';

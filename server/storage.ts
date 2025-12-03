@@ -3,7 +3,7 @@ import { eq, and, desc, asc, sql } from "drizzle-orm";
 import {
   organizations, users, memberships, accounts, contacts, deals, activities,
   projects, tasks, invoices, invoiceLineItems, vendors, missions, documents,
-  workflowRuns, importJobs,
+  workflowRuns, importJobs, contracts,
   type Organization, type InsertOrganization,
   type User, type InsertUser,
   type Membership, type InsertMembership,
@@ -20,7 +20,8 @@ import {
   type Document, type InsertDocument,
   type WorkflowRun, type InsertWorkflowRun,
   type ImportJob, type InsertImportJob,
-  type DealStage, type TaskStatus, type ProjectStatus
+  type Contract, type InsertContract,
+  type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus
 } from "@shared/schema";
 
 export interface IStorage {
@@ -106,6 +107,15 @@ export interface IStorage {
   getImportJob(id: string, orgId: string): Promise<ImportJob | undefined>;
   updateImportJob(id: string, orgId: string, data: Partial<InsertImportJob>): Promise<ImportJob | undefined>;
   getImportJobs(orgId: string): Promise<ImportJob[]>;
+  
+  getContracts(orgId: string, type?: ContractType, status?: ContractStatus): Promise<Contract[]>;
+  getContract(id: string, orgId: string): Promise<Contract | undefined>;
+  createContract(contract: InsertContract): Promise<Contract>;
+  updateContract(id: string, orgId: string, data: Partial<InsertContract>): Promise<Contract | undefined>;
+  deleteContract(id: string, orgId: string): Promise<boolean>;
+  getContractsByDeal(dealId: string, orgId: string): Promise<Contract[]>;
+  getContractsByAccount(accountId: string, orgId: string): Promise<Contract[]>;
+  generateContractNumber(orgId: string, type: ContractType): Promise<string>;
   
   getDashboardStats(orgId: string): Promise<{
     totalDeals: number;
@@ -594,6 +604,68 @@ export class DatabaseStorage implements IStorage {
       pendingInvoices: pendingInvoices.length,
       pendingInvoicesValue: pendingInvoices.reduce((sum, i) => sum + Number(i.amount), 0),
     };
+  }
+
+  async getContracts(orgId: string, type?: ContractType, status?: ContractStatus): Promise<Contract[]> {
+    if (type && status) {
+      return db.select().from(contracts)
+        .where(and(eq(contracts.orgId, orgId), eq(contracts.type, type), eq(contracts.status, status)))
+        .orderBy(desc(contracts.createdAt));
+    }
+    if (type) {
+      return db.select().from(contracts)
+        .where(and(eq(contracts.orgId, orgId), eq(contracts.type, type)))
+        .orderBy(desc(contracts.createdAt));
+    }
+    if (status) {
+      return db.select().from(contracts)
+        .where(and(eq(contracts.orgId, orgId), eq(contracts.status, status)))
+        .orderBy(desc(contracts.createdAt));
+    }
+    return db.select().from(contracts).where(eq(contracts.orgId, orgId)).orderBy(desc(contracts.createdAt));
+  }
+
+  async getContract(id: string, orgId: string): Promise<Contract | undefined> {
+    const [contract] = await db.select().from(contracts)
+      .where(and(eq(contracts.id, id), eq(contracts.orgId, orgId)));
+    return contract;
+  }
+
+  async createContract(contract: InsertContract): Promise<Contract> {
+    const [created] = await db.insert(contracts).values(contract).returning();
+    return created;
+  }
+
+  async updateContract(id: string, orgId: string, data: Partial<InsertContract>): Promise<Contract | undefined> {
+    const [updated] = await db.update(contracts).set({ ...data, updatedAt: new Date() })
+      .where(and(eq(contracts.id, id), eq(contracts.orgId, orgId))).returning();
+    return updated;
+  }
+
+  async deleteContract(id: string, orgId: string): Promise<boolean> {
+    await db.delete(contracts).where(and(eq(contracts.id, id), eq(contracts.orgId, orgId)));
+    return true;
+  }
+
+  async getContractsByDeal(dealId: string, orgId: string): Promise<Contract[]> {
+    return db.select().from(contracts)
+      .where(and(eq(contracts.orgId, orgId), eq(contracts.dealId, dealId)))
+      .orderBy(desc(contracts.createdAt));
+  }
+
+  async getContractsByAccount(accountId: string, orgId: string): Promise<Contract[]> {
+    return db.select().from(contracts)
+      .where(and(eq(contracts.orgId, orgId), eq(contracts.accountId, accountId)))
+      .orderBy(desc(contracts.createdAt));
+  }
+
+  async generateContractNumber(orgId: string, type: ContractType): Promise<string> {
+    const year = new Date().getFullYear();
+    const typePrefix = type === 'audit' ? 'AUD' : type === 'prestation' ? 'PRE' : type === 'formation' ? 'FOR' : 'SUI';
+    const existingContracts = await db.select().from(contracts)
+      .where(and(eq(contracts.orgId, orgId), eq(contracts.type, type)));
+    const nextNumber = String(existingContracts.length + 1).padStart(4, '0');
+    return `${typePrefix}-${year}-${nextNumber}`;
   }
 }
 

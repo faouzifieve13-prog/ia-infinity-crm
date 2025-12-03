@@ -10,6 +10,8 @@ export type VendorAvailability = 'available' | 'busy' | 'unavailable';
 export type MissionStatus = 'pending' | 'in_progress' | 'review' | 'completed';
 export type ActivityType = 'call' | 'email' | 'meeting' | 'note';
 export type WorkflowStatus = 'active' | 'paused' | 'error' | 'success' | 'failed';
+export type ContractType = 'audit' | 'prestation' | 'formation' | 'suivi';
+export type ContractStatus = 'draft' | 'sent' | 'signed' | 'active' | 'completed' | 'cancelled';
 
 export interface User {
   id: string;
@@ -214,4 +216,35 @@ export interface DashboardStats {
 export interface DealWithRelations extends Deal {
   accountName?: string;
   contactName?: string;
+}
+
+export interface Contract {
+  id: string;
+  orgId: string;
+  accountId?: string | null;
+  dealId?: string | null;
+  projectId?: string | null;
+  contractNumber: string;
+  title: string;
+  type: ContractType;
+  status: ContractStatus;
+  clientName: string;
+  clientEmail: string;
+  clientCompany?: string | null;
+  clientAddress?: string | null;
+  clientSiret?: string | null;
+  amount: string;
+  currency: string;
+  description?: string | null;
+  scope?: string | null;
+  deliverables?: string[] | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  paymentTerms?: string | null;
+  signedAt?: string | null;
+  signedByClient?: string | null;
+  documentUrl?: string | null;
+  createdById?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }

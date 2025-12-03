@@ -6,8 +6,8 @@ import {
   insertAccountSchema, insertContactSchema, insertDealSchema, insertActivitySchema,
   insertProjectSchema, insertTaskSchema, insertInvoiceSchema, insertInvoiceLineItemSchema,
   insertVendorSchema, insertMissionSchema, insertDocumentSchema, insertWorkflowRunSchema,
-  insertOrganizationSchema, insertUserSchema, insertMembershipSchema,
-  type DealStage, type TaskStatus, type ProjectStatus
+  insertOrganizationSchema, insertUserSchema, insertMembershipSchema, insertContractSchema,
+  type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus
 } from "@shared/schema";
 
 const DEFAULT_ORG_ID = "default-org";
@@ -761,6 +761,157 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Get import job error:", error);
       res.status(500).json({ error: "Failed to get import job" });
+    }
+  });
+
+  app.get("/api/contracts", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const type = req.query.type as ContractType | undefined;
+      const status = req.query.status as ContractStatus | undefined;
+      const contracts = await storage.getContracts(orgId, type, status);
+      res.json(contracts);
+    } catch (error) {
+      console.error("Get contracts error:", error);
+      res.status(500).json({ error: "Failed to get contracts" });
+    }
+  });
+
+  app.get("/api/contracts/:id", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const contract = await storage.getContract(req.params.id, orgId);
+      if (!contract) {
+        return res.status(404).json({ error: "Contract not found" });
+      }
+      res.json(contract);
+    } catch (error) {
+      console.error("Get contract error:", error);
+      res.status(500).json({ error: "Failed to get contract" });
+    }
+  });
+
+  app.post("/api/contracts", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const contractNumber = await storage.generateContractNumber(orgId, req.body.type || 'audit');
+      const data = insertContractSchema.parse({ ...req.body, orgId, contractNumber });
+      const contract = await storage.createContract(data);
+      res.status(201).json(contract);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      console.error("Create contract error:", error);
+      res.status(500).json({ error: "Failed to create contract" });
+    }
+  });
+
+  app.patch("/api/contracts/:id", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const contract = await storage.updateContract(req.params.id, orgId, req.body);
+      if (!contract) {
+        return res.status(404).json({ error: "Contract not found" });
+      }
+      res.json(contract);
+    } catch (error) {
+      console.error("Update contract error:", error);
+      res.status(500).json({ error: "Failed to update contract" });
+    }
+  });
+
+  app.delete("/api/contracts/:id", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      await storage.deleteContract(req.params.id, orgId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete contract error:", error);
+      res.status(500).json({ error: "Failed to delete contract" });
+    }
+  });
+
+  app.get("/api/contracts/by-deal/:dealId", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const contracts = await storage.getContractsByDeal(req.params.dealId, orgId);
+      res.json(contracts);
+    } catch (error) {
+      console.error("Get contracts by deal error:", error);
+      res.status(500).json({ error: "Failed to get contracts" });
+    }
+  });
+
+  app.get("/api/contracts/by-account/:accountId", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const contracts = await storage.getContractsByAccount(req.params.accountId, orgId);
+      res.json(contracts);
+    } catch (error) {
+      console.error("Get contracts by account error:", error);
+      res.status(500).json({ error: "Failed to get contracts" });
+    }
+  });
+
+  app.post("/api/contracts/generate", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const { type, dealId, accountId, clientName, clientEmail, clientCompany, clientAddress, clientSiret, amount, description, scope, deliverables, startDate, endDate, paymentTerms } = req.body;
+      
+      const contractNumber = await storage.generateContractNumber(orgId, type);
+      
+      const title = type === 'audit' 
+        ? `Contrat d'Audit - ${clientCompany || clientName}`
+        : type === 'prestation'
+        ? `Contrat de Prestation - ${clientCompany || clientName}`
+        : type === 'formation'
+        ? `Contrat de Formation - ${clientCompany || clientName}`
+        : `Contrat de Suivi - ${clientCompany || clientName}`;
+
+      const defaultScope = type === 'audit'
+        ? "Audit complet de votre structure pour identifier les opportunités d'intégration de l'IA dans vos processus métier."
+        : type === 'prestation'
+        ? "Développement et déploiement de solutions IA sur-mesure selon les besoins identifiés lors de l'audit."
+        : type === 'formation'
+        ? "Formation de vos équipes à l'utilisation des outils IA déployés."
+        : "Suivi régulier et optimisation des solutions IA mises en place.";
+
+      const defaultDeliverables = type === 'audit'
+        ? ["Rapport d'audit complet", "Feuille de route IA", "Recommandations priorisées", "Estimation budgétaire"]
+        : type === 'prestation'
+        ? ["Solutions IA développées", "Documentation technique", "Formation utilisateur", "Support de démarrage"]
+        : type === 'formation'
+        ? ["Sessions de formation", "Supports pédagogiques", "Certification des participants", "Évaluation des compétences"]
+        : ["Points mensuels", "Rapports de performance", "Optimisations continues", "Support technique"];
+
+      const contract = await storage.createContract({
+        orgId,
+        dealId: dealId || null,
+        accountId: accountId || null,
+        contractNumber,
+        title,
+        type,
+        status: 'draft',
+        clientName,
+        clientEmail,
+        clientCompany: clientCompany || null,
+        clientAddress: clientAddress || null,
+        clientSiret: clientSiret || null,
+        amount: amount || "0",
+        currency: 'EUR',
+        description: description || null,
+        scope: scope || defaultScope,
+        deliverables: deliverables || defaultDeliverables,
+        startDate: startDate ? new Date(startDate) : null,
+        endDate: endDate ? new Date(endDate) : null,
+        paymentTerms: paymentTerms || "30 jours à réception de facture",
+      });
+
+      res.status(201).json(contract);
+    } catch (error) {
+      console.error("Generate contract error:", error);
+      res.status(500).json({ error: "Failed to generate contract" });
     }
   });
 
