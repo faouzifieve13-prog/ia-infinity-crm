@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Plus, Receipt, Search, Filter, Loader2, Trash2, Edit, Calendar, TrendingUp, TrendingDown } from 'lucide-react';
+import { Plus, Receipt, Search, Filter, Loader2, Trash2, Edit, Calendar, TrendingUp, TrendingDown, ExternalLink } from 'lucide-react';
+import { SiNotion } from 'react-icons/si';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -501,7 +502,15 @@ export default function Expenses() {
                     </TableCell>
                     <TableCell>
                       <div>
-                        <p className="font-medium">{expense.title}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{expense.title}</p>
+                          {expense.notionPageId && (
+                            <Badge variant="outline" className="text-xs gap-1 py-0 h-5">
+                              <SiNotion className="h-3 w-3" />
+                              Notion
+                            </Badge>
+                          )}
+                        </div>
                         {expense.description && (
                           <p className="text-sm text-muted-foreground truncate max-w-[200px]">
                             {expense.description}

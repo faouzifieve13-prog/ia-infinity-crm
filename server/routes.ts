@@ -1177,6 +1177,577 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/notion/sync/contacts", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const parsed = notionSyncSchema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      
+      const { databaseId } = parsed.data;
+      const { queryDatabase, mapNotionPageToContact } = await import("./notion");
+      
+      const accountIdMap = await storage.getAllAccountNotionIdMap(orgId);
+      
+      const importJob = await storage.createImportJob({
+        orgId,
+        source: `notion:contacts:${databaseId}`,
+        status: 'running',
+        totalRecords: 0,
+        processedRecords: 0,
+        errorCount: 0,
+      });
+
+      let nextCursor: string | null = null;
+      let totalProcessed = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      do {
+        const { results, nextCursor: cursor } = await queryDatabase(databaseId, nextCursor || undefined);
+        
+        for (const page of results) {
+          try {
+            const mapped = mapNotionPageToContact(page, accountIdMap);
+            await storage.upsertContactByNotionId(page.id, orgId, {
+              orgId,
+              ...mapped,
+            });
+            totalProcessed++;
+          } catch (err) {
+            errorCount++;
+            errors.push(`Page ${page.id}: ${err}`);
+          }
+        }
+
+        nextCursor = cursor;
+        if (!cursor) break;
+      } while (true);
+
+      await storage.updateImportJob(importJob.id, orgId, {
+        status: 'completed',
+        totalRecords: totalProcessed + errorCount,
+        processedRecords: totalProcessed,
+        errorCount,
+        completedAt: new Date(),
+        errors: errors.length > 0 ? errors.join('\n') : null,
+      });
+
+      res.json({
+        success: true,
+        importJobId: importJob.id,
+        totalProcessed,
+        errorCount,
+        errors: errors.slice(0, 10),
+      });
+    } catch (error) {
+      console.error("Sync Notion contacts error:", error);
+      res.status(500).json({ error: "Failed to sync contacts from Notion" });
+    }
+  });
+
+  app.post("/api/notion/sync/deals", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const parsed = notionSyncSchema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      
+      const { databaseId } = parsed.data;
+      const { queryDatabase, mapNotionPageToDeal } = await import("./notion");
+      
+      const accountIdMap = await storage.getAllAccountNotionIdMap(orgId);
+      const contactIdMap = await storage.getAllContactNotionIdMap(orgId);
+      
+      const importJob = await storage.createImportJob({
+        orgId,
+        source: `notion:deals:${databaseId}`,
+        status: 'running',
+        totalRecords: 0,
+        processedRecords: 0,
+        errorCount: 0,
+      });
+
+      let nextCursor: string | null = null;
+      let totalProcessed = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      do {
+        const { results, nextCursor: cursor } = await queryDatabase(databaseId, nextCursor || undefined);
+        
+        for (const page of results) {
+          try {
+            const mapped = mapNotionPageToDeal(page, accountIdMap, contactIdMap);
+            await storage.upsertDealByNotionId(page.id, orgId, {
+              orgId,
+              ...mapped,
+            });
+            totalProcessed++;
+          } catch (err) {
+            errorCount++;
+            errors.push(`Page ${page.id}: ${err}`);
+          }
+        }
+
+        nextCursor = cursor;
+        if (!cursor) break;
+      } while (true);
+
+      await storage.updateImportJob(importJob.id, orgId, {
+        status: 'completed',
+        totalRecords: totalProcessed + errorCount,
+        processedRecords: totalProcessed,
+        errorCount,
+        completedAt: new Date(),
+        errors: errors.length > 0 ? errors.join('\n') : null,
+      });
+
+      res.json({
+        success: true,
+        importJobId: importJob.id,
+        totalProcessed,
+        errorCount,
+        errors: errors.slice(0, 10),
+      });
+    } catch (error) {
+      console.error("Sync Notion deals error:", error);
+      res.status(500).json({ error: "Failed to sync deals from Notion" });
+    }
+  });
+
+  app.post("/api/notion/sync/projects", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const parsed = notionSyncSchema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      
+      const { databaseId } = parsed.data;
+      const { queryDatabase, mapNotionPageToProject } = await import("./notion");
+      
+      const accountIdMap = await storage.getAllAccountNotionIdMap(orgId);
+      const dealIdMap = await storage.getAllDealNotionIdMap(orgId);
+      
+      const importJob = await storage.createImportJob({
+        orgId,
+        source: `notion:projects:${databaseId}`,
+        status: 'running',
+        totalRecords: 0,
+        processedRecords: 0,
+        errorCount: 0,
+      });
+
+      let nextCursor: string | null = null;
+      let totalProcessed = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      do {
+        const { results, nextCursor: cursor } = await queryDatabase(databaseId, nextCursor || undefined);
+        
+        for (const page of results) {
+          try {
+            const mapped = mapNotionPageToProject(page, accountIdMap, dealIdMap);
+            await storage.upsertProjectByNotionId(page.id, orgId, {
+              orgId,
+              ...mapped,
+            });
+            totalProcessed++;
+          } catch (err) {
+            errorCount++;
+            errors.push(`Page ${page.id}: ${err}`);
+          }
+        }
+
+        nextCursor = cursor;
+        if (!cursor) break;
+      } while (true);
+
+      await storage.updateImportJob(importJob.id, orgId, {
+        status: 'completed',
+        totalRecords: totalProcessed + errorCount,
+        processedRecords: totalProcessed,
+        errorCount,
+        completedAt: new Date(),
+        errors: errors.length > 0 ? errors.join('\n') : null,
+      });
+
+      res.json({
+        success: true,
+        importJobId: importJob.id,
+        totalProcessed,
+        errorCount,
+        errors: errors.slice(0, 10),
+      });
+    } catch (error) {
+      console.error("Sync Notion projects error:", error);
+      res.status(500).json({ error: "Failed to sync projects from Notion" });
+    }
+  });
+
+  app.post("/api/notion/sync/tasks", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const parsed = notionSyncSchema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      
+      const { databaseId } = parsed.data;
+      const { queryDatabase, mapNotionPageToTask } = await import("./notion");
+      
+      const projectIdMap = await storage.getAllProjectNotionIdMap(orgId);
+      
+      const importJob = await storage.createImportJob({
+        orgId,
+        source: `notion:tasks:${databaseId}`,
+        status: 'running',
+        totalRecords: 0,
+        processedRecords: 0,
+        errorCount: 0,
+      });
+
+      let nextCursor: string | null = null;
+      let totalProcessed = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      do {
+        const { results, nextCursor: cursor } = await queryDatabase(databaseId, nextCursor || undefined);
+        
+        for (const page of results) {
+          try {
+            const mapped = mapNotionPageToTask(page, projectIdMap);
+            await storage.upsertTaskByNotionId(page.id, orgId, {
+              orgId,
+              ...mapped,
+            });
+            totalProcessed++;
+          } catch (err) {
+            errorCount++;
+            errors.push(`Page ${page.id}: ${err}`);
+          }
+        }
+
+        nextCursor = cursor;
+        if (!cursor) break;
+      } while (true);
+
+      await storage.updateImportJob(importJob.id, orgId, {
+        status: 'completed',
+        totalRecords: totalProcessed + errorCount,
+        processedRecords: totalProcessed,
+        errorCount,
+        completedAt: new Date(),
+        errors: errors.length > 0 ? errors.join('\n') : null,
+      });
+
+      res.json({
+        success: true,
+        importJobId: importJob.id,
+        totalProcessed,
+        errorCount,
+        errors: errors.slice(0, 10),
+      });
+    } catch (error) {
+      console.error("Sync Notion tasks error:", error);
+      res.status(500).json({ error: "Failed to sync tasks from Notion" });
+    }
+  });
+
+  app.post("/api/notion/sync/invoices", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const parsed = notionSyncSchema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      
+      const { databaseId } = parsed.data;
+      const { queryDatabase, mapNotionPageToInvoice } = await import("./notion");
+      
+      const accountIdMap = await storage.getAllAccountNotionIdMap(orgId);
+      const projectIdMap = await storage.getAllProjectNotionIdMap(orgId);
+      
+      const importJob = await storage.createImportJob({
+        orgId,
+        source: `notion:invoices:${databaseId}`,
+        status: 'running',
+        totalRecords: 0,
+        processedRecords: 0,
+        errorCount: 0,
+      });
+
+      let nextCursor: string | null = null;
+      let totalProcessed = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      do {
+        const { results, nextCursor: cursor } = await queryDatabase(databaseId, nextCursor || undefined);
+        
+        for (const page of results) {
+          try {
+            const mapped = mapNotionPageToInvoice(page, accountIdMap, projectIdMap);
+            await storage.upsertInvoiceByNotionId(page.id, orgId, {
+              orgId,
+              ...mapped,
+            });
+            totalProcessed++;
+          } catch (err) {
+            errorCount++;
+            errors.push(`Page ${page.id}: ${err}`);
+          }
+        }
+
+        nextCursor = cursor;
+        if (!cursor) break;
+      } while (true);
+
+      await storage.updateImportJob(importJob.id, orgId, {
+        status: 'completed',
+        totalRecords: totalProcessed + errorCount,
+        processedRecords: totalProcessed,
+        errorCount,
+        completedAt: new Date(),
+        errors: errors.length > 0 ? errors.join('\n') : null,
+      });
+
+      res.json({
+        success: true,
+        importJobId: importJob.id,
+        totalProcessed,
+        errorCount,
+        errors: errors.slice(0, 10),
+      });
+    } catch (error) {
+      console.error("Sync Notion invoices error:", error);
+      res.status(500).json({ error: "Failed to sync invoices from Notion" });
+    }
+  });
+
+  app.post("/api/notion/sync/vendors", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const parsed = notionSyncSchema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      
+      const { databaseId } = parsed.data;
+      const { queryDatabase, mapNotionPageToVendor } = await import("./notion");
+      
+      const importJob = await storage.createImportJob({
+        orgId,
+        source: `notion:vendors:${databaseId}`,
+        status: 'running',
+        totalRecords: 0,
+        processedRecords: 0,
+        errorCount: 0,
+      });
+
+      let nextCursor: string | null = null;
+      let totalProcessed = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      do {
+        const { results, nextCursor: cursor } = await queryDatabase(databaseId, nextCursor || undefined);
+        
+        for (const page of results) {
+          try {
+            const mapped = mapNotionPageToVendor(page);
+            await storage.upsertVendorByNotionId(page.id, orgId, {
+              orgId,
+              ...mapped,
+            });
+            totalProcessed++;
+          } catch (err) {
+            errorCount++;
+            errors.push(`Page ${page.id}: ${err}`);
+          }
+        }
+
+        nextCursor = cursor;
+        if (!cursor) break;
+      } while (true);
+
+      await storage.updateImportJob(importJob.id, orgId, {
+        status: 'completed',
+        totalRecords: totalProcessed + errorCount,
+        processedRecords: totalProcessed,
+        errorCount,
+        completedAt: new Date(),
+        errors: errors.length > 0 ? errors.join('\n') : null,
+      });
+
+      res.json({
+        success: true,
+        importJobId: importJob.id,
+        totalProcessed,
+        errorCount,
+        errors: errors.slice(0, 10),
+      });
+    } catch (error) {
+      console.error("Sync Notion vendors error:", error);
+      res.status(500).json({ error: "Failed to sync vendors from Notion" });
+    }
+  });
+
+  app.post("/api/notion/sync/missions", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const parsed = notionSyncSchema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      
+      const { databaseId } = parsed.data;
+      const { queryDatabase, mapNotionPageToMission } = await import("./notion");
+      
+      const projectIdMap = await storage.getAllProjectNotionIdMap(orgId);
+      const vendorIdMap = await storage.getAllVendorNotionIdMap(orgId);
+      
+      const importJob = await storage.createImportJob({
+        orgId,
+        source: `notion:missions:${databaseId}`,
+        status: 'running',
+        totalRecords: 0,
+        processedRecords: 0,
+        errorCount: 0,
+      });
+
+      let nextCursor: string | null = null;
+      let totalProcessed = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      do {
+        const { results, nextCursor: cursor } = await queryDatabase(databaseId, nextCursor || undefined);
+        
+        for (const page of results) {
+          try {
+            const mapped = mapNotionPageToMission(page, projectIdMap, vendorIdMap);
+            await storage.upsertMissionByNotionId(page.id, orgId, {
+              orgId,
+              ...mapped,
+            });
+            totalProcessed++;
+          } catch (err) {
+            errorCount++;
+            errors.push(`Page ${page.id}: ${err}`);
+          }
+        }
+
+        nextCursor = cursor;
+        if (!cursor) break;
+      } while (true);
+
+      await storage.updateImportJob(importJob.id, orgId, {
+        status: 'completed',
+        totalRecords: totalProcessed + errorCount,
+        processedRecords: totalProcessed,
+        errorCount,
+        completedAt: new Date(),
+        errors: errors.length > 0 ? errors.join('\n') : null,
+      });
+
+      res.json({
+        success: true,
+        importJobId: importJob.id,
+        totalProcessed,
+        errorCount,
+        errors: errors.slice(0, 10),
+      });
+    } catch (error) {
+      console.error("Sync Notion missions error:", error);
+      res.status(500).json({ error: "Failed to sync missions from Notion" });
+    }
+  });
+
+  app.post("/api/notion/sync/documents", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const parsed = notionSyncSchema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      
+      const { databaseId } = parsed.data;
+      const { queryDatabase, mapNotionPageToDocument } = await import("./notion");
+      
+      const accountIdMap = await storage.getAllAccountNotionIdMap(orgId);
+      const projectIdMap = await storage.getAllProjectNotionIdMap(orgId);
+      
+      const importJob = await storage.createImportJob({
+        orgId,
+        source: `notion:documents:${databaseId}`,
+        status: 'running',
+        totalRecords: 0,
+        processedRecords: 0,
+        errorCount: 0,
+      });
+
+      let nextCursor: string | null = null;
+      let totalProcessed = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      do {
+        const { results, nextCursor: cursor } = await queryDatabase(databaseId, nextCursor || undefined);
+        
+        for (const page of results) {
+          try {
+            const mapped = mapNotionPageToDocument(page, accountIdMap, projectIdMap);
+            await storage.upsertDocumentByNotionId(page.id, orgId, {
+              orgId,
+              ...mapped,
+            });
+            totalProcessed++;
+          } catch (err) {
+            errorCount++;
+            errors.push(`Page ${page.id}: ${err}`);
+          }
+        }
+
+        nextCursor = cursor;
+        if (!cursor) break;
+      } while (true);
+
+      await storage.updateImportJob(importJob.id, orgId, {
+        status: 'completed',
+        totalRecords: totalProcessed + errorCount,
+        processedRecords: totalProcessed,
+        errorCount,
+        completedAt: new Date(),
+        errors: errors.length > 0 ? errors.join('\n') : null,
+      });
+
+      res.json({
+        success: true,
+        importJobId: importJob.id,
+        totalProcessed,
+        errorCount,
+        errors: errors.slice(0, 10),
+      });
+    } catch (error) {
+      console.error("Sync Notion documents error:", error);
+      res.status(500).json({ error: "Failed to sync documents from Notion" });
+    }
+  });
+
   app.get("/api/notion/sync/jobs", async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);

@@ -30,6 +30,8 @@ export interface Account {
   status: AccountStatus;
   contactName: string;
   contactEmail: string;
+  notionPageId?: string | null;
+  notionLastEditedAt?: string | null;
   createdAt?: string;
 }
 
@@ -42,6 +44,8 @@ export interface Contact {
   role: string;
   phone?: string | null;
   linkedIn?: string | null;
+  notionPageId?: string | null;
+  notionLastEditedAt?: string | null;
   createdAt?: string;
 }
 
@@ -58,6 +62,8 @@ export interface Deal {
   nextActionDate?: string | null;
   daysInStage: number;
   position: number;
+  notionPageId?: string | null;
+  notionLastEditedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
   accountName?: string | null;
@@ -92,6 +98,8 @@ export interface Project {
   startDate: string;
   endDate?: string | null;
   progress: number;
+  notionPageId?: string | null;
+  notionLastEditedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
   account?: Account;
@@ -108,6 +116,8 @@ export interface Task {
   assigneeId?: string | null;
   dueDate?: string | null;
   timeSpent: number;
+  notionPageId?: string | null;
+  notionLastEditedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
   project?: Project;
@@ -129,6 +139,8 @@ export interface Invoice {
   customerEmail: string;
   stripePaymentIntentId?: string | null;
   stripeInvoiceId?: string | null;
+  notionPageId?: string | null;
+  notionLastEditedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
   account?: Account;
@@ -154,6 +166,8 @@ export interface Vendor {
   skills: string[];
   availability: VendorAvailability;
   performance: number;
+  notionPageId?: string | null;
+  notionLastEditedAt?: string | null;
   createdAt?: string;
 }
 
@@ -168,6 +182,8 @@ export interface Mission {
   endDate: string;
   status: MissionStatus;
   deliverables: string[];
+  notionPageId?: string | null;
+  notionLastEditedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
   project?: Project;

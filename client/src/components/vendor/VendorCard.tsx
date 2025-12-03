@@ -1,4 +1,5 @@
 import { Star, Mail, Calendar } from 'lucide-react';
+import { SiNotion } from 'react-icons/si';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -41,7 +42,15 @@ export function VendorCard({ vendor, onClick }: VendorCardProps) {
             <div className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-card ${availability.color}`} />
           </div>
           <div className="flex-1 min-w-0">
-            <CardTitle className="text-base">{vendor.name}</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base">{vendor.name}</CardTitle>
+              {vendor.notionPageId && (
+                <Badge variant="outline" className="text-xs gap-1 h-5">
+                  <SiNotion className="h-3 w-3" />
+                  Notion
+                </Badge>
+              )}
+            </div>
             <p className="text-sm text-muted-foreground">{vendor.company}</p>
           </div>
           <span className="text-sm font-semibold">{vendor.dailyRate}€/j</span>

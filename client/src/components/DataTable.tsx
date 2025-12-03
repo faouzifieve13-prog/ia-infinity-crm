@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ArrowUpDown, ChevronLeft, ChevronRight, MoreHorizontal, Search } from 'lucide-react';
+import { SiNotion } from 'react-icons/si';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -165,7 +166,15 @@ export function DataTable({ accounts, title = 'Accounts' }: DataTableProps) {
                     </TableCell>
                     <TableCell>
                       <div>
-                        <span className="font-medium">{account.name}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{account.name}</span>
+                          {account.notionPageId && (
+                            <Badge variant="outline" className="text-xs gap-1 py-0 h-5">
+                              <SiNotion className="h-3 w-3" />
+                              Notion
+                            </Badge>
+                          )}
+                        </div>
                         {account.domain && (
                           <p className="text-xs text-muted-foreground">{account.domain}</p>
                         )}
