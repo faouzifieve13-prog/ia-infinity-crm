@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, and, desc, asc, sql } from "drizzle-orm";
+import { eq, and, desc, asc, sql, isNotNull } from "drizzle-orm";
 import {
   organizations, users, memberships, accounts, contacts, deals, activities,
   projects, tasks, invoices, invoiceLineItems, vendors, missions, documents,
@@ -131,6 +131,36 @@ export interface IStorage {
   getAccountByNotionPageId(notionPageId: string, orgId: string): Promise<Account | undefined>;
   upsertAccountByNotionId(notionPageId: string, orgId: string, data: InsertAccount): Promise<Account>;
   
+  getContactByNotionPageId(notionPageId: string, orgId: string): Promise<Contact | undefined>;
+  upsertContactByNotionId(notionPageId: string, orgId: string, data: InsertContact): Promise<Contact>;
+  
+  getDealByNotionPageId(notionPageId: string, orgId: string): Promise<Deal | undefined>;
+  upsertDealByNotionId(notionPageId: string, orgId: string, data: InsertDeal): Promise<Deal>;
+  
+  getProjectByNotionPageId(notionPageId: string, orgId: string): Promise<Project | undefined>;
+  upsertProjectByNotionId(notionPageId: string, orgId: string, data: InsertProject): Promise<Project>;
+  
+  getTaskByNotionPageId(notionPageId: string, orgId: string): Promise<Task | undefined>;
+  upsertTaskByNotionId(notionPageId: string, orgId: string, data: InsertTask): Promise<Task>;
+  
+  getInvoiceByNotionPageId(notionPageId: string, orgId: string): Promise<Invoice | undefined>;
+  upsertInvoiceByNotionId(notionPageId: string, orgId: string, data: InsertInvoice): Promise<Invoice>;
+  
+  getVendorByNotionPageId(notionPageId: string, orgId: string): Promise<Vendor | undefined>;
+  upsertVendorByNotionId(notionPageId: string, orgId: string, data: InsertVendor): Promise<Vendor>;
+  
+  getMissionByNotionPageId(notionPageId: string, orgId: string): Promise<Mission | undefined>;
+  upsertMissionByNotionId(notionPageId: string, orgId: string, data: InsertMission): Promise<Mission>;
+  
+  getDocumentByNotionPageId(notionPageId: string, orgId: string): Promise<Document | undefined>;
+  upsertDocumentByNotionId(notionPageId: string, orgId: string, data: InsertDocument): Promise<Document>;
+  
+  getAllAccountNotionIdMap(orgId: string): Promise<Map<string, string>>;
+  getAllContactNotionIdMap(orgId: string): Promise<Map<string, string>>;
+  getAllDealNotionIdMap(orgId: string): Promise<Map<string, string>>;
+  getAllProjectNotionIdMap(orgId: string): Promise<Map<string, string>>;
+  getAllVendorNotionIdMap(orgId: string): Promise<Map<string, string>>;
+  
   getDashboardStats(orgId: string): Promise<{
     totalDeals: number;
     totalPipeline: number;
@@ -255,6 +285,7 @@ export class DatabaseStorage implements IStorage {
   async getDeals(orgId: string, stage?: DealStage): Promise<Deal[]> {
     const baseQuery = db.select({
       id: deals.id,
+      name: deals.name,
       orgId: deals.orgId,
       accountId: deals.accountId,
       contactId: deals.contactId,
@@ -266,6 +297,8 @@ export class DatabaseStorage implements IStorage {
       nextActionDate: deals.nextActionDate,
       daysInStage: deals.daysInStage,
       position: deals.position,
+      notionPageId: deals.notionPageId,
+      notionLastEditedAt: deals.notionLastEditedAt,
       createdAt: deals.createdAt,
       updatedAt: deals.updatedAt,
       accountName: accounts.name,
@@ -280,9 +313,9 @@ export class DatabaseStorage implements IStorage {
     if (stage) {
       return baseQuery
         .where(and(eq(deals.orgId, orgId), eq(deals.stage, stage)))
-        .orderBy(asc(deals.position), desc(deals.createdAt));
+        .orderBy(asc(deals.position), desc(deals.createdAt)) as unknown as Promise<Deal[]>;
     }
-    return baseQuery.where(eq(deals.orgId, orgId)).orderBy(asc(deals.position), desc(deals.createdAt));
+    return baseQuery.where(eq(deals.orgId, orgId)).orderBy(asc(deals.position), desc(deals.createdAt)) as unknown as Promise<Deal[]>;
   }
 
   async getDeal(id: string, orgId: string): Promise<Deal | undefined> {
@@ -756,6 +789,180 @@ export class DatabaseStorage implements IStorage {
       return updated!;
     }
     return this.createAccount({ ...data, notionPageId });
+  }
+
+  async getContactByNotionPageId(notionPageId: string, orgId: string): Promise<Contact | undefined> {
+    const [contact] = await db.select().from(contacts)
+      .where(and(eq(contacts.notionPageId, notionPageId), eq(contacts.orgId, orgId)));
+    return contact;
+  }
+
+  async upsertContactByNotionId(notionPageId: string, orgId: string, data: InsertContact): Promise<Contact> {
+    const existing = await this.getContactByNotionPageId(notionPageId, orgId);
+    if (existing) {
+      const updated = await this.updateContact(existing.id, orgId, data);
+      return updated!;
+    }
+    return this.createContact({ ...data, notionPageId });
+  }
+
+  async getDealByNotionPageId(notionPageId: string, orgId: string): Promise<Deal | undefined> {
+    const [deal] = await db.select().from(deals)
+      .where(and(eq(deals.notionPageId, notionPageId), eq(deals.orgId, orgId)));
+    return deal;
+  }
+
+  async upsertDealByNotionId(notionPageId: string, orgId: string, data: InsertDeal): Promise<Deal> {
+    const existing = await this.getDealByNotionPageId(notionPageId, orgId);
+    if (existing) {
+      const updated = await this.updateDeal(existing.id, orgId, data);
+      return updated!;
+    }
+    return this.createDeal({ ...data, notionPageId });
+  }
+
+  async getProjectByNotionPageId(notionPageId: string, orgId: string): Promise<Project | undefined> {
+    const [project] = await db.select().from(projects)
+      .where(and(eq(projects.notionPageId, notionPageId), eq(projects.orgId, orgId)));
+    return project;
+  }
+
+  async upsertProjectByNotionId(notionPageId: string, orgId: string, data: InsertProject): Promise<Project> {
+    const existing = await this.getProjectByNotionPageId(notionPageId, orgId);
+    if (existing) {
+      const updated = await this.updateProject(existing.id, orgId, data);
+      return updated!;
+    }
+    return this.createProject({ ...data, notionPageId });
+  }
+
+  async getTaskByNotionPageId(notionPageId: string, orgId: string): Promise<Task | undefined> {
+    const [task] = await db.select().from(tasks)
+      .where(and(eq(tasks.notionPageId, notionPageId), eq(tasks.orgId, orgId)));
+    return task;
+  }
+
+  async upsertTaskByNotionId(notionPageId: string, orgId: string, data: InsertTask): Promise<Task> {
+    const existing = await this.getTaskByNotionPageId(notionPageId, orgId);
+    if (existing) {
+      const updated = await this.updateTask(existing.id, orgId, data);
+      return updated!;
+    }
+    return this.createTask({ ...data, notionPageId });
+  }
+
+  async getInvoiceByNotionPageId(notionPageId: string, orgId: string): Promise<Invoice | undefined> {
+    const [invoice] = await db.select().from(invoices)
+      .where(and(eq(invoices.notionPageId, notionPageId), eq(invoices.orgId, orgId)));
+    return invoice;
+  }
+
+  async upsertInvoiceByNotionId(notionPageId: string, orgId: string, data: InsertInvoice): Promise<Invoice> {
+    const existing = await this.getInvoiceByNotionPageId(notionPageId, orgId);
+    if (existing) {
+      const updated = await this.updateInvoice(existing.id, orgId, data);
+      return updated!;
+    }
+    return this.createInvoice({ ...data, notionPageId });
+  }
+
+  async getVendorByNotionPageId(notionPageId: string, orgId: string): Promise<Vendor | undefined> {
+    const [vendor] = await db.select().from(vendors)
+      .where(and(eq(vendors.notionPageId, notionPageId), eq(vendors.orgId, orgId)));
+    return vendor;
+  }
+
+  async upsertVendorByNotionId(notionPageId: string, orgId: string, data: InsertVendor): Promise<Vendor> {
+    const existing = await this.getVendorByNotionPageId(notionPageId, orgId);
+    if (existing) {
+      const updated = await this.updateVendor(existing.id, orgId, data);
+      return updated!;
+    }
+    return this.createVendor({ ...data, notionPageId });
+  }
+
+  async getMissionByNotionPageId(notionPageId: string, orgId: string): Promise<Mission | undefined> {
+    const [mission] = await db.select().from(missions)
+      .where(and(eq(missions.notionPageId, notionPageId), eq(missions.orgId, orgId)));
+    return mission;
+  }
+
+  async upsertMissionByNotionId(notionPageId: string, orgId: string, data: InsertMission): Promise<Mission> {
+    const existing = await this.getMissionByNotionPageId(notionPageId, orgId);
+    if (existing) {
+      const updated = await this.updateMission(existing.id, orgId, data);
+      return updated!;
+    }
+    return this.createMission({ ...data, notionPageId });
+  }
+
+  async getDocumentByNotionPageId(notionPageId: string, orgId: string): Promise<Document | undefined> {
+    const [document] = await db.select().from(documents)
+      .where(and(eq(documents.notionPageId, notionPageId), eq(documents.orgId, orgId)));
+    return document;
+  }
+
+  async upsertDocumentByNotionId(notionPageId: string, orgId: string, data: InsertDocument): Promise<Document> {
+    const existing = await this.getDocumentByNotionPageId(notionPageId, orgId);
+    if (existing) {
+      await db.delete(documents).where(and(eq(documents.id, existing.id), eq(documents.orgId, orgId)));
+    }
+    return this.createDocument({ ...data, notionPageId });
+  }
+
+  async getAllAccountNotionIdMap(orgId: string): Promise<Map<string, string>> {
+    const accs = await db.select({ id: accounts.id, notionPageId: accounts.notionPageId })
+      .from(accounts)
+      .where(and(eq(accounts.orgId, orgId), isNotNull(accounts.notionPageId)));
+    const map = new Map<string, string>();
+    for (const acc of accs) {
+      if (acc.notionPageId) map.set(acc.notionPageId, acc.id);
+    }
+    return map;
+  }
+
+  async getAllContactNotionIdMap(orgId: string): Promise<Map<string, string>> {
+    const cons = await db.select({ id: contacts.id, notionPageId: contacts.notionPageId })
+      .from(contacts)
+      .where(and(eq(contacts.orgId, orgId), isNotNull(contacts.notionPageId)));
+    const map = new Map<string, string>();
+    for (const con of cons) {
+      if (con.notionPageId) map.set(con.notionPageId, con.id);
+    }
+    return map;
+  }
+
+  async getAllDealNotionIdMap(orgId: string): Promise<Map<string, string>> {
+    const dls = await db.select({ id: deals.id, notionPageId: deals.notionPageId })
+      .from(deals)
+      .where(and(eq(deals.orgId, orgId), isNotNull(deals.notionPageId)));
+    const map = new Map<string, string>();
+    for (const dl of dls) {
+      if (dl.notionPageId) map.set(dl.notionPageId, dl.id);
+    }
+    return map;
+  }
+
+  async getAllProjectNotionIdMap(orgId: string): Promise<Map<string, string>> {
+    const prjs = await db.select({ id: projects.id, notionPageId: projects.notionPageId })
+      .from(projects)
+      .where(and(eq(projects.orgId, orgId), isNotNull(projects.notionPageId)));
+    const map = new Map<string, string>();
+    for (const prj of prjs) {
+      if (prj.notionPageId) map.set(prj.notionPageId, prj.id);
+    }
+    return map;
+  }
+
+  async getAllVendorNotionIdMap(orgId: string): Promise<Map<string, string>> {
+    const vndrs = await db.select({ id: vendors.id, notionPageId: vendors.notionPageId })
+      .from(vendors)
+      .where(and(eq(vendors.orgId, orgId), isNotNull(vendors.notionPageId)));
+    const map = new Map<string, string>();
+    for (const vndr of vndrs) {
+      if (vndr.notionPageId) map.set(vndr.notionPageId, vndr.id);
+    }
+    return map;
   }
 }
 

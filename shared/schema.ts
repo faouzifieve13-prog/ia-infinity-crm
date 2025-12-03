@@ -71,24 +71,28 @@ export const accounts = pgTable("accounts", {
 export const contacts = pgTable("contacts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  accountId: varchar("account_id").notNull().references(() => accounts.id),
+  accountId: varchar("account_id").references(() => accounts.id),
   name: text("name").notNull(),
   email: text("email").notNull(),
   role: text("role").notNull(),
   phone: text("phone"),
   linkedIn: text("linkedin"),
+  notionPageId: text("notion_page_id"),
+  notionLastEditedAt: timestamp("notion_last_edited_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("contacts_org_idx").on(table.orgId),
   index("contacts_account_idx").on(table.orgId, table.accountId),
+  index("contacts_notion_idx").on(table.notionPageId),
 ]);
 
 export const deals = pgTable("deals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  accountId: varchar("account_id").notNull().references(() => accounts.id),
+  accountId: varchar("account_id").references(() => accounts.id),
   contactId: varchar("contact_id").references(() => contacts.id),
-  ownerId: varchar("owner_id").notNull().references(() => users.id),
+  ownerId: varchar("owner_id").references(() => users.id),
+  name: text("name").notNull().default('Nouvelle opportunité'),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull().default("0"),
   probability: integer("probability").notNull().default(0),
   stage: dealStageEnum("stage").notNull().default('prospect'),
@@ -96,12 +100,15 @@ export const deals = pgTable("deals", {
   nextActionDate: timestamp("next_action_date"),
   daysInStage: integer("days_in_stage").notNull().default(0),
   position: integer("position").notNull().default(0),
+  notionPageId: text("notion_page_id"),
+  notionLastEditedAt: timestamp("notion_last_edited_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("deals_org_idx").on(table.orgId),
   index("deals_stage_idx").on(table.orgId, table.stage),
   index("deals_owner_idx").on(table.orgId, table.ownerId),
+  index("deals_notion_idx").on(table.notionPageId),
 ]);
 
 export const activities = pgTable("activities", {
@@ -121,26 +128,29 @@ export const activities = pgTable("activities", {
 export const projects = pgTable("projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  accountId: varchar("account_id").notNull().references(() => accounts.id),
+  accountId: varchar("account_id").references(() => accounts.id),
   dealId: varchar("deal_id").references(() => deals.id),
   name: text("name").notNull(),
   description: text("description"),
   status: projectStatusEnum("status").notNull().default('active'),
-  startDate: timestamp("start_date").notNull(),
+  startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   progress: integer("progress").notNull().default(0),
+  notionPageId: text("notion_page_id"),
+  notionLastEditedAt: timestamp("notion_last_edited_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("projects_org_idx").on(table.orgId),
   index("projects_account_idx").on(table.orgId, table.accountId),
   index("projects_status_idx").on(table.orgId, table.status),
+  index("projects_notion_idx").on(table.notionPageId),
 ]);
 
 export const tasks = pgTable("tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  projectId: varchar("project_id").notNull().references(() => projects.id),
+  projectId: varchar("project_id").references(() => projects.id),
   title: text("title").notNull(),
   description: text("description"),
   status: taskStatusEnum("status").notNull().default('pending'),
@@ -148,6 +158,8 @@ export const tasks = pgTable("tasks", {
   assigneeId: varchar("assignee_id").references(() => users.id),
   dueDate: timestamp("due_date"),
   timeSpent: integer("time_spent").notNull().default(0),
+  notionPageId: text("notion_page_id"),
+  notionLastEditedAt: timestamp("notion_last_edited_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
@@ -155,29 +167,33 @@ export const tasks = pgTable("tasks", {
   index("tasks_project_idx").on(table.orgId, table.projectId),
   index("tasks_status_idx").on(table.orgId, table.status),
   index("tasks_assignee_idx").on(table.assigneeId),
+  index("tasks_notion_idx").on(table.notionPageId),
 ]);
 
 export const invoices = pgTable("invoices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  accountId: varchar("account_id").notNull().references(() => accounts.id),
+  accountId: varchar("account_id").references(() => accounts.id),
   projectId: varchar("project_id").references(() => projects.id),
   invoiceNumber: text("invoice_number").notNull(),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull().default("0"),
   currency: text("currency").notNull().default('EUR'),
   status: invoiceStatusEnum("status").notNull().default('draft'),
-  dueDate: timestamp("due_date").notNull(),
-  issuedDate: timestamp("issued_date").notNull(),
+  dueDate: timestamp("due_date"),
+  issuedDate: timestamp("issued_date"),
   paidDate: timestamp("paid_date"),
-  customerEmail: text("customer_email").notNull(),
+  customerEmail: text("customer_email"),
   stripePaymentIntentId: text("stripe_payment_intent_id"),
   stripeInvoiceId: text("stripe_invoice_id"),
+  notionPageId: text("notion_page_id"),
+  notionLastEditedAt: timestamp("notion_last_edited_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("invoices_org_idx").on(table.orgId),
   index("invoices_account_idx").on(table.orgId, table.accountId),
   index("invoices_status_idx").on(table.orgId, table.status),
+  index("invoices_notion_idx").on(table.notionPageId),
 ]);
 
 export const invoiceLineItems = pgTable("invoice_line_items", {
@@ -195,35 +211,41 @@ export const vendors = pgTable("vendors", {
   orgId: varchar("org_id").notNull().references(() => organizations.id),
   userId: varchar("user_id").references(() => users.id),
   name: text("name").notNull(),
-  company: text("company").notNull(),
+  company: text("company"),
   email: text("email").notNull(),
   dailyRate: decimal("daily_rate", { precision: 10, scale: 2 }).notNull().default("0"),
   skills: text("skills").array().notNull().default(sql`ARRAY[]::text[]`),
   availability: vendorAvailabilityEnum("availability").notNull().default('available'),
   performance: integer("performance").notNull().default(100),
+  notionPageId: text("notion_page_id"),
+  notionLastEditedAt: timestamp("notion_last_edited_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("vendors_org_idx").on(table.orgId),
   index("vendors_availability_idx").on(table.orgId, table.availability),
+  index("vendors_notion_idx").on(table.notionPageId),
 ]);
 
 export const missions = pgTable("missions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  projectId: varchar("project_id").notNull().references(() => projects.id),
-  vendorId: varchar("vendor_id").notNull().references(() => vendors.id),
+  projectId: varchar("project_id").references(() => projects.id),
+  vendorId: varchar("vendor_id").references(() => vendors.id),
   title: text("title").notNull(),
   description: text("description"),
-  startDate: timestamp("start_date").notNull(),
-  endDate: timestamp("end_date").notNull(),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
   status: missionStatusEnum("status").notNull().default('pending'),
   deliverables: text("deliverables").array().notNull().default(sql`ARRAY[]::text[]`),
+  notionPageId: text("notion_page_id"),
+  notionLastEditedAt: timestamp("notion_last_edited_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("missions_org_idx").on(table.orgId),
   index("missions_project_idx").on(table.orgId, table.projectId),
   index("missions_vendor_idx").on(table.orgId, table.vendorId),
+  index("missions_notion_idx").on(table.notionPageId),
 ]);
 
 export const documents = pgTable("documents", {
@@ -233,15 +255,18 @@ export const documents = pgTable("documents", {
   projectId: varchar("project_id").references(() => projects.id),
   dealId: varchar("deal_id").references(() => deals.id),
   name: text("name").notNull(),
-  url: text("url").notNull(),
+  url: text("url"),
   mimeType: text("mime_type"),
   size: integer("size"),
   storageProvider: storageProviderEnum("storage_provider").notNull().default('local'),
   uploadedById: varchar("uploaded_by_id").references(() => users.id),
+  notionPageId: text("notion_page_id"),
+  notionLastEditedAt: timestamp("notion_last_edited_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("documents_org_idx").on(table.orgId),
   index("documents_project_idx").on(table.projectId),
+  index("documents_notion_idx").on(table.notionPageId),
 ]);
 
 export const workflowRuns = pgTable("workflow_runs", {
