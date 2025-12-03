@@ -1,0 +1,262 @@
+Objectif
+Construire un SaaS multi-espaces (Interne / Client / Sous-traitant) pour gérer le cycle complet: Prospection → Rendez-vous → Proposition → Audit → Client, avec suivi projets par client, activation de workflows n8n, finances, sous-traitants et permissions granulaires.
+
+Rôles et espaces
+
+Espaces:
+
+Interne: pipeline commercial, paramétrage offres, finances globales, annuaire sous-traitants, supervision projets, automatisations.
+
+Client: portail par compte client, projets, documents, tickets, validations, factures, exécution/monitoring des workflows.
+
+Sous-traitant: missions assignées, livrables, planning, temps passé, facturation fournisseur.
+
+Rôles:
+
+Admin (IA Infinity), Sales, Delivery/Tech, Finance, Client Admin, Client Membre, Sous-traitant.
+
+Permissions (exemples):
+
+Sales: CRUD pipeline, lecture finances limitées aux deals.
+
+Delivery: CRUD projets/tâches/workflows, lecture client.
+
+Finance: factures, paiements, marge, coûts sous-traitants.
+
+Client Admin: lecture projets/finances client, valider livrables, lancer workflows autorisés.
+
+Sous-traitant: accès missions assignées uniquement.
+
+Données et modèles (base)
+
+Comptes/Organisations: nom, domaine, plan, statut, contact principal, paramètres d’espace.
+
+Contacts: rôle, emails, consentements, source, LinkedIn.
+
+Pipeline (Deals): compte, montant, proba, étape {Prospect, RDV, Proposition, Audit, Closing}, prochaine action, owner.
+
+Activités: appels, emails, RDV, notes, pièces jointes, horodatage.
+
+Projets: compte, statut, offre, échéances, KPIs, SLA.
+
+Tâches: projet, assigné à, priorité, échéance, état, temps passé.
+
+Workflows: nom, type, connecteurs, triggers, état, version, logs, mapping n8n workflow_id.
+
+Finances:
+
+Ventes: devis, propositions, bons de commande, factures, paiements, TVA, plan de facturation.
+
+Coûts: sous-traitants (missions, TJM, feuilles de temps, factures fournisseurs), outils, marge projet.
+
+Sous-traitants: société, TJM, compétences, NDA, disponibilité, performance.
+
+Documents: templates (proposition, audit, contrat), versions, signatures.
+
+Sécurité & audit: événements, consentements RGPD, contrôle d’accès, logs.
+
+Pipeline commercial
+
+Étapes standardisées: Prospect → RDV → Proposition → Audit → Négociation → Gagné/Perdu.
+
+Règles d’avancement:
+
+RDV créé = étape RDV; note obligatoire post-RDV.
+
+Proposition générée depuis template et envoyée = étape Proposition.
+
+Audit livré/validé = étape Audit, auto-création du projet si accord.
+
+Automatisations clés:
+
+Score lead (source, engagement, ICP).
+
+Suivi activité et relances automatiques (email/WhatsApp/LinkedIn).
+
+Génération de proposition depuis un template Google Doc/Docx avec variables CRM; PDF + signature.
+
+Webhooks entrées: JotForm/formulaire site, LinkedIn, Calendly, inbound email.
+
+Vue pipeline: Kanban par étape, forecast, vélocité, win rate.
+
+Portail client
+
+Tableau de bord: projets actifs, derniers livrables, tickets, incidents, exécutions workflows, factures/statut paiement.
+
+Projets: statut, échéances, KPIs, SLA, changelog, doc centralisée.
+
+Actions client:
+
+Demander une nouvelle automatisation (brief).
+
+Valider livrable ou demander révision.
+
+Lancer/mettre en pause un workflow autorisé.
+
+Consulter/telecharger factures, signer devis.
+
+Notifications: email + Slack/Teams/Telegram, au choix client.
+
+Espace sous-traitant
+
+Missions: cahier des charges, livrables, accès API, sandbox, échéances.
+
+Timesheets: temps par tâche/projet, validation interne.
+
+Facturation: génération facture fournisseur sur temps/livrables validés.
+
+Compliance: NDA, RGPD, accès limité par projet.
+
+Intégrations et flux
+
+Sources d’entrée prospects: Google Sheets actuel (leads), JotForm (site), LinkedIn, Calendly, email.
+
+Migration et synchronisation:
+
+Lire Google Sheet Prospects pour hydrater table Leads/Deals.
+
+Lire Notion Clients/Projets pour hydrater Accounts/Projects.
+
+Définir connecteurs récurrents pour garder la cohérence durant la transition.
+
+Automatisation n8n:
+
+Triggers: nouveau lead, changement d’étape deal, proposition envoyée, audit validé, nouveau projet, ticket client, paiement reçu/échoué.
+
+Actions: création doc, signature, envoi emails, création tâches, provisioning accès client, exécution workflow technique (API).
+
+Monitoring: logs d’exécution par workflow_id, alertes, redémarrage, SLA.
+
+Paiements: Stripe (abonnements + one-off), Webhooks pour activer fonctionnalités, retries d’échec, dunning.
+
+Templates documentaires
+
+Proposition: variables {company_name, scope, prix, planning, conditions}, sections options/upgrades.
+
+Audit: checklists par domaine (process, données, sécurité, intégrations).
+
+Contrat/NDA: e-signature, archivage, versioning.
+
+Génération PDF + signature + envoi automatique et tracking.
+
+Finances
+
+Vue globale: MRR/ARR, pipeline valeur, cash-in/out, marge par projet.
+
+Par client: factures, paiements, avoirs, statut.
+
+Sous-traitance: coûts par mission, marge par projet et par période.
+
+Rapports: aging, prévision encaissements, alertes churn/late payments.
+
+Permissions et sécurité
+
+RBAC par rôle + ABAC par compte/projet.
+
+Journaux d’audit des actions sensibles.
+
+Stockage fichiers chiffrés, limites de rétention.
+
+Conformité RGPD: consentements, export/suppression des données.
+
+Tableau de bord et KPIs
+
+Commercial: Win rate, cycle moyen, activités par rep, forecast pondéré.
+
+Delivery: vélocité, respect SLA, NPS client, taux de retours.
+
+Finances: MRR/ARR, marge brute, DSO, coûts sous-traitants.
+
+Opérations: taux de succès workflows, MTTR incidents, files d’attente.
+
+Plan d’implémentation (phases)
+
+Phase 1 — Fondation
+
+Auth multi-tenant, RBAC.
+
+Modèles: Accounts, Contacts, Deals, Activities, Projects, Tasks, Workflows, Invoices, Vendors.
+
+Import initial Google Sheets (prospects) et Notion (clients/projets).
+
+Pipeline Kanban + vues listes; création de projets depuis deal “Gagné”.
+
+Phase 2 — Documents & Finances
+
+Templates propositions/audits/contrats, PDF + signature, suivi envoi/lecture.
+
+Stripe abonnements + paiements ponctuels, Webhooks → activation.
+
+Portail client (lecture projets, factures), espace sous-traitant (missions).
+
+Phase 3 — Automatisation n8n
+
+Connecteurs standard: Gmail, Google Drive, Notion, Sheets, Slack/Telegram, Calendly, JotForm.
+
+Exécution/monitoring de workflows depuis l’app, logs + alertes.
+
+Librarie de workflows réutilisables par offre.
+
+Phase 4 — Analytics & AI
+
+Tableaux de bord, KPIs.
+
+Assistants IA: recommandation prochaine action commerciale, résumé d’audit, génération de proposition, priorisation tickets.
+
+Détection anomalies paiements et incidents workflows.
+
+User stories clés
+
+En tant que Sales, passer un lead de Prospect à Proposition avec génération auto du doc et envoi signature.
+
+En tant que Delivery, créer un projet depuis un deal gagné, assigner tâches, lier workflows n8n et monitorer leurs exécutions.
+
+En tant que Client, valider un livrable, lancer un workflow autorisé et télécharger la facture.
+
+En tant que Finance, voir marge par projet et valider facture sous-traitant.
+
+En tant que Sous-traitant, enregistrer mon temps et soumettre le livrable.
+
+Spécifications techniques suggérées
+
+Front: Next.js/React ou Bubble si no-code rapide; design system simple, dark/light.
+
+Back: Node.js/NestJS ou Rails; multi-tenant; Webhooks in/out.
+
+DB: Postgres (schemas multi-tenant).
+
+Files: S3 ou GDrive API.
+
+Auth: Magic link + OAuth (Google).
+
+Intégrations: n8n via API + webhook secrets; Stripe; Google (Sheets/Drive/Gmail); Notion (migration puis sync partielle).
+
+Observabilité: logs centralisés, alerting (Slack/Telegram), statut workflows.
+
+Gouvernance et qualité
+
+DOR/DOD pour propositions, audits, livrables.
+
+SLA par offre; calendrier maintenance; communication incidents.
+
+Journal de décision produit (ADR) et roadmapping trimestriel.
+
+Prompts d’activation (exemples)
+
+“Créer une proposition pour {compte} à partir de l’offre {offre} avec options {…}, puis envoyer pour signature et relancer à J+3.”
+
+“Créer projet {nom} pour le compte {compte} depuis le deal #{id}, assigner {membres}, importer checklist d’audit {template} et lier workflows {liste}.”
+
+“Publier un workflow n8n {workflow_id} et activer le trigger {event}, avec alertes Slack sur échecs.”
+
+“Générer tableau de bord marge par projet sur {période} et exporter en CSV.”
+
+“Créer mission sous-traitant pour {fournisseur} avec TJM {x}, échéance {date}, livrables {…}, et initier contrat/NDA.”
+
+Notes de migration
+
+Conserver Google Sheet Prospects en source de vérité transitoire; créer sync unidirectionnelle → CRM jusqu’au basculement total.
+
+Import Notion Clients/Projets → Accounts/Projects; laisser un connecteur de lecture pour docs historiques.
+
+Cartographier champs et normaliser statuts/étapes avant import.
