@@ -18,6 +18,7 @@ import Vendors from "@/pages/Vendors";
 import Missions from "@/pages/Missions";
 import Documents from "@/pages/Documents";
 import Contracts from "@/pages/Contracts";
+import Expenses from "@/pages/Expenses";
 import NotionSync from "@/pages/NotionSync";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
@@ -37,6 +38,7 @@ function Router() {
       <Route path="/missions" component={Missions} />
       <Route path="/documents" component={Documents} />
       <Route path="/contracts" component={Contracts} />
+      <Route path="/expenses" component={Expenses} />
       <Route path="/notion-sync" component={NotionSync} />
       <Route path="/settings" component={Settings} />
       <Route path="/help" component={() => (

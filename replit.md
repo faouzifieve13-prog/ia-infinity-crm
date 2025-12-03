@@ -147,7 +147,9 @@ Preferred communication style: Simple, everyday language.
 - `POST /api/notion/sync/expenses` - Import expenses from Notion
 - `GET /api/notion/sync/jobs` - View sync history
 
-**Frontend Page**: `/notion-sync` - Configuration UI for triggering syncs
+**Frontend Pages**
+- `/notion-sync` - Configuration UI for triggering syncs
+- `/expenses` - Expense management page with CRUD operations, filtering, and statistics
 
 ### External Dependencies
 

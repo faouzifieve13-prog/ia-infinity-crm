@@ -16,6 +16,7 @@ import {
   FileSignature,
   ExternalLink,
   RefreshCw,
+  Wallet,
 } from 'lucide-react';
 import { SiNotion } from 'react-icons/si';
 import {
@@ -51,6 +52,7 @@ const navItems: NavItem[] = [
   { title: 'Workflows', url: '/workflows', icon: Workflow, spaces: ['internal', 'client'] },
   { title: 'Documents', url: '/documents', icon: FileText, spaces: ['internal', 'client'] },
   { title: 'Invoices', url: '/invoices', icon: Receipt, spaces: ['internal', 'client'] },
+  { title: 'Charges', url: '/expenses', icon: Wallet, spaces: ['internal'] },
   { title: 'Vendors', url: '/vendors', icon: Briefcase, spaces: ['internal'] },
   { title: 'Missions', url: '/missions', icon: UserCog, spaces: ['vendor'] },
 ];
