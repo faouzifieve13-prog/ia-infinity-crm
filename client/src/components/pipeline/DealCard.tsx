@@ -1,9 +1,11 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Calendar } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { GripVertical, Calendar, TrendingUp, Clock } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface DealOwner {
   id: string;
@@ -27,6 +29,18 @@ interface DealCardProps {
   deal: DealCardDeal;
 }
 
+const getProbabilityColor = (probability: number) => {
+  if (probability >= 70) return 'bg-emerald-500';
+  if (probability >= 40) return 'bg-amber-500';
+  return 'bg-red-400';
+};
+
+const getDaysColor = (days: number) => {
+  if (days <= 7) return 'text-emerald-500';
+  if (days <= 14) return 'text-amber-500';
+  return 'text-red-500';
+};
+
 export function DealCard({ deal }: DealCardProps) {
   const {
     attributes,
@@ -40,7 +54,6 @@ export function DealCard({ deal }: DealCardProps) {
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
   };
 
   const ownerInitials = deal.owner.name
@@ -52,59 +65,97 @@ export function DealCard({ deal }: DealCardProps) {
   const amountNum = typeof deal.amount === 'string' ? parseFloat(deal.amount) : deal.amount;
 
   return (
-    <Card
+    <motion.div
       ref={setNodeRef}
       style={style}
-      className="cursor-pointer hover-elevate active-elevate-2"
-      data-testid={`deal-card-${deal.id}`}
+      initial={false}
+      animate={{ 
+        opacity: isDragging ? 0.6 : 1,
+        scale: isDragging ? 1.02 : 1,
+        boxShadow: isDragging ? '0 10px 40px rgba(0,0,0,0.15)' : '0 1px 3px rgba(0,0,0,0.08)'
+      }}
+      transition={{ duration: 0.2 }}
     >
-      <CardContent className="p-3">
-        <div className="flex items-start gap-2">
-          <button
-            {...attributes}
-            {...listeners}
-            className="mt-1 cursor-grab text-muted-foreground hover:text-foreground"
-            data-testid={`deal-drag-handle-${deal.id}`}
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2 mb-1">
-              <h4 className="font-semibold text-sm truncate">{deal.accountName}</h4>
-              <span className="font-bold text-sm whitespace-nowrap">
-                {amountNum.toLocaleString()}€
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground truncate mb-2">
-              {deal.contactName}
-            </p>
-            
-            {deal.nextAction && (
-              <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
-                <Calendar className="h-3 w-3" />
-                <span className="truncate">{deal.nextAction}</span>
+      <Card
+        className="cursor-pointer group overflow-hidden border-0 shadow-sm hover:shadow-md transition-all duration-200"
+        data-testid={`deal-card-${deal.id}`}
+      >
+        <CardContent className="p-3">
+          <div className="flex items-start gap-2">
+            <button
+              {...attributes}
+              {...listeners}
+              className="mt-1 cursor-grab text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+              data-testid={`deal-drag-handle-${deal.id}`}
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <h4 className="font-semibold text-sm truncate group-hover:text-primary transition-colors">
+                  {deal.accountName}
+                </h4>
+                <Badge variant="secondary" className="font-bold text-xs shrink-0 bg-primary/10 text-primary border-0">
+                  {amountNum.toLocaleString('fr-FR')}€
+                </Badge>
               </div>
-            )}
+              <p className="text-xs text-muted-foreground truncate mb-2">
+                {deal.contactName}
+              </p>
+              
+              {deal.nextAction && (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3 bg-muted/50 rounded-md px-2 py-1">
+                  <Calendar className="h-3 w-3 text-primary shrink-0" />
+                  <span className="truncate">{deal.nextAction}</span>
+                </div>
+              )}
 
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 flex-1 mr-2">
-                <Progress value={deal.probability} className="h-1.5 flex-1" />
-                <span className="text-xs text-muted-foreground">{deal.probability}%</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Avatar className="h-5 w-5">
-                  <AvatarFallback className="text-[10px] bg-primary text-primary-foreground">
-                    {ownerInitials}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="text-xs text-muted-foreground">
-                  {deal.daysInStage}d
-                </span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center gap-1.5">
+                        <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
+                        <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <motion.div
+                            className={`h-full ${getProbabilityColor(deal.probability)} rounded-full`}
+                            initial={{ width: 0 }}
+                            animate={{ width: `${deal.probability}%` }}
+                            transition={{ duration: 0.5, ease: "easeOut" }}
+                          />
+                        </div>
+                        <span className="text-xs font-medium">{deal.probability}%</span>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>Probabilité de conversion</TooltipContent>
+                  </Tooltip>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className={`flex items-center gap-1 text-xs ${getDaysColor(deal.daysInStage)}`}>
+                        <Clock className="h-3 w-3" />
+                        <span className="font-medium">{deal.daysInStage}j</span>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>Jours dans cette étape</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Avatar className="h-6 w-6 ring-2 ring-background">
+                        <AvatarFallback className="text-[10px] bg-gradient-to-br from-primary to-primary/70 text-primary-foreground font-semibold">
+                          {ownerInitials}
+                        </AvatarFallback>
+                      </Avatar>
+                    </TooltipTrigger>
+                    <TooltipContent>{deal.owner.name}</TooltipContent>
+                  </Tooltip>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }

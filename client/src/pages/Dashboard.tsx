@@ -180,7 +180,7 @@ function InternalDashboard() {
           }))} />
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

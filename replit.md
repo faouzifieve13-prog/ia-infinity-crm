@@ -222,8 +222,35 @@ Preferred communication style: Simple, everyday language.
 - **@dnd-kit**: Drag-and-drop functionality for pipeline Kanban board
 - **TanStack Query**: Server state management
 - **Wouter**: Lightweight routing
+- **Framer Motion**: Animations for cards, progress bars, and interactive elements
 - **class-variance-authority**: Component variant management
 - **clsx + tailwind-merge**: Utility class handling
+
+### Visual Design System
+
+**Portal-Specific Styling**
+- Admin Portal: Primary blue gradient, Shield icon
+- Client Portal: Blue-600 gradient, Building icon
+- Vendor Portal: Emerald-600 gradient, Wrench icon
+
+**Animation Library**
+- Framer Motion for component entrance animations
+- Staggered list animations on cards and search results
+- Animated progress bars with color-coded status
+- Hover and active state transitions
+
+**Component Enhancements**
+- **MetricCard**: Color accents, animated counters
+- **ProjectCard**: Colored status bar, animated progress, French labels
+- **DealCard**: Probability color coding, tooltips, drag animations
+- **GlobalSearch**: Glass-morphism design, categorized results, French localization
+- **AppHeader**: Backdrop blur, animated notification dropdown with typed icons
+- **AppSidebar**: Gradient portal badges, active state indicators, transition effects
+
+**CSS Utilities**
+- Custom animation keyframes (fade-in, slide-up, scale, pulse, glow)
+- Gradient backgrounds for portal icons
+- Hover elevation system preserved from shadcn defaults
 
 **Backend Libraries**
 - **Express.js**: HTTP server framework
