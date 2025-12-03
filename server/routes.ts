@@ -2099,7 +2099,7 @@ export async function registerRoutes(
         user = await storage.createUser({
           email: invitation.email,
           name: name || invitation.email.split('@')[0],
-          avatarUrl: null,
+          avatar: null,
         });
       }
       
@@ -2109,7 +2109,7 @@ export async function registerRoutes(
           userId: user.id,
           orgId: invitation.orgId,
           role: invitation.role,
-          spaces: [invitation.space],
+          space: invitation.space,
         });
       }
       

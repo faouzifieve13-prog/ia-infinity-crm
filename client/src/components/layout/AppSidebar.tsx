@@ -18,6 +18,9 @@ import {
   RefreshCw,
   Wallet,
   UserPlus,
+  Shield,
+  Building,
+  Wrench,
 } from 'lucide-react';
 import { SiNotion } from 'react-icons/si';
 import {
@@ -32,8 +35,15 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from '@/components/ui/sidebar';
+import { Badge } from '@/components/ui/badge';
 import { useSpace } from '@/hooks/use-space';
 import type { Space } from '@/lib/types';
+
+const portalConfig: Record<Space, { label: string; icon: typeof Shield; color: string }> = {
+  internal: { label: 'Admin', icon: Shield, color: 'bg-primary' },
+  client: { label: 'Client', icon: Building, color: 'bg-blue-600' },
+  vendor: { label: 'Prestataire', icon: Wrench, color: 'bg-emerald-600' },
+};
 
 interface NavItem {
   title: string;
@@ -43,26 +53,26 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { title: 'Dashboard', url: '/', icon: LayoutDashboard, spaces: ['internal', 'client', 'vendor'] },
+  { title: 'Tableau de bord', url: '/', icon: LayoutDashboard, spaces: ['internal', 'client', 'vendor'] },
   { title: 'Pipeline', url: '/pipeline', icon: Target, spaces: ['internal'] },
-  { title: 'Accounts', url: '/accounts', icon: Building2, spaces: ['internal'] },
+  { title: 'Comptes', url: '/accounts', icon: Building2, spaces: ['internal'] },
   { title: 'Contacts', url: '/contacts', icon: Users, spaces: ['internal'] },
-  { title: 'Projects', url: '/projects', icon: FolderKanban, spaces: ['internal', 'client'] },
-  { title: 'Tasks', url: '/tasks', icon: ListTodo, spaces: ['internal', 'client', 'vendor'] },
+  { title: 'Projets', url: '/projects', icon: FolderKanban, spaces: ['internal', 'client', 'vendor'] },
+  { title: 'Tâches', url: '/tasks', icon: ListTodo, spaces: ['internal', 'client', 'vendor'] },
   { title: 'Contrats', url: '/contracts', icon: FileSignature, spaces: ['internal', 'client'] },
-  { title: 'Workflows', url: '/workflows', icon: Workflow, spaces: ['internal', 'client'] },
-  { title: 'Documents', url: '/documents', icon: FileText, spaces: ['internal', 'client'] },
-  { title: 'Invoices', url: '/invoices', icon: Receipt, spaces: ['internal', 'client'] },
-  { title: 'Charges', url: '/expenses', icon: Wallet, spaces: ['internal'] },
-  { title: 'Vendors', url: '/vendors', icon: Briefcase, spaces: ['internal'] },
-  { title: 'Missions', url: '/missions', icon: UserCog, spaces: ['vendor'] },
+  { title: 'Workflows', url: '/workflows', icon: Workflow, spaces: ['internal'] },
+  { title: 'Documents', url: '/documents', icon: FileText, spaces: ['internal', 'client', 'vendor'] },
+  { title: 'Factures', url: '/invoices', icon: Receipt, spaces: ['internal', 'client'] },
+  { title: 'Dépenses', url: '/expenses', icon: Wallet, spaces: ['internal'] },
+  { title: 'Prestataires', url: '/vendors', icon: Briefcase, spaces: ['internal'] },
+  { title: 'Mes Missions', url: '/missions', icon: UserCog, spaces: ['vendor'] },
 ];
 
 const secondaryItems: NavItem[] = [
   { title: 'Sync Notion', url: '/notion-sync', icon: RefreshCw, spaces: ['internal'] },
   { title: 'Invitations', url: '/invitations', icon: UserPlus, spaces: ['internal'] },
-  { title: 'Settings', url: '/settings', icon: Settings, spaces: ['internal', 'client', 'vendor'] },
-  { title: 'Help', url: '/help', icon: HelpCircle, spaces: ['internal', 'client', 'vendor'] },
+  { title: 'Paramètres', url: '/settings', icon: Settings, spaces: ['internal', 'client', 'vendor'] },
+  { title: 'Aide', url: '/help', icon: HelpCircle, spaces: ['internal', 'client', 'vendor'] },
 ];
 
 export function AppSidebar() {
@@ -71,15 +81,23 @@ export function AppSidebar() {
 
   const filteredNavItems = navItems.filter((item) => item.spaces.includes(currentSpace));
   const filteredSecondaryItems = secondaryItems.filter((item) => item.spaces.includes(currentSpace));
+  
+  const portal = portalConfig[currentSpace];
+  const PortalIcon = portal.icon;
 
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
         <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold">
-            IA
+          <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${portal.color} text-white font-bold`}>
+            <PortalIcon className="h-4 w-4" />
           </div>
-          <span className="font-semibold text-lg">IA Infinity</span>
+          <div className="flex flex-col">
+            <span className="font-semibold text-lg leading-tight">IA Infinity</span>
+            <Badge variant="outline" className="text-xs w-fit" data-testid="badge-current-portal">
+              {portal.label}
+            </Badge>
+          </div>
         </Link>
       </SidebarHeader>
 
