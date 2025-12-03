@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -21,6 +21,7 @@ import Contracts from "@/pages/Contracts";
 import Expenses from "@/pages/Expenses";
 import NotionSync from "@/pages/NotionSync";
 import Invitations from "@/pages/Invitations";
+import AcceptInvite from "@/pages/AcceptInvite";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 
@@ -54,18 +55,36 @@ function Router() {
   );
 }
 
+function AppContent() {
+  const [location] = useLocation();
+  
+  // Auth routes are rendered outside the main layout
+  if (location.startsWith("/auth/")) {
+    return (
+      <Switch>
+        <Route path="/auth/accept-invite" component={AcceptInvite} />
+        <Route component={NotFound} />
+      </Switch>
+    );
+  }
+  
+  return (
+    <SpaceProvider>
+      <AppLayout>
+        <Router />
+      </AppLayout>
+    </SpaceProvider>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <SpaceProvider>
-          <TooltipProvider>
-            <AppLayout>
-              <Router />
-            </AppLayout>
-            <Toaster />
-          </TooltipProvider>
-        </SpaceProvider>
+        <TooltipProvider>
+          <AppContent />
+          <Toaster />
+        </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );
