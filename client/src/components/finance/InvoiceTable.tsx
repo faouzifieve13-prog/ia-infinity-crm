@@ -16,10 +16,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { Invoice, InvoiceStatus } from '@/lib/types';
+import type { InvoiceStatus } from '@/lib/types';
+
+interface InvoiceWithAccount {
+  id: string;
+  amount: string;
+  status: InvoiceStatus;
+  dueDate?: string | null;
+  accountName?: string;
+}
 
 interface InvoiceTableProps {
-  invoices: Invoice[];
+  invoices: InvoiceWithAccount[];
   title?: string;
   showAccount?: boolean;
 }
@@ -54,21 +62,22 @@ export function InvoiceTable({ invoices, title = 'Invoices', showAccount = true 
             {invoices.map((invoice) => {
               const status = statusConfig[invoice.status];
               const isOverdue = invoice.status === 'overdue';
+              const amount = parseFloat(invoice.amount) || 0;
 
               return (
                 <TableRow key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
-                  <TableCell className="font-medium">INV-{invoice.id.padStart(4, '0')}</TableCell>
+                  <TableCell className="font-medium">INV-{invoice.id.slice(0, 8)}</TableCell>
                   {showAccount && (
-                    <TableCell>{invoice.accountName}</TableCell>
+                    <TableCell>{invoice.accountName || 'N/A'}</TableCell>
                   )}
                   <TableCell className="font-semibold">
-                    {invoice.amount.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                    {amount.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
                   </TableCell>
                   <TableCell>
                     <Badge variant={status.variant}>{status.label}</Badge>
                   </TableCell>
                   <TableCell className={isOverdue ? 'text-destructive' : ''}>
-                    {new Date(invoice.dueDate).toLocaleDateString('fr-FR')}
+                    {invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('fr-FR') : 'N/A'}
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>

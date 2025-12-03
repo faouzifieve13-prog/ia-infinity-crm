@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Plus, Search, Download } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Plus, Search, Download, Loader2, DollarSign, AlertCircle, Clock, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -11,25 +12,47 @@ import {
 } from '@/components/ui/select';
 import { InvoiceTable } from '@/components/finance/InvoiceTable';
 import { MetricCard } from '@/components/dashboard/MetricCard';
-import { mockInvoices } from '@/lib/mock-data';
-import { DollarSign, AlertCircle, Clock, CheckCircle2 } from 'lucide-react';
-import type { InvoiceStatus } from '@/lib/types';
+import type { Invoice, Account, InvoiceStatus } from '@/lib/types';
 
 export default function Invoices() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'all'>('all');
 
-  const filteredInvoices = mockInvoices.filter((invoice) => {
+  const { data: invoices = [], isLoading } = useQuery<Invoice[]>({
+    queryKey: ['/api/invoices'],
+  });
+
+  const { data: accounts = [] } = useQuery<Account[]>({
+    queryKey: ['/api/accounts'],
+  });
+
+  const getAccountName = (accountId: string) => {
+    return accounts.find((a) => a.id === accountId)?.name || 'Unknown';
+  };
+
+  const invoicesWithAccount = invoices.map(i => ({
+    ...i,
+    accountName: getAccountName(i.accountId),
+  }));
+
+  const filteredInvoices = invoicesWithAccount.filter((invoice) => {
     const matchesSearch = invoice.accountName.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || invoice.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
-  // todo: remove mock functionality
-  const totalPaid = mockInvoices.filter((i) => i.status === 'paid').reduce((sum, i) => sum + i.amount, 0);
-  const totalPending = mockInvoices.filter((i) => i.status === 'sent').reduce((sum, i) => sum + i.amount, 0);
-  const totalOverdue = mockInvoices.filter((i) => i.status === 'overdue').reduce((sum, i) => sum + i.amount, 0);
-  const totalDraft = mockInvoices.filter((i) => i.status === 'draft').reduce((sum, i) => sum + i.amount, 0);
+  const totalPaid = invoices.filter((i) => i.status === 'paid').reduce((sum, i) => sum + parseFloat(i.amount), 0);
+  const totalPending = invoices.filter((i) => i.status === 'sent').reduce((sum, i) => sum + parseFloat(i.amount), 0);
+  const totalOverdue = invoices.filter((i) => i.status === 'overdue').reduce((sum, i) => sum + parseFloat(i.amount), 0);
+  const totalDraft = invoices.filter((i) => i.status === 'draft').reduce((sum, i) => sum + parseFloat(i.amount), 0);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -105,7 +128,17 @@ export default function Invoices() {
         </Select>
       </div>
 
-      <InvoiceTable invoices={filteredInvoices} />
+      {invoices.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <p className="text-muted-foreground mb-4">No invoices found</p>
+          <Button>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Invoice
+          </Button>
+        </div>
+      ) : (
+        <InvoiceTable invoices={filteredInvoices} />
+      )}
     </div>
   );
 }

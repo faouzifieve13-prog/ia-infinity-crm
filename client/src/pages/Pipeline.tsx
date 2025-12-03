@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Plus, Filter, Download } from 'lucide-react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Plus, Filter, Download, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -9,19 +10,57 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { PipelineBoard } from '@/components/pipeline/PipelineBoard';
-import { mockDeals, mockUsers } from '@/lib/mock-data';
-import type { DealStage } from '@/lib/types';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import type { Deal, DealStage } from '@/lib/types';
+
+interface DealWithRelations extends Deal {
+  owner: { id: string; name: string; email: string; avatar?: string | null };
+}
 
 export default function Pipeline() {
   const [ownerFilter, setOwnerFilter] = useState<string>('all');
 
+  const { data: deals = [], isLoading: dealsLoading } = useQuery<Deal[]>({
+    queryKey: ['/api/deals'],
+  });
+
+  const updateDealStageMutation = useMutation({
+    mutationFn: async ({ dealId, stage, position }: { dealId: string; stage: DealStage; position: number }) => {
+      return apiRequest('PATCH', `/api/deals/${dealId}/stage`, { stage, position });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/deals'] });
+    },
+  });
+
+  const dealsWithRelations: DealWithRelations[] = deals.map(deal => ({
+    ...deal,
+    accountName: deal.accountName || 'Unknown Account',
+    contactName: deal.contactName || 'Unknown Contact',
+    owner: { 
+      id: deal.ownerId, 
+      name: deal.ownerName || 'Unknown', 
+      email: deal.ownerEmail || '', 
+      avatar: null 
+    },
+  }));
+
   const filteredDeals = ownerFilter === 'all'
-    ? mockDeals
-    : mockDeals.filter((deal) => deal.owner.id === ownerFilter);
+    ? dealsWithRelations
+    : dealsWithRelations.filter((deal) => deal.ownerId === ownerFilter);
 
   const handleDealMove = (dealId: string, newStage: DealStage) => {
     console.log(`Deal ${dealId} moved to stage ${newStage}`);
+    updateDealStageMutation.mutate({ dealId, stage: newStage, position: 0 });
   };
+
+  if (dealsLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -38,11 +77,6 @@ export default function Pipeline() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Owners</SelectItem>
-              {mockUsers.filter((u) => u.role === 'sales').map((user) => (
-                <SelectItem key={user.id} value={user.id}>
-                  {user.name}
-                </SelectItem>
-              ))}
             </SelectContent>
           </Select>
 

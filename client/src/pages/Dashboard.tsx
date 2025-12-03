@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import {
   DollarSign,
   TrendingUp,
@@ -5,6 +6,7 @@ import {
   CheckCircle2,
   Zap,
   Users,
+  Loader2,
 } from 'lucide-react';
 import { MetricCard } from '@/components/dashboard/MetricCard';
 import { ActivityFeed } from '@/components/ActivityFeed';
@@ -12,17 +14,54 @@ import { WorkflowList } from '@/components/WorkflowList';
 import { ProjectCard } from '@/components/projects/ProjectCard';
 import { InvoiceTable } from '@/components/finance/InvoiceTable';
 import { useSpace } from '@/hooks/use-space';
-import {
-  mockActivities,
-  mockWorkflows,
-  mockProjects,
-  mockInvoices,
-  mockMissions,
-  kpiData,
-} from '@/lib/mock-data';
 import { MissionCard } from '@/components/vendor/MissionCard';
+import type { DashboardStats, Project, Activity, WorkflowRun, Invoice, Mission, Account } from '@/lib/types';
 
 function InternalDashboard() {
+  const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
+    queryKey: ['/api/dashboard/stats'],
+  });
+
+  const { data: projects = [], isLoading: projectsLoading } = useQuery<Project[]>({
+    queryKey: ['/api/projects'],
+  });
+
+  const { data: workflows = [] } = useQuery<WorkflowRun[]>({
+    queryKey: ['/api/workflows'],
+  });
+
+  const { data: activities = [] } = useQuery<Activity[]>({
+    queryKey: ['/api/activities'],
+  });
+
+  const { data: accounts = [] } = useQuery<Account[]>({
+    queryKey: ['/api/accounts'],
+  });
+
+  const getAccountName = (accountId: string) => {
+    const account = accounts.find(a => a.id === accountId);
+    return account?.name || 'Unknown';
+  };
+
+  const projectsWithAccount = projects.map(p => ({
+    ...p,
+    accountName: getAccountName(p.accountId),
+  }));
+
+  const activeProjects = projectsWithAccount.filter(p => p.status === 'active');
+
+  if (statsLoading || projectsLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const totalPipeline = stats?.totalPipeline || 0;
+  const wonValue = stats?.wonValue || 0;
+  const winRate = stats?.totalDeals ? Math.round((stats.wonDeals / stats.totalDeals) * 100) : 0;
+
   return (
     <div className="space-y-6">
       <div>
@@ -32,31 +71,26 @@ function InternalDashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
-          title="Monthly Revenue"
-          value={kpiData.mrr}
-          change={kpiData.mrrGrowth}
-          changeLabel="vs last month"
+          title="Won Revenue"
+          value={wonValue}
           icon={DollarSign}
           format="currency"
         />
         <MetricCard
           title="Pipeline Value"
-          value={kpiData.pipelineValue}
-          change={8}
+          value={totalPipeline}
           icon={TrendingUp}
           format="currency"
         />
         <MetricCard
           title="Win Rate"
-          value={kpiData.winRate}
-          change={-2}
+          value={winRate}
           icon={Target}
           format="percent"
         />
         <MetricCard
           title="Active Projects"
-          value={kpiData.activeProjects}
-          change={3}
+          value={stats?.activeProjects || 0}
           icon={CheckCircle2}
         />
       </div>
@@ -65,22 +99,43 @@ function InternalDashboard() {
         <div className="xl:col-span-2 space-y-6">
           <div>
             <h2 className="text-xl font-semibold mb-4">Active Projects</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {mockProjects.slice(0, 4).map((project) => (
-                <ProjectCard
-                  key={project.id}
-                  project={project}
-                  onClick={() => console.log('View project', project.id)}
-                />
-              ))}
-            </div>
+            {activeProjects.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No active projects yet. Create your first project to get started.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {activeProjects.slice(0, 4).map((project) => (
+                  <ProjectCard
+                    key={project.id}
+                    project={project}
+                    onClick={() => console.log('View project', project.id)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
-          <WorkflowList workflows={mockWorkflows.slice(0, 4)} />
+          <WorkflowList workflows={workflows.slice(0, 4).map(w => ({
+            id: w.id,
+            name: w.workflowName,
+            type: w.workflowType,
+            status: w.status as 'active' | 'paused' | 'error',
+            lastRun: w.finishedAt || undefined,
+            successRate: w.successRate,
+          }))} />
         </div>
 
         <div>
-          <ActivityFeed activities={mockActivities} />
+          <ActivityFeed activities={activities.slice(0, 10).map(a => ({
+            id: a.id,
+            type: a.type,
+            description: a.description,
+            createdAt: a.createdAt,
+            user: a.user || { id: a.userId, name: 'User', email: '' },
+            dealId: a.dealId || undefined,
+            projectId: a.projectId || undefined,
+          }))} />
         </div>
       </div>
     </div>
@@ -88,6 +143,37 @@ function InternalDashboard() {
 }
 
 function ClientDashboard() {
+  const { data: stats } = useQuery<DashboardStats>({
+    queryKey: ['/api/dashboard/stats'],
+  });
+
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ['/api/projects'],
+  });
+
+  const { data: invoices = [] } = useQuery<Invoice[]>({
+    queryKey: ['/api/invoices'],
+  });
+
+  const { data: accounts = [] } = useQuery<Account[]>({
+    queryKey: ['/api/accounts'],
+  });
+
+  const getAccountName = (accountId: string) => {
+    const account = accounts.find(a => a.id === accountId);
+    return account?.name || 'Unknown';
+  };
+
+  const projectsWithAccount = projects.map(p => ({
+    ...p,
+    accountName: getAccountName(p.accountId),
+  }));
+
+  const invoicesWithAccount = invoices.map(i => ({
+    ...i,
+    accountName: getAccountName(i.accountId),
+  }));
+
   return (
     <div className="space-y-6">
       <div>
@@ -98,18 +184,18 @@ function ClientDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <MetricCard
           title="Active Projects"
-          value={3}
+          value={stats?.activeProjects || 0}
           icon={CheckCircle2}
         />
         <MetricCard
           title="Pending Invoices"
-          value={2}
+          value={stats?.pendingInvoices || 0}
           icon={DollarSign}
           format="number"
         />
         <MetricCard
-          title="Active Workflows"
-          value={5}
+          title="Pending Tasks"
+          value={stats?.pendingTasks || 0}
           icon={Zap}
         />
       </div>
@@ -117,17 +203,23 @@ function ClientDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Your Projects</h2>
-          {mockProjects.slice(0, 2).map((project) => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              onClick={() => console.log('View project', project.id)}
-            />
-          ))}
+          {projectsWithAccount.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No projects yet.
+            </div>
+          ) : (
+            projectsWithAccount.slice(0, 2).map((project) => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                onClick={() => console.log('View project', project.id)}
+              />
+            ))
+          )}
         </div>
 
         <InvoiceTable
-          invoices={mockInvoices.slice(0, 3)}
+          invoices={invoicesWithAccount.slice(0, 3)}
           title="Recent Invoices"
           showAccount={false}
         />
@@ -137,6 +229,30 @@ function ClientDashboard() {
 }
 
 function VendorDashboard() {
+  const { data: missions = [] } = useQuery<Mission[]>({
+    queryKey: ['/api/missions'],
+  });
+
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ['/api/projects'],
+  });
+
+  const { data: vendors = [] } = useQuery<any[]>({
+    queryKey: ['/api/vendors'],
+  });
+
+  const getProjectName = (projectId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    return project?.name || 'Unknown';
+  };
+
+  const missionsWithProject = missions.map(m => ({
+    ...m,
+    projectName: getProjectName(m.projectId),
+  }));
+
+  const activeMissions = missionsWithProject.filter(m => m.status !== 'completed');
+
   return (
     <div className="space-y-6">
       <div>
@@ -147,33 +263,38 @@ function VendorDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <MetricCard
           title="Active Missions"
-          value={2}
+          value={activeMissions.length}
           icon={CheckCircle2}
         />
         <MetricCard
-          title="Hours This Month"
-          value={64}
+          title="Total Missions"
+          value={missions.length}
           icon={Users}
         />
         <MetricCard
-          title="Pending Payment"
-          value={4160}
+          title="Vendors"
+          value={vendors.length}
           icon={DollarSign}
-          format="currency"
         />
       </div>
 
       <div>
         <h2 className="text-xl font-semibold mb-4">Your Missions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {mockMissions.map((mission) => (
-            <MissionCard
-              key={mission.id}
-              mission={mission}
-              onClick={() => console.log('View mission', mission.id)}
-            />
-          ))}
-        </div>
+        {missionsWithProject.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            No missions assigned yet.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {missionsWithProject.map((mission) => (
+              <MissionCard
+                key={mission.id}
+                mission={mission}
+                onClick={() => console.log('View mission', mission.id)}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

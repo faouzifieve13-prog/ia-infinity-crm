@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   DndContext,
   DragEndEvent,
@@ -11,10 +11,29 @@ import {
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { PipelineColumn } from './PipelineColumn';
 import { DealCard } from './DealCard';
-import type { Deal, DealStage } from '@/lib/types';
+import type { DealStage } from '@/lib/types';
+
+interface DealOwner {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string | null;
+}
+
+interface PipelineDeal {
+  id: string;
+  accountName: string;
+  contactName: string;
+  amount: string;
+  probability: number;
+  stage: DealStage;
+  nextAction?: string | null;
+  daysInStage: number;
+  owner: DealOwner;
+}
 
 interface PipelineBoardProps {
-  deals: Deal[];
+  deals: PipelineDeal[];
   onDealMove?: (dealId: string, newStage: DealStage) => void;
 }
 
@@ -22,7 +41,11 @@ const stages: DealStage[] = ['prospect', 'meeting', 'proposal', 'audit', 'negoti
 
 export function PipelineBoard({ deals, onDealMove }: PipelineBoardProps) {
   const [localDeals, setLocalDeals] = useState(deals);
-  const [activeDeal, setActiveDeal] = useState<Deal | null>(null);
+  const [activeDeal, setActiveDeal] = useState<PipelineDeal | null>(null);
+
+  useEffect(() => {
+    setLocalDeals(deals);
+  }, [deals]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -59,7 +82,7 @@ export function PipelineBoard({ deals, onDealMove }: PipelineBoardProps) {
     localDeals.filter((deal) => deal.stage === stage);
 
   const getTotalValue = (stage: DealStage) =>
-    getDealsByStage(stage).reduce((sum, deal) => sum + deal.amount, 0);
+    getDealsByStage(stage).reduce((sum, deal) => sum + parseFloat(deal.amount), 0);
 
   return (
     <DndContext

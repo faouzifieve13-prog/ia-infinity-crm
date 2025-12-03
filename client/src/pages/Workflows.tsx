@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Plus, Search, Filter } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Plus, Search, Filter, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -10,17 +11,38 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { WorkflowList } from '@/components/WorkflowList';
-import { mockWorkflows } from '@/lib/mock-data';
+import type { WorkflowRun, WorkflowStatus } from '@/lib/types';
 
 export default function Workflows() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'paused' | 'error'>('all');
 
-  const filteredWorkflows = mockWorkflows.filter((workflow) => {
+  const { data: workflowRuns = [], isLoading } = useQuery<WorkflowRun[]>({
+    queryKey: ['/api/workflows'],
+  });
+
+  const workflows = workflowRuns.map(w => ({
+    id: w.id,
+    name: w.workflowName,
+    type: w.workflowType,
+    status: w.status as 'active' | 'paused' | 'error',
+    lastRun: w.finishedAt || undefined,
+    successRate: w.successRate,
+  }));
+
+  const filteredWorkflows = workflows.filter((workflow) => {
     const matchesSearch = workflow.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || workflow.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -65,7 +87,17 @@ export default function Workflows() {
         </Button>
       </div>
 
-      <WorkflowList workflows={filteredWorkflows} />
+      {workflows.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <p className="text-muted-foreground mb-4">No workflows configured</p>
+          <Button>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Workflow
+          </Button>
+        </div>
+      ) : (
+        <WorkflowList workflows={filteredWorkflows} />
+      )}
     </div>
   );
 }

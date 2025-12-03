@@ -1,13 +1,30 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Calendar, User } from 'lucide-react';
+import { GripVertical, Calendar } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
-import type { Deal } from '@/lib/types';
+
+interface DealOwner {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string | null;
+}
+
+interface DealCardDeal {
+  id: string;
+  accountName: string;
+  contactName: string;
+  amount: string;
+  probability: number;
+  nextAction?: string | null;
+  daysInStage: number;
+  owner: DealOwner;
+}
 
 interface DealCardProps {
-  deal: Deal;
+  deal: DealCardDeal;
 }
 
 export function DealCard({ deal }: DealCardProps) {
@@ -32,6 +49,8 @@ export function DealCard({ deal }: DealCardProps) {
     .join('')
     .toUpperCase();
 
+  const amountNum = typeof deal.amount === 'string' ? parseFloat(deal.amount) : deal.amount;
+
   return (
     <Card
       ref={setNodeRef}
@@ -53,17 +72,19 @@ export function DealCard({ deal }: DealCardProps) {
             <div className="flex items-start justify-between gap-2 mb-1">
               <h4 className="font-semibold text-sm truncate">{deal.accountName}</h4>
               <span className="font-bold text-sm whitespace-nowrap">
-                {deal.amount.toLocaleString()}€
+                {amountNum.toLocaleString()}€
               </span>
             </div>
             <p className="text-xs text-muted-foreground truncate mb-2">
               {deal.contactName}
             </p>
             
-            <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
-              <Calendar className="h-3 w-3" />
-              <span className="truncate">{deal.nextAction}</span>
-            </div>
+            {deal.nextAction && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
+                <Calendar className="h-3 w-3" />
+                <span className="truncate">{deal.nextAction}</span>
+              </div>
+            )}
 
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 flex-1 mr-2">

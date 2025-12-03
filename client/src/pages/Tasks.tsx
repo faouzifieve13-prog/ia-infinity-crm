@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Plus, Search, Filter } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Plus, Search, Filter, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -10,18 +11,29 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { TaskList } from '@/components/projects/TaskList';
-import { mockTasks } from '@/lib/mock-data';
-import type { TaskStatus } from '@/lib/types';
+import type { Task, TaskStatus } from '@/lib/types';
 
 export default function Tasks() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
 
-  const filteredTasks = mockTasks.filter((task) => {
+  const { data: tasks = [], isLoading } = useQuery<Task[]>({
+    queryKey: ['/api/tasks'],
+  });
+
+  const filteredTasks = tasks.filter((task) => {
     const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || task.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -67,7 +79,17 @@ export default function Tasks() {
         </Button>
       </div>
 
-      <TaskList tasks={filteredTasks} />
+      {tasks.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <p className="text-muted-foreground mb-4">No tasks found</p>
+          <Button>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Task
+          </Button>
+        </div>
+      ) : (
+        <TaskList tasks={filteredTasks} />
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Plus, Search } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Plus, Search, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -10,13 +11,17 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { VendorCard } from '@/components/vendor/VendorCard';
-import { mockVendors } from '@/lib/mock-data';
+import type { Vendor, VendorAvailability } from '@/lib/types';
 
 export default function Vendors() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [availabilityFilter, setAvailabilityFilter] = useState<'all' | 'available' | 'busy' | 'unavailable'>('all');
+  const [availabilityFilter, setAvailabilityFilter] = useState<'all' | VendorAvailability>('all');
 
-  const filteredVendors = mockVendors.filter((vendor) => {
+  const { data: vendors = [], isLoading } = useQuery<Vendor[]>({
+    queryKey: ['/api/vendors'],
+  });
+
+  const filteredVendors = vendors.filter((vendor) => {
     const matchesSearch =
       vendor.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       vendor.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -24,6 +29,14 @@ export default function Vendors() {
     const matchesAvailability = availabilityFilter === 'all' || vendor.availability === availabilityFilter;
     return matchesSearch && matchesAvailability;
   });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -64,23 +77,23 @@ export default function Vendors() {
         </Select>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredVendors.map((vendor) => (
-          <VendorCard
-            key={vendor.id}
-            vendor={vendor}
-            onClick={() => console.log('View vendor', vendor.id)}
-          />
-        ))}
-      </div>
-
-      {filteredVendors.length === 0 && (
+      {filteredVendors.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <p className="text-muted-foreground mb-4">No vendors found</p>
           <Button>
             <Plus className="mr-2 h-4 w-4" />
             Add Vendor
           </Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredVendors.map((vendor) => (
+            <VendorCard
+              key={vendor.id}
+              vendor={vendor}
+              onClick={() => console.log('View vendor', vendor.id)}
+            />
+          ))}
         </div>
       )}
     </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CheckCircle2, Circle, Clock, AlertCircle, MoreHorizontal, User } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,10 +10,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { Task, TaskStatus, TaskPriority } from '@/lib/types';
+import type { TaskStatus, TaskPriority } from '@/lib/types';
+
+interface TaskItem {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate?: string | null;
+  assigneeId?: string | null;
+  timeSpent?: number;
+}
 
 interface TaskListProps {
-  tasks: Task[];
+  tasks: TaskItem[];
   onTaskStatusChange?: (taskId: string, status: TaskStatus) => void;
 }
 
@@ -34,6 +44,10 @@ const priorityConfig: Record<TaskPriority, { label: string; variant: 'default' |
 export function TaskList({ tasks, onTaskStatusChange }: TaskListProps) {
   const [localTasks, setLocalTasks] = useState(tasks);
 
+  useEffect(() => {
+    setLocalTasks(tasks);
+  }, [tasks]);
+
   const handleStatusChange = (taskId: string, newStatus: TaskStatus) => {
     setLocalTasks((prev) =>
       prev.map((task) =>
@@ -44,7 +58,7 @@ export function TaskList({ tasks, onTaskStatusChange }: TaskListProps) {
     console.log(`Task ${taskId} status changed to ${newStatus}`);
   };
 
-  const cycleStatus = (task: Task) => {
+  const cycleStatus = (task: TaskItem) => {
     const statusOrder: TaskStatus[] = ['pending', 'in_progress', 'review', 'completed'];
     const currentIndex = statusOrder.indexOf(task.status);
     const nextStatus = statusOrder[(currentIndex + 1) % statusOrder.length];
@@ -61,6 +75,7 @@ export function TaskList({ tasks, onTaskStatusChange }: TaskListProps) {
           {localTasks.map((task) => {
             const StatusIcon = statusConfig[task.status].icon;
             const priority = priorityConfig[task.priority];
+            const timeSpent = task.timeSpent || 0;
 
             return (
               <div
@@ -92,10 +107,10 @@ export function TaskList({ tasks, onTaskStatusChange }: TaskListProps) {
                   )}
                 </div>
 
-                {task.assignee ? (
+                {task.assigneeId ? (
                   <Avatar className="h-7 w-7">
                     <AvatarFallback className="text-xs bg-primary text-primary-foreground">
-                      {task.assignee.name.split(' ').map((n) => n[0]).join('')}
+                      ??
                     </AvatarFallback>
                   </Avatar>
                 ) : (
@@ -104,8 +119,8 @@ export function TaskList({ tasks, onTaskStatusChange }: TaskListProps) {
                   </div>
                 )}
 
-                {task.timeSpent > 0 && (
-                  <span className="text-xs text-muted-foreground">{task.timeSpent}h</span>
+                {timeSpent > 0 && (
+                  <span className="text-xs text-muted-foreground">{timeSpent}h</span>
                 )}
 
                 <DropdownMenu>

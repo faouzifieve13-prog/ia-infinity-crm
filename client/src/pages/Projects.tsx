@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Plus, Search, Grid3X3, List } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Plus, Search, Grid3X3, List, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -10,21 +11,48 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ProjectCard } from '@/components/projects/ProjectCard';
-import { mockProjects } from '@/lib/mock-data';
-import type { ProjectStatus } from '@/lib/types';
+import type { Project, Account, ProjectStatus } from '@/lib/types';
 
 export default function Projects() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | 'all'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-  const filteredProjects = mockProjects.filter((project) => {
+  const { data: projects = [], isLoading } = useQuery<Project[]>({
+    queryKey: ['/api/projects'],
+  });
+
+  const { data: accounts = [] } = useQuery<Account[]>({
+    queryKey: ['/api/accounts'],
+  });
+
+  const getAccountName = (accountId: string) => {
+    const account = accounts.find(a => a.id === accountId);
+    return account?.name || 'Unknown';
+  };
+
+  const projectsWithAccount = projects.map(p => ({
+    ...p,
+    accountName: getAccountName(p.accountId),
+    tasksCompleted: 0,
+    totalTasks: 0,
+  }));
+
+  const filteredProjects = projectsWithAccount.filter((project) => {
     const matchesSearch =
       project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       project.accountName.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || project.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

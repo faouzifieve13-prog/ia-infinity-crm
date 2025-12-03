@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Search, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -8,26 +9,58 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { mockDeals, mockProjects, mockAccounts } from '@/lib/mock-data';
+import type { Deal, Project, Account } from '@/lib/types';
 
 export function GlobalSearch() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
-  // todo: remove mock functionality
-  const filteredDeals = mockDeals.filter(d => 
-    d.accountName.toLowerCase().includes(query.toLowerCase()) ||
-    d.contactName.toLowerCase().includes(query.toLowerCase())
-  ).slice(0, 3);
+  const { data: deals = [] } = useQuery<Deal[]>({
+    queryKey: ['/api/deals'],
+    enabled: open,
+  });
 
-  const filteredProjects = mockProjects.filter(p =>
-    p.name.toLowerCase().includes(query.toLowerCase()) ||
-    p.accountName.toLowerCase().includes(query.toLowerCase())
-  ).slice(0, 3);
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ['/api/projects'],
+    enabled: open,
+  });
 
-  const filteredAccounts = mockAccounts.filter(a =>
+  const { data: accounts = [] } = useQuery<Account[]>({
+    queryKey: ['/api/accounts'],
+    enabled: open,
+  });
+
+  const getAccountName = (accountId: string) => {
+    return accounts.find((a) => a.id === accountId)?.name || 'Unknown';
+  };
+
+  const filteredDeals = deals.filter(d => {
+    const accountName = getAccountName(d.accountId);
+    const searchStr = d.nextAction || '';
+    return accountName.toLowerCase().includes(query.toLowerCase()) ||
+      searchStr.toLowerCase().includes(query.toLowerCase());
+  }).slice(0, 3);
+
+  const filteredProjects = projects.filter(p => {
+    const accountName = getAccountName(p.accountId);
+    return p.name.toLowerCase().includes(query.toLowerCase()) ||
+      accountName.toLowerCase().includes(query.toLowerCase());
+  }).slice(0, 3);
+
+  const filteredAccounts = accounts.filter(a =>
     a.name.toLowerCase().includes(query.toLowerCase())
   ).slice(0, 3);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setOpen(true);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   return (
     <>
@@ -80,10 +113,10 @@ export function GlobalSearch() {
                         data-testid={`search-result-deal-${deal.id}`}
                       >
                         <div>
-                          <p className="font-medium">{deal.accountName}</p>
-                          <p className="text-sm text-muted-foreground">{deal.contactName}</p>
+                          <p className="font-medium">{getAccountName(deal.accountId)}</p>
+                          <p className="text-sm text-muted-foreground">{deal.stage} - {deal.nextAction || 'No action'}</p>
                         </div>
-                        <span className="text-sm font-semibold">{deal.amount.toLocaleString()}€</span>
+                        <span className="text-sm font-semibold">{parseFloat(deal.amount).toLocaleString()}€</span>
                       </div>
                     ))}
                   </div>
@@ -101,7 +134,7 @@ export function GlobalSearch() {
                       >
                         <div>
                           <p className="font-medium">{project.name}</p>
-                          <p className="text-sm text-muted-foreground">{project.accountName}</p>
+                          <p className="text-sm text-muted-foreground">{getAccountName(project.accountId)}</p>
                         </div>
                         <span className="text-sm">{project.progress}%</span>
                       </div>

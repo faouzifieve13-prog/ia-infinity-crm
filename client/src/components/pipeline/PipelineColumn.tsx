@@ -2,11 +2,30 @@ import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Badge } from '@/components/ui/badge';
 import { DealCard } from './DealCard';
-import type { Deal, DealStage } from '@/lib/types';
+import type { DealStage } from '@/lib/types';
+
+interface DealOwner {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string | null;
+}
+
+interface ColumnDeal {
+  id: string;
+  accountName: string;
+  contactName: string;
+  amount: string;
+  probability: number;
+  stage: DealStage;
+  nextAction?: string | null;
+  daysInStage: number;
+  owner: DealOwner;
+}
 
 interface PipelineColumnProps {
   stage: DealStage;
-  deals: Deal[];
+  deals: ColumnDeal[];
   totalValue: number;
 }
 

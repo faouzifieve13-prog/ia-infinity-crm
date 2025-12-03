@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Search } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Search, Loader2, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -10,14 +11,30 @@ import {
 } from '@/components/ui/select';
 import { MissionCard } from '@/components/vendor/MissionCard';
 import { MetricCard } from '@/components/dashboard/MetricCard';
-import { mockMissions } from '@/lib/mock-data';
-import { Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import type { Mission, Project, MissionStatus } from '@/lib/types';
 
 export default function Missions() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'in_progress' | 'review' | 'completed'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | MissionStatus>('all');
 
-  const filteredMissions = mockMissions.filter((mission) => {
+  const { data: missions = [], isLoading } = useQuery<Mission[]>({
+    queryKey: ['/api/missions'],
+  });
+
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ['/api/projects'],
+  });
+
+  const getProjectName = (projectId: string) => {
+    return projects.find((p) => p.id === projectId)?.name || 'Unknown';
+  };
+
+  const missionsWithProject = missions.map(m => ({
+    ...m,
+    projectName: getProjectName(m.projectId),
+  }));
+
+  const filteredMissions = missionsWithProject.filter((mission) => {
     const matchesSearch =
       mission.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       mission.projectName.toLowerCase().includes(searchQuery.toLowerCase());
@@ -25,10 +42,17 @@ export default function Missions() {
     return matchesSearch && matchesStatus;
   });
 
-  // todo: remove mock functionality
-  const activeMissions = mockMissions.filter((m) => m.status === 'in_progress').length;
-  const pendingMissions = mockMissions.filter((m) => m.status === 'pending').length;
-  const reviewMissions = mockMissions.filter((m) => m.status === 'review').length;
+  const activeMissions = missions.filter((m) => m.status === 'in_progress').length;
+  const pendingMissions = missions.filter((m) => m.status === 'pending').length;
+  const reviewMissions = missions.filter((m) => m.status === 'review').length;
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -81,19 +105,19 @@ export default function Missions() {
         </Select>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {filteredMissions.map((mission) => (
-          <MissionCard
-            key={mission.id}
-            mission={mission}
-            onClick={() => console.log('View mission', mission.id)}
-          />
-        ))}
-      </div>
-
-      {filteredMissions.length === 0 && (
+      {filteredMissions.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <p className="text-muted-foreground">No missions found</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filteredMissions.map((mission) => (
+            <MissionCard
+              key={mission.id}
+              mission={mission}
+              onClick={() => console.log('View mission', mission.id)}
+            />
+          ))}
         </div>
       )}
     </div>

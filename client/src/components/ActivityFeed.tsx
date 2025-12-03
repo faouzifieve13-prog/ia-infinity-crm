@@ -1,10 +1,25 @@
 import { Phone, Mail, Calendar, FileText } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import type { Activity } from '@/lib/types';
+
+interface ActivityUser {
+  id: string;
+  name: string;
+  email?: string;
+}
+
+interface ActivityItem {
+  id: string;
+  type: 'call' | 'email' | 'meeting' | 'note';
+  description: string;
+  createdAt: string;
+  user: ActivityUser;
+  dealId?: string;
+  projectId?: string;
+}
 
 interface ActivityFeedProps {
-  activities: Activity[];
+  activities: ActivityItem[];
   title?: string;
 }
 
@@ -30,6 +45,19 @@ function formatRelativeTime(dateString: string): string {
 }
 
 export function ActivityFeed({ activities, title = 'Recent Activity' }: ActivityFeedProps) {
+  if (activities.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">{title}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-center text-muted-foreground py-4">No recent activity</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -38,7 +66,7 @@ export function ActivityFeed({ activities, title = 'Recent Activity' }: Activity
       <CardContent className="p-0">
         <div className="relative">
           <div className="absolute left-8 top-0 bottom-0 w-px bg-border" />
-          {activities.map((activity, index) => {
+          {activities.map((activity) => {
             const config = typeConfig[activity.type];
             const Icon = config.icon;
             const userInitials = activity.user.name

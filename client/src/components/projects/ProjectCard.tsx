@@ -2,10 +2,21 @@ import { Calendar, CheckCircle2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import type { Project, ProjectStatus } from '@/lib/types';
+import type { ProjectStatus } from '@/lib/types';
+
+interface ProjectCardProject {
+  id: string;
+  name: string;
+  accountName?: string;
+  status: ProjectStatus;
+  progress: number;
+  tasksCompleted?: number;
+  totalTasks?: number;
+  startDate: string;
+}
 
 interface ProjectCardProps {
-  project: Project;
+  project: ProjectCardProject;
   onClick?: () => void;
 }
 
@@ -29,7 +40,9 @@ export function ProjectCard({ project, onClick }: ProjectCardProps) {
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <CardTitle className="text-base truncate">{project.name}</CardTitle>
-            <p className="text-sm text-muted-foreground truncate">{project.accountName}</p>
+            {project.accountName && (
+              <p className="text-sm text-muted-foreground truncate">{project.accountName}</p>
+            )}
           </div>
           <Badge variant={status.variant}>{status.label}</Badge>
         </div>
@@ -47,7 +60,7 @@ export function ProjectCard({ project, onClick }: ProjectCardProps) {
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-1 text-muted-foreground">
               <CheckCircle2 className="h-4 w-4" />
-              <span>{project.tasksCompleted}/{project.totalTasks} tasks</span>
+              <span>{project.tasksCompleted || 0}/{project.totalTasks || 0} tasks</span>
             </div>
             <div className="flex items-center gap-1 text-muted-foreground">
               <Calendar className="h-4 w-4" />
