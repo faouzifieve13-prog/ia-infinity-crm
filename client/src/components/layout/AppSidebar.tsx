@@ -17,6 +17,7 @@ import {
   ExternalLink,
   RefreshCw,
   Wallet,
+  UserPlus,
 } from 'lucide-react';
 import { SiNotion } from 'react-icons/si';
 import {
@@ -59,6 +60,7 @@ const navItems: NavItem[] = [
 
 const secondaryItems: NavItem[] = [
   { title: 'Sync Notion', url: '/notion-sync', icon: RefreshCw, spaces: ['internal'] },
+  { title: 'Invitations', url: '/invitations', icon: UserPlus, spaces: ['internal'] },
   { title: 'Settings', url: '/settings', icon: Settings, spaces: ['internal', 'client', 'vendor'] },
   { title: 'Help', url: '/help', icon: HelpCircle, spaces: ['internal', 'client', 'vendor'] },
 ];

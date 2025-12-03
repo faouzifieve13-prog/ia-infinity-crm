@@ -21,6 +21,7 @@ export const contractTypeEnum = pgEnum('contract_type', ['audit', 'prestation', 
 export const contractStatusEnum = pgEnum('contract_status', ['draft', 'sent', 'signed', 'active', 'completed', 'cancelled']);
 export const expenseStatusEnum = pgEnum('expense_status', ['pending', 'paid', 'cancelled']);
 export const expenseCategoryEnum = pgEnum('expense_category', ['tools', 'software', 'services', 'travel', 'marketing', 'office', 'salaries', 'taxes', 'other']);
+export const invitationStatusEnum = pgEnum('invitation_status', ['pending', 'accepted', 'expired', 'revoked']);
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -366,6 +367,28 @@ export const expenses = pgTable("expenses", {
   index("expenses_status_idx").on(table.orgId, table.status),
 ]);
 
+export const invitations = pgTable("invitations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  tokenHash: text("token_hash").notNull().unique(),
+  email: text("email").notNull(),
+  name: text("name"),
+  role: userRoleEnum("role").notNull(),
+  space: spaceEnum("space").notNull(),
+  accountId: varchar("account_id").references(() => accounts.id),
+  vendorId: varchar("vendor_id").references(() => vendors.id),
+  status: invitationStatusEnum("status").notNull().default('pending'),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("invitations_org_idx").on(table.orgId),
+  index("invitations_token_hash_idx").on(table.tokenHash),
+  index("invitations_email_idx").on(table.orgId, table.email),
+  index("invitations_status_idx").on(table.status),
+]);
+
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   memberships: many(memberships),
   accounts: many(accounts),
@@ -557,6 +580,9 @@ export const insertExpenseSchema = createInsertSchema(expenses).omit({ id: true,
   date: z.coerce.date(),
   notionLastEditedAt: z.coerce.date().optional().nullable(),
 });
+export const insertInvitationSchema = createInsertSchema(invitations).omit({ id: true, createdAt: true }).extend({
+  expiresAt: z.coerce.date(),
+});
 
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -576,6 +602,7 @@ export type InsertWorkflowRun = z.infer<typeof insertWorkflowRunSchema>;
 export type InsertImportJob = z.infer<typeof insertImportJobSchema>;
 export type InsertContract = z.infer<typeof insertContractSchema>;
 export type InsertExpense = z.infer<typeof insertExpenseSchema>;
+export type InsertInvitation = z.infer<typeof insertInvitationSchema>;
 
 export type Organization = typeof organizations.$inferSelect;
 export type User = typeof users.$inferSelect;
@@ -595,6 +622,7 @@ export type WorkflowRun = typeof workflowRuns.$inferSelect;
 export type ImportJob = typeof importJobs.$inferSelect;
 export type Contract = typeof contracts.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;
+export type Invitation = typeof invitations.$inferSelect;
 
 export type UserRole = 'admin' | 'sales' | 'delivery' | 'finance' | 'client_admin' | 'client_member' | 'vendor';
 export type Space = 'internal' | 'client' | 'vendor';
@@ -612,3 +640,4 @@ export type ContractType = 'audit' | 'prestation' | 'formation' | 'suivi';
 export type ContractStatus = 'draft' | 'sent' | 'signed' | 'active' | 'completed' | 'cancelled';
 export type ExpenseStatus = 'pending' | 'paid' | 'cancelled';
 export type ExpenseCategory = 'tools' | 'software' | 'services' | 'travel' | 'marketing' | 'office' | 'salaries' | 'taxes' | 'other';
+export type InvitationStatus = 'pending' | 'accepted' | 'expired' | 'revoked';

@@ -106,6 +106,7 @@ Preferred communication style: Simple, everyday language.
 - **documents**: File metadata with account/project associations
 - **expenses**: Business expenses with categories (tools, software, services, travel, etc.) and Notion sync support
 - **contracts**: Client contracts with different types (audit, prestation, formation, suivi)
+- **invitations**: Magic link invitations with tokenHash, role, space, status, and expiration
 - **workflow_runs**: Automation execution logs
 - **import_jobs**: Tracks Notion sync history and status
 
@@ -115,6 +116,35 @@ Preferred communication style: Simple, everyday language.
 - Mock user authentication (temporary development setup)
 - User context stored in SpaceProvider React Context
 - Default admin user ("Alice Martin") for development
+
+**Magic Link Invitations**
+- Passwordless invitation system for onboarding users
+- Secure token generation using crypto.randomBytes (32 bytes hex)
+- SHA-256 hashed tokens stored in database
+- Configurable expiration (15 min to 7 days)
+- Single-use tokens invalidated upon acceptance
+- Role and space assignment at invitation time
+- Optional linking to accounts (for clients) or vendors
+
+**Invitation Status Flow**
+- pending → accepted (user clicked link and joined)
+- pending → expired (time limit reached)
+- pending → revoked (admin cancelled)
+
+**API Endpoints**
+- `GET /api/invitations` - List all invitations
+- `POST /api/invitations` - Create new invitation (returns link with token)
+- `POST /api/invitations/validate` - Validate token before showing accept form
+- `POST /api/invitations/accept` - Accept invitation and create user/membership
+- `POST /api/invitations/:id/revoke` - Revoke pending invitation
+- `DELETE /api/invitations/:id` - Delete invitation record
+
+**Frontend Page**
+- `/invitations` - Admin UI for creating and managing invitations
+- Statistics cards showing pending, accepted, expired counts
+- Create dialog with space/role selection
+- Copy-to-clipboard for generated links
+- Revoke and delete actions with confirmation dialogs
 
 **Role-Based Access Control**
 - 7 user roles: admin, sales, delivery, finance, client_admin, client_member, vendor
@@ -126,8 +156,9 @@ Preferred communication style: Simple, everyday language.
 - UI components conditionally render based on role and current space
 
 **Planned Enhancement**
-- Full authentication system needs to be implemented
-- Session management and password handling not yet in place
+- Full session-based authentication after accepting invitation
+- Email delivery integration for sending invitation links
+- Password setup option for users who prefer password auth
 
 ### Notion Synchronization
 

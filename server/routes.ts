@@ -2,13 +2,24 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { z } from "zod";
+import { createHash, randomBytes } from "crypto";
 import {
   insertAccountSchema, insertContactSchema, insertDealSchema, insertActivitySchema,
   insertProjectSchema, insertTaskSchema, insertInvoiceSchema, insertInvoiceLineItemSchema,
   insertVendorSchema, insertMissionSchema, insertDocumentSchema, insertWorkflowRunSchema,
   insertOrganizationSchema, insertUserSchema, insertMembershipSchema, insertContractSchema,
-  type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus
+  insertInvitationSchema,
+  type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
+  type UserRole, type Space, type InvitationStatus
 } from "@shared/schema";
+
+function generateToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
 
 const DEFAULT_ORG_ID = "default-org";
 
@@ -1933,6 +1944,215 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Delete expense error:", error);
       res.status(500).json({ error: "Failed to delete expense" });
+    }
+  });
+
+  // ============================================
+  // Invitations Routes
+  // ============================================
+
+  app.get("/api/invitations", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const status = req.query.status as InvitationStatus | undefined;
+      const invitations = await storage.getInvitations(orgId, status);
+      const safeInvitations = invitations.map(({ tokenHash, ...rest }) => rest);
+      res.json(safeInvitations);
+    } catch (error) {
+      console.error("Get invitations error:", error);
+      res.status(500).json({ error: "Failed to get invitations" });
+    }
+  });
+
+  app.get("/api/invitations/:id", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const invitation = await storage.getInvitation(req.params.id, orgId);
+      if (!invitation) {
+        return res.status(404).json({ error: "Invitation not found" });
+      }
+      const { tokenHash, ...safeInvitation } = invitation;
+      res.json(safeInvitation);
+    } catch (error) {
+      console.error("Get invitation error:", error);
+      res.status(500).json({ error: "Failed to get invitation" });
+    }
+  });
+
+  const createInvitationSchema = z.object({
+    email: z.string().email(),
+    role: z.enum(['admin', 'sales', 'delivery', 'finance', 'client_admin', 'client_member', 'vendor']),
+    space: z.enum(['internal', 'client', 'vendor']),
+    expiresInMinutes: z.number().min(5).max(10080).default(30),
+    accountId: z.string().uuid().optional(),
+    vendorId: z.string().uuid().optional(),
+  });
+
+  app.post("/api/invitations", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const parsed = createInvitationSchema.parse(req.body);
+      
+      const token = generateToken();
+      const tokenHash = hashToken(token);
+      const expiresAt = new Date(Date.now() + parsed.expiresInMinutes * 60 * 1000);
+      
+      const invitation = await storage.createInvitation({
+        orgId,
+        email: parsed.email,
+        role: parsed.role as UserRole,
+        space: parsed.space as Space,
+        tokenHash,
+        expiresAt,
+        status: 'pending',
+        accountId: parsed.accountId || null,
+        vendorId: parsed.vendorId || null,
+      });
+      
+      const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+        : 'http://localhost:5000';
+      const inviteLink = `${baseUrl}/auth/accept-invite?token=${token}`;
+      
+      const { tokenHash: _, ...safeInvitation } = invitation;
+      res.status(201).json({
+        ...safeInvitation,
+        inviteLink,
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      console.error("Create invitation error:", error);
+      res.status(500).json({ error: "Failed to create invitation" });
+    }
+  });
+
+  app.post("/api/invitations/validate", async (req: Request, res: Response) => {
+    try {
+      const { token } = req.body;
+      if (!token) {
+        return res.status(400).json({ error: "Token is required", valid: false });
+      }
+      
+      const tokenHash = hashToken(token);
+      const invitation = await storage.getInvitationByToken(tokenHash);
+      
+      if (!invitation) {
+        return res.status(404).json({ error: "Invitation not found", valid: false });
+      }
+      
+      if (invitation.status !== 'pending') {
+        return res.status(400).json({ 
+          error: `Invitation is ${invitation.status}`, 
+          valid: false,
+          status: invitation.status 
+        });
+      }
+      
+      if (new Date(invitation.expiresAt) < new Date()) {
+        await storage.updateInvitation(invitation.id, invitation.orgId, { status: 'expired' });
+        return res.status(400).json({ error: "Invitation has expired", valid: false });
+      }
+      
+      res.json({
+        valid: true,
+        invitation: {
+          id: invitation.id,
+          email: invitation.email,
+          role: invitation.role,
+          space: invitation.space,
+          expiresAt: invitation.expiresAt,
+        }
+      });
+    } catch (error) {
+      console.error("Validate invitation error:", error);
+      res.status(500).json({ error: "Failed to validate invitation", valid: false });
+    }
+  });
+
+  app.post("/api/invitations/accept", async (req: Request, res: Response) => {
+    try {
+      const { token, name } = req.body;
+      if (!token) {
+        return res.status(400).json({ error: "Token is required" });
+      }
+      
+      const tokenHash = hashToken(token);
+      const invitation = await storage.getInvitationByToken(tokenHash);
+      
+      if (!invitation) {
+        return res.status(404).json({ error: "Invitation not found" });
+      }
+      
+      if (invitation.status !== 'pending') {
+        return res.status(400).json({ error: `Invitation is ${invitation.status}` });
+      }
+      
+      if (new Date(invitation.expiresAt) < new Date()) {
+        await storage.updateInvitation(invitation.id, invitation.orgId, { status: 'expired' });
+        return res.status(400).json({ error: "Invitation has expired" });
+      }
+      
+      let user = await storage.getUserByEmail(invitation.email);
+      if (!user) {
+        user = await storage.createUser({
+          email: invitation.email,
+          name: name || invitation.email.split('@')[0],
+          avatarUrl: null,
+        });
+      }
+      
+      const existingMembership = await storage.getMembershipByUserAndOrg(user.id, invitation.orgId);
+      if (!existingMembership) {
+        await storage.createMembership({
+          userId: user.id,
+          orgId: invitation.orgId,
+          role: invitation.role,
+          spaces: [invitation.space],
+        });
+      }
+      
+      await storage.acceptInvitation(invitation.id);
+      
+      res.json({
+        success: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+        },
+        role: invitation.role,
+        space: invitation.space,
+      });
+    } catch (error) {
+      console.error("Accept invitation error:", error);
+      res.status(500).json({ error: "Failed to accept invitation" });
+    }
+  });
+
+  app.post("/api/invitations/:id/revoke", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const invitation = await storage.revokeInvitation(req.params.id, orgId);
+      if (!invitation) {
+        return res.status(404).json({ error: "Invitation not found" });
+      }
+      res.json(invitation);
+    } catch (error) {
+      console.error("Revoke invitation error:", error);
+      res.status(500).json({ error: "Failed to revoke invitation" });
+    }
+  });
+
+  app.delete("/api/invitations/:id", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      await storage.deleteInvitation(req.params.id, orgId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete invitation error:", error);
+      res.status(500).json({ error: "Failed to delete invitation" });
     }
   });
 

@@ -20,6 +20,7 @@ import Documents from "@/pages/Documents";
 import Contracts from "@/pages/Contracts";
 import Expenses from "@/pages/Expenses";
 import NotionSync from "@/pages/NotionSync";
+import Invitations from "@/pages/Invitations";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 
@@ -40,6 +41,7 @@ function Router() {
       <Route path="/contracts" component={Contracts} />
       <Route path="/expenses" component={Expenses} />
       <Route path="/notion-sync" component={NotionSync} />
+      <Route path="/invitations" component={Invitations} />
       <Route path="/settings" component={Settings} />
       <Route path="/help" component={() => (
         <div className="space-y-4">

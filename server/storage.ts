@@ -3,7 +3,7 @@ import { eq, and, desc, asc, sql, isNotNull } from "drizzle-orm";
 import {
   organizations, users, memberships, accounts, contacts, deals, activities,
   projects, tasks, invoices, invoiceLineItems, vendors, missions, documents,
-  workflowRuns, importJobs, contracts, expenses,
+  workflowRuns, importJobs, contracts, expenses, invitations,
   type Organization, type InsertOrganization,
   type User, type InsertUser,
   type Membership, type InsertMembership,
@@ -22,8 +22,9 @@ import {
   type ImportJob, type InsertImportJob,
   type Contract, type InsertContract,
   type Expense, type InsertExpense,
+  type Invitation, type InsertInvitation,
   type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
-  type ExpenseStatus, type ExpenseCategory
+  type ExpenseStatus, type ExpenseCategory, type InvitationStatus
 } from "@shared/schema";
 
 export interface IStorage {
@@ -160,6 +161,15 @@ export interface IStorage {
   getAllDealNotionIdMap(orgId: string): Promise<Map<string, string>>;
   getAllProjectNotionIdMap(orgId: string): Promise<Map<string, string>>;
   getAllVendorNotionIdMap(orgId: string): Promise<Map<string, string>>;
+  
+  getInvitations(orgId: string, status?: InvitationStatus): Promise<Invitation[]>;
+  getInvitation(id: string, orgId: string): Promise<Invitation | undefined>;
+  getInvitationByToken(tokenHash: string): Promise<Invitation | undefined>;
+  createInvitation(invitation: InsertInvitation): Promise<Invitation>;
+  updateInvitation(id: string, orgId: string, data: Partial<InsertInvitation>): Promise<Invitation | undefined>;
+  deleteInvitation(id: string, orgId: string): Promise<boolean>;
+  acceptInvitation(id: string): Promise<Invitation | undefined>;
+  revokeInvitation(id: string, orgId: string): Promise<Invitation | undefined>;
   
   getDashboardStats(orgId: string): Promise<{
     totalDeals: number;
@@ -963,6 +973,63 @@ export class DatabaseStorage implements IStorage {
       if (vndr.notionPageId) map.set(vndr.notionPageId, vndr.id);
     }
     return map;
+  }
+
+  async getInvitations(orgId: string, status?: InvitationStatus): Promise<Invitation[]> {
+    if (status) {
+      return db.select().from(invitations)
+        .where(and(eq(invitations.orgId, orgId), eq(invitations.status, status)))
+        .orderBy(desc(invitations.createdAt));
+    }
+    return db.select().from(invitations)
+      .where(eq(invitations.orgId, orgId))
+      .orderBy(desc(invitations.createdAt));
+  }
+
+  async getInvitation(id: string, orgId: string): Promise<Invitation | undefined> {
+    const [invitation] = await db.select().from(invitations)
+      .where(and(eq(invitations.id, id), eq(invitations.orgId, orgId)));
+    return invitation;
+  }
+
+  async getInvitationByToken(tokenHash: string): Promise<Invitation | undefined> {
+    const [invitation] = await db.select().from(invitations)
+      .where(eq(invitations.tokenHash, tokenHash));
+    return invitation;
+  }
+
+  async createInvitation(invitation: InsertInvitation): Promise<Invitation> {
+    const [created] = await db.insert(invitations).values(invitation).returning();
+    return created;
+  }
+
+  async updateInvitation(id: string, orgId: string, data: Partial<InsertInvitation>): Promise<Invitation | undefined> {
+    const [updated] = await db.update(invitations).set(data)
+      .where(and(eq(invitations.id, id), eq(invitations.orgId, orgId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteInvitation(id: string, orgId: string): Promise<boolean> {
+    const result = await db.delete(invitations)
+      .where(and(eq(invitations.id, id), eq(invitations.orgId, orgId)));
+    return true;
+  }
+
+  async acceptInvitation(id: string): Promise<Invitation | undefined> {
+    const [updated] = await db.update(invitations)
+      .set({ status: 'accepted', usedAt: new Date() })
+      .where(eq(invitations.id, id))
+      .returning();
+    return updated;
+  }
+
+  async revokeInvitation(id: string, orgId: string): Promise<Invitation | undefined> {
+    const [updated] = await db.update(invitations)
+      .set({ status: 'revoked' })
+      .where(and(eq(invitations.id, id), eq(invitations.orgId, orgId)))
+      .returning();
+    return updated;
   }
 }
 
