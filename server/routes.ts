@@ -1983,7 +1983,7 @@ export async function registerRoutes(
     email: z.string().email(),
     role: z.enum(['admin', 'sales', 'delivery', 'finance', 'client_admin', 'client_member', 'vendor']),
     space: z.enum(['internal', 'client', 'vendor']),
-    expiresInMinutes: z.number().min(5).max(10080).default(30),
+    expiresInMinutes: z.number().min(5).max(525600).default(30), // Max 1 year
     accountId: z.string().uuid().optional(),
     vendorId: z.string().uuid().optional(),
   });

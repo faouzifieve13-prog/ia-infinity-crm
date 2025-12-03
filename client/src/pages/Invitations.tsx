@@ -72,6 +72,15 @@ const statusConfig: Record<string, { label: string; variant: 'default' | 'second
   revoked: { label: 'Revoked', variant: 'destructive' },
 };
 
+const formatExpiration = (minutes: number): string => {
+  if (minutes < 60) return `${minutes} minutes`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)} hour${minutes >= 120 ? 's' : ''}`;
+  if (minutes < 10080) return `${Math.floor(minutes / 1440)} day${minutes >= 2880 ? 's' : ''}`;
+  if (minutes < 43200) return `${Math.floor(minutes / 10080)} week${minutes >= 20160 ? 's' : ''}`;
+  if (minutes < 525600) return `${Math.floor(minutes / 43200)} month${minutes >= 86400 ? 's' : ''}`;
+  return `${Math.floor(minutes / 525600)} year${minutes >= 1051200 ? 's' : ''}`;
+};
+
 export default function Invitations() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -241,7 +250,7 @@ export default function Invitations() {
                     </Button>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    This link will expire in {formData.expiresInMinutes} minutes and can only be used once.
+                    This link will expire in {formatExpiration(formData.expiresInMinutes)} and can only be used once.
                   </p>
                 </div>
                 <DialogFooter>
@@ -359,6 +368,10 @@ export default function Invitations() {
                         <SelectItem value="60">1 hour</SelectItem>
                         <SelectItem value="1440">24 hours</SelectItem>
                         <SelectItem value="10080">7 days</SelectItem>
+                        <SelectItem value="43200">1 month</SelectItem>
+                        <SelectItem value="129600">3 months</SelectItem>
+                        <SelectItem value="259200">6 months</SelectItem>
+                        <SelectItem value="525600">1 year</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
