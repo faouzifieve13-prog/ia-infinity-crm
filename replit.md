@@ -96,7 +96,7 @@ Preferred communication style: Simple, everyday language.
 - **organizations**: Multi-tenant isolation boundary
 - **users**: Authentication and identity
 - **memberships**: Links users to organizations with roles and space access
-- **accounts**: Client organizations/companies
+- **accounts**: Client organizations/companies (with Notion sync fields: notionPageId, notionLastEditedAt)
 - **deals**: Sales pipeline opportunities with stages and amounts
 - **projects**: Client engagements with status tracking
 - **tasks**: Granular work items with assignments and priorities
@@ -104,7 +104,10 @@ Preferred communication style: Simple, everyday language.
 - **vendors**: Contractor directory with skills and availability
 - **missions**: Vendor assignments linked to projects
 - **documents**: File metadata with account/project associations
+- **expenses**: Business expenses with categories (tools, software, services, travel, etc.) and Notion sync support
+- **contracts**: Client contracts with different types (audit, prestation, formation, suivi)
 - **workflow_runs**: Automation execution logs
+- **import_jobs**: Tracks Notion sync history and status
 
 ### Authentication & Authorization
 
@@ -126,11 +129,31 @@ Preferred communication style: Simple, everyday language.
 - Full authentication system needs to be implemented
 - Session management and password handling not yet in place
 
+### Notion Synchronization
+
+**Overview**
+- Import clients and expenses from Notion databases
+- Automatic field mapping for French and English property names
+- Upsert logic by notionPageId to prevent duplicate imports
+- Import job tracking for sync history and error logging
+
+**Supported Mappings**
+- **Accounts**: Name, Contact, Email, Website, Status, Plan
+- **Expenses**: Title, Amount, Category, Date, Status, Description
+
+**API Endpoints**
+- `GET /api/notion/databases` - List accessible Notion databases
+- `POST /api/notion/sync/accounts` - Import clients from Notion
+- `POST /api/notion/sync/expenses` - Import expenses from Notion
+- `GET /api/notion/sync/jobs` - View sync history
+
+**Frontend Page**: `/notion-sync` - Configuration UI for triggering syncs
+
 ### External Dependencies
 
 **Third-Party Services**
 - **Neon Database**: Serverless PostgreSQL hosting
-- **Notion API**: Workflow integration (@notionhq/client)
+- **Notion API**: Data synchronization (@notionhq/client) with Replit connection for secure token management
 - **n8n**: Workflow automation platform (referenced in schema, webhook integration)
 
 **Development Tools**
