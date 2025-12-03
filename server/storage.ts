@@ -3,7 +3,7 @@ import { eq, and, desc, asc, sql } from "drizzle-orm";
 import {
   organizations, users, memberships, accounts, contacts, deals, activities,
   projects, tasks, invoices, invoiceLineItems, vendors, missions, documents,
-  workflowRuns, importJobs, contracts,
+  workflowRuns, importJobs, contracts, expenses,
   type Organization, type InsertOrganization,
   type User, type InsertUser,
   type Membership, type InsertMembership,
@@ -21,7 +21,9 @@ import {
   type WorkflowRun, type InsertWorkflowRun,
   type ImportJob, type InsertImportJob,
   type Contract, type InsertContract,
-  type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus
+  type Expense, type InsertExpense,
+  type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
+  type ExpenseStatus, type ExpenseCategory
 } from "@shared/schema";
 
 export interface IStorage {
@@ -117,6 +119,17 @@ export interface IStorage {
   getContractsByDeal(dealId: string, orgId: string): Promise<Contract[]>;
   getContractsByAccount(accountId: string, orgId: string): Promise<Contract[]>;
   generateContractNumber(orgId: string, type: ContractType): Promise<string>;
+  
+  getExpenses(orgId: string, category?: ExpenseCategory, status?: ExpenseStatus): Promise<Expense[]>;
+  getExpense(id: string, orgId: string): Promise<Expense | undefined>;
+  getExpenseByNotionPageId(notionPageId: string, orgId: string): Promise<Expense | undefined>;
+  createExpense(expense: InsertExpense): Promise<Expense>;
+  updateExpense(id: string, orgId: string, data: Partial<InsertExpense>): Promise<Expense | undefined>;
+  deleteExpense(id: string, orgId: string): Promise<boolean>;
+  upsertExpenseByNotionId(notionPageId: string, orgId: string, data: InsertExpense): Promise<Expense>;
+  
+  getAccountByNotionPageId(notionPageId: string, orgId: string): Promise<Account | undefined>;
+  upsertAccountByNotionId(notionPageId: string, orgId: string, data: InsertAccount): Promise<Account>;
   
   getDashboardStats(orgId: string): Promise<{
     totalDeals: number;
@@ -672,6 +685,77 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(contracts.orgId, orgId), eq(contracts.type, type)));
     const nextNumber = String(existingContracts.length + 1).padStart(4, '0');
     return `${typePrefix}-${year}-${nextNumber}`;
+  }
+
+  async getExpenses(orgId: string, category?: ExpenseCategory, status?: ExpenseStatus): Promise<Expense[]> {
+    if (category && status) {
+      return db.select().from(expenses)
+        .where(and(eq(expenses.orgId, orgId), eq(expenses.category, category), eq(expenses.status, status)))
+        .orderBy(desc(expenses.date));
+    }
+    if (category) {
+      return db.select().from(expenses)
+        .where(and(eq(expenses.orgId, orgId), eq(expenses.category, category)))
+        .orderBy(desc(expenses.date));
+    }
+    if (status) {
+      return db.select().from(expenses)
+        .where(and(eq(expenses.orgId, orgId), eq(expenses.status, status)))
+        .orderBy(desc(expenses.date));
+    }
+    return db.select().from(expenses).where(eq(expenses.orgId, orgId)).orderBy(desc(expenses.date));
+  }
+
+  async getExpense(id: string, orgId: string): Promise<Expense | undefined> {
+    const [expense] = await db.select().from(expenses)
+      .where(and(eq(expenses.id, id), eq(expenses.orgId, orgId)));
+    return expense;
+  }
+
+  async getExpenseByNotionPageId(notionPageId: string, orgId: string): Promise<Expense | undefined> {
+    const [expense] = await db.select().from(expenses)
+      .where(and(eq(expenses.notionPageId, notionPageId), eq(expenses.orgId, orgId)));
+    return expense;
+  }
+
+  async createExpense(expense: InsertExpense): Promise<Expense> {
+    const [created] = await db.insert(expenses).values(expense).returning();
+    return created;
+  }
+
+  async updateExpense(id: string, orgId: string, data: Partial<InsertExpense>): Promise<Expense | undefined> {
+    const [updated] = await db.update(expenses).set({ ...data, updatedAt: new Date() })
+      .where(and(eq(expenses.id, id), eq(expenses.orgId, orgId))).returning();
+    return updated;
+  }
+
+  async deleteExpense(id: string, orgId: string): Promise<boolean> {
+    await db.delete(expenses).where(and(eq(expenses.id, id), eq(expenses.orgId, orgId)));
+    return true;
+  }
+
+  async upsertExpenseByNotionId(notionPageId: string, orgId: string, data: InsertExpense): Promise<Expense> {
+    const existing = await this.getExpenseByNotionPageId(notionPageId, orgId);
+    if (existing) {
+      const updated = await this.updateExpense(existing.id, orgId, data);
+      return updated!;
+    }
+    return this.createExpense({ ...data, notionPageId });
+  }
+
+  async getAccountByNotionPageId(notionPageId: string, orgId: string): Promise<Account | undefined> {
+    const [account] = await db.select().from(accounts)
+      .where(and(eq(accounts.notionPageId, notionPageId), eq(accounts.orgId, orgId)));
+    return account;
+  }
+
+  async upsertAccountByNotionId(notionPageId: string, orgId: string, data: InsertAccount): Promise<Account> {
+    const existing = await this.getAccountByNotionPageId(notionPageId, orgId);
+    if (existing) {
+      const updated = await this.updateAccount(existing.id, orgId, data);
+      return updated!;
+    }
+    return this.createAccount({ ...data, notionPageId });
   }
 }
 

@@ -19,6 +19,8 @@ export const workflowStatusEnum = pgEnum('workflow_status', ['active', 'paused',
 export const storageProviderEnum = pgEnum('storage_provider', ['drive', 'local']);
 export const contractTypeEnum = pgEnum('contract_type', ['audit', 'prestation', 'formation', 'suivi']);
 export const contractStatusEnum = pgEnum('contract_status', ['draft', 'sent', 'signed', 'active', 'completed', 'cancelled']);
+export const expenseStatusEnum = pgEnum('expense_status', ['pending', 'paid', 'cancelled']);
+export const expenseCategoryEnum = pgEnum('expense_category', ['tools', 'software', 'services', 'travel', 'marketing', 'office', 'salaries', 'taxes', 'other']);
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -57,10 +59,13 @@ export const accounts = pgTable("accounts", {
   status: accountStatusEnum("status").notNull().default('active'),
   contactName: text("contact_name").notNull(),
   contactEmail: text("contact_email").notNull(),
+  notionPageId: text("notion_page_id"),
+  notionLastEditedAt: timestamp("notion_last_edited_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("accounts_org_idx").on(table.orgId),
   index("accounts_status_idx").on(table.orgId, table.status),
+  index("accounts_notion_idx").on(table.notionPageId),
 ]);
 
 export const contacts = pgTable("contacts", {
@@ -307,6 +312,35 @@ export const contracts = pgTable("contracts", {
   index("contracts_type_idx").on(table.orgId, table.type),
 ]);
 
+export const expenses = pgTable("expenses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  accountId: varchar("account_id").references(() => accounts.id),
+  vendorId: varchar("vendor_id").references(() => vendors.id),
+  projectId: varchar("project_id").references(() => projects.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  currency: text("currency").notNull().default('EUR'),
+  category: expenseCategoryEnum("category").notNull().default('other'),
+  status: expenseStatusEnum("status").notNull().default('pending'),
+  date: timestamp("date").notNull(),
+  dueDate: timestamp("due_date"),
+  paidDate: timestamp("paid_date"),
+  notionPageId: text("notion_page_id"),
+  notionLastEditedAt: timestamp("notion_last_edited_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("expenses_org_idx").on(table.orgId),
+  index("expenses_account_idx").on(table.accountId),
+  index("expenses_vendor_idx").on(table.vendorId),
+  index("expenses_project_idx").on(table.projectId),
+  index("expenses_notion_idx").on(table.notionPageId),
+  index("expenses_category_idx").on(table.orgId, table.category),
+  index("expenses_status_idx").on(table.orgId, table.status),
+]);
+
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   memberships: many(memberships),
   accounts: many(accounts),
@@ -458,6 +492,25 @@ export const contractsRelations = relations(contracts, ({ one }) => ({
   }),
 }));
 
+export const expensesRelations = relations(expenses, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [expenses.orgId],
+    references: [organizations.id],
+  }),
+  account: one(accounts, {
+    fields: [expenses.accountId],
+    references: [accounts.id],
+  }),
+  vendor: one(vendors, {
+    fields: [expenses.vendorId],
+    references: [vendors.id],
+  }),
+  project: one(projects, {
+    fields: [expenses.projectId],
+    references: [projects.id],
+  }),
+}));
+
 export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertMembershipSchema = createInsertSchema(memberships).omit({ id: true, createdAt: true });
@@ -475,6 +528,7 @@ export const insertDocumentSchema = createInsertSchema(documents).omit({ id: tru
 export const insertWorkflowRunSchema = createInsertSchema(workflowRuns).omit({ id: true });
 export const insertImportJobSchema = createInsertSchema(importJobs).omit({ id: true, startedAt: true });
 export const insertContractSchema = createInsertSchema(contracts).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertExpenseSchema = createInsertSchema(expenses).omit({ id: true, createdAt: true, updatedAt: true });
 
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -493,6 +547,7 @@ export type InsertDocument = z.infer<typeof insertDocumentSchema>;
 export type InsertWorkflowRun = z.infer<typeof insertWorkflowRunSchema>;
 export type InsertImportJob = z.infer<typeof insertImportJobSchema>;
 export type InsertContract = z.infer<typeof insertContractSchema>;
+export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 
 export type Organization = typeof organizations.$inferSelect;
 export type User = typeof users.$inferSelect;
@@ -511,6 +566,7 @@ export type Document = typeof documents.$inferSelect;
 export type WorkflowRun = typeof workflowRuns.$inferSelect;
 export type ImportJob = typeof importJobs.$inferSelect;
 export type Contract = typeof contracts.$inferSelect;
+export type Expense = typeof expenses.$inferSelect;
 
 export type UserRole = 'admin' | 'sales' | 'delivery' | 'finance' | 'client_admin' | 'client_member' | 'vendor';
 export type Space = 'internal' | 'client' | 'vendor';
@@ -526,3 +582,5 @@ export type ActivityType = 'call' | 'email' | 'meeting' | 'note';
 export type WorkflowStatus = 'active' | 'paused' | 'error' | 'success' | 'failed';
 export type ContractType = 'audit' | 'prestation' | 'formation' | 'suivi';
 export type ContractStatus = 'draft' | 'sent' | 'signed' | 'active' | 'completed' | 'cancelled';
+export type ExpenseStatus = 'pending' | 'paid' | 'cancelled';
+export type ExpenseCategory = 'tools' | 'software' | 'services' | 'travel' | 'marketing' | 'office' | 'salaries' | 'taxes' | 'other';

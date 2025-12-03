@@ -920,5 +920,331 @@ export async function registerRoutes(
     }
   });
 
+  // ============================================
+  // Notion Integration Routes
+  // ============================================
+
+  app.get("/api/notion/databases", async (req: Request, res: Response) => {
+    try {
+      const { listNotionDatabases } = await import("./notion");
+      const databases = await listNotionDatabases();
+      res.json(databases);
+    } catch (error) {
+      console.error("List Notion databases error:", error);
+      res.status(500).json({ error: "Failed to list Notion databases" });
+    }
+  });
+
+  app.get("/api/notion/databases/:id/schema", async (req: Request, res: Response) => {
+    try {
+      const { getDatabaseSchema } = await import("./notion");
+      const schema = await getDatabaseSchema(req.params.id);
+      res.json(schema);
+    } catch (error) {
+      console.error("Get Notion database schema error:", error);
+      res.status(500).json({ error: "Failed to get database schema" });
+    }
+  });
+
+  const notionSyncSchema = z.object({
+    databaseId: z.string().min(1, "databaseId is required"),
+    fieldMapping: z.record(z.string()).optional(),
+  });
+
+  app.post("/api/notion/sync/accounts", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const parsed = notionSyncSchema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      
+      const { databaseId, fieldMapping } = parsed.data;
+
+      const { queryDatabase, getPropertyValue, findPropertyByPossibleNames } = await import("./notion");
+      
+      const importJob = await storage.createImportJob({
+        orgId,
+        source: `notion:accounts:${databaseId}`,
+        status: 'running',
+        totalRecords: 0,
+        processedRecords: 0,
+        errorCount: 0,
+      });
+
+      let nextCursor: string | null = null;
+      let totalProcessed = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      do {
+        const { results, nextCursor: cursor, hasMore } = await queryDatabase(databaseId, nextCursor || undefined);
+        
+        for (const page of results) {
+          try {
+            const properties = page.properties || {};
+            
+            const mapping = fieldMapping || {
+              name: findPropertyByPossibleNames(properties, ['Name', 'Nom', 'Company', 'Entreprise', 'Client', 'Société']) || 'Name',
+              contactName: findPropertyByPossibleNames(properties, ['Contact', 'Contact Name', 'Nom du contact', 'Responsable']) || 'Contact',
+              contactEmail: findPropertyByPossibleNames(properties, ['Email', 'E-mail', 'Mail']) || 'Email',
+              domain: findPropertyByPossibleNames(properties, ['Domain', 'Website', 'Site', 'URL']) || 'Website',
+              status: findPropertyByPossibleNames(properties, ['Status', 'Statut', 'État']) || 'Status',
+              plan: findPropertyByPossibleNames(properties, ['Plan', 'Offre', 'Tier']) || 'Plan',
+            };
+
+            const name = getPropertyValue(page, mapping.name) || 'Unknown';
+            const contactName = getPropertyValue(page, mapping.contactName) || name;
+            const contactEmail = getPropertyValue(page, mapping.contactEmail) || `contact@${name.toLowerCase().replace(/\s+/g, '')}.com`;
+            const domain = getPropertyValue(page, mapping.domain);
+            const statusRaw = getPropertyValue(page, mapping.status);
+            const plan = getPropertyValue(page, mapping.plan) || 'standard';
+            
+            let status: 'active' | 'inactive' | 'churned' = 'active';
+            if (statusRaw) {
+              const statusLower = String(statusRaw).toLowerCase();
+              if (statusLower.includes('inactif') || statusLower.includes('inactive')) {
+                status = 'inactive';
+              } else if (statusLower.includes('churned') || statusLower.includes('perdu') || statusLower.includes('lost')) {
+                status = 'churned';
+              }
+            }
+
+            await storage.upsertAccountByNotionId(page.id, orgId, {
+              orgId,
+              name,
+              domain: domain || null,
+              plan,
+              status,
+              contactName,
+              contactEmail,
+              notionPageId: page.id,
+              notionLastEditedAt: page.last_edited_time ? new Date(page.last_edited_time) : null,
+            });
+            
+            totalProcessed++;
+          } catch (err) {
+            errorCount++;
+            errors.push(`Page ${page.id}: ${err}`);
+          }
+        }
+
+        nextCursor = cursor;
+        if (!cursor) break;
+      } while (true);
+
+      await storage.updateImportJob(importJob.id, orgId, {
+        status: 'completed',
+        totalRecords: totalProcessed + errorCount,
+        processedRecords: totalProcessed,
+        errorCount,
+        completedAt: new Date(),
+        errors: errors.length > 0 ? errors.join('\n') : null,
+      });
+
+      res.json({
+        success: true,
+        importJobId: importJob.id,
+        totalProcessed,
+        errorCount,
+        errors: errors.slice(0, 10),
+      });
+    } catch (error) {
+      console.error("Sync Notion accounts error:", error);
+      res.status(500).json({ error: "Failed to sync accounts from Notion" });
+    }
+  });
+
+  app.post("/api/notion/sync/expenses", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const parsed = notionSyncSchema.safeParse(req.body);
+      
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      
+      const { databaseId, fieldMapping } = parsed.data;
+
+      const { queryDatabase, getPropertyValue, findPropertyByPossibleNames } = await import("./notion");
+      
+      const importJob = await storage.createImportJob({
+        orgId,
+        source: `notion:expenses:${databaseId}`,
+        status: 'running',
+        totalRecords: 0,
+        processedRecords: 0,
+        errorCount: 0,
+      });
+
+      let nextCursor: string | null = null;
+      let totalProcessed = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      do {
+        const { results, nextCursor: cursor } = await queryDatabase(databaseId, nextCursor || undefined);
+        
+        for (const page of results) {
+          try {
+            const properties = page.properties || {};
+            
+            const mapping = fieldMapping || {
+              title: findPropertyByPossibleNames(properties, ['Name', 'Nom', 'Title', 'Titre', 'Description', 'Libellé']) || 'Name',
+              amount: findPropertyByPossibleNames(properties, ['Amount', 'Montant', 'Total', 'Prix', 'Cost', 'Coût']) || 'Amount',
+              category: findPropertyByPossibleNames(properties, ['Category', 'Catégorie', 'Type']) || 'Category',
+              status: findPropertyByPossibleNames(properties, ['Status', 'Statut', 'État', 'Paid', 'Payé']) || 'Status',
+              date: findPropertyByPossibleNames(properties, ['Date', 'Date de paiement', 'Payment Date']) || 'Date',
+              description: findPropertyByPossibleNames(properties, ['Description', 'Notes', 'Remarques', 'Details']) || 'Description',
+            };
+
+            const title = getPropertyValue(page, mapping.title) || 'Untitled Expense';
+            const amount = getPropertyValue(page, mapping.amount) || 0;
+            const categoryRaw = getPropertyValue(page, mapping.category);
+            const statusRaw = getPropertyValue(page, mapping.status);
+            const dateRaw = getPropertyValue(page, mapping.date);
+            const description = getPropertyValue(page, mapping.description);
+            
+            let category: 'tools' | 'software' | 'services' | 'travel' | 'marketing' | 'office' | 'salaries' | 'taxes' | 'other' = 'other';
+            if (categoryRaw) {
+              const catLower = String(categoryRaw).toLowerCase();
+              if (catLower.includes('tool') || catLower.includes('outil')) category = 'tools';
+              else if (catLower.includes('software') || catLower.includes('logiciel') || catLower.includes('saas')) category = 'software';
+              else if (catLower.includes('service') || catLower.includes('prestation')) category = 'services';
+              else if (catLower.includes('travel') || catLower.includes('voyage') || catLower.includes('déplacement')) category = 'travel';
+              else if (catLower.includes('marketing') || catLower.includes('pub') || catLower.includes('comm')) category = 'marketing';
+              else if (catLower.includes('office') || catLower.includes('bureau')) category = 'office';
+              else if (catLower.includes('salar') || catLower.includes('paie')) category = 'salaries';
+              else if (catLower.includes('tax') || catLower.includes('impôt') || catLower.includes('cotisation')) category = 'taxes';
+            }
+
+            let status: 'pending' | 'paid' | 'cancelled' = 'pending';
+            if (statusRaw) {
+              const statusLower = String(statusRaw).toLowerCase();
+              if (statusLower.includes('paid') || statusLower.includes('payé') || statusLower === 'true' || statusRaw === true) {
+                status = 'paid';
+              } else if (statusLower.includes('cancel') || statusLower.includes('annulé')) {
+                status = 'cancelled';
+              }
+            }
+
+            const date = dateRaw ? new Date(dateRaw) : new Date();
+
+            await storage.upsertExpenseByNotionId(page.id, orgId, {
+              orgId,
+              title,
+              description: description || null,
+              amount: String(amount),
+              currency: 'EUR',
+              category,
+              status,
+              date,
+              notionPageId: page.id,
+              notionLastEditedAt: page.last_edited_time ? new Date(page.last_edited_time) : null,
+            });
+            
+            totalProcessed++;
+          } catch (err) {
+            errorCount++;
+            errors.push(`Page ${page.id}: ${err}`);
+          }
+        }
+
+        nextCursor = cursor;
+        if (!cursor) break;
+      } while (true);
+
+      await storage.updateImportJob(importJob.id, orgId, {
+        status: 'completed',
+        totalRecords: totalProcessed + errorCount,
+        processedRecords: totalProcessed,
+        errorCount,
+        completedAt: new Date(),
+        errors: errors.length > 0 ? errors.join('\n') : null,
+      });
+
+      res.json({
+        success: true,
+        importJobId: importJob.id,
+        totalProcessed,
+        errorCount,
+        errors: errors.slice(0, 10),
+      });
+    } catch (error) {
+      console.error("Sync Notion expenses error:", error);
+      res.status(500).json({ error: "Failed to sync expenses from Notion" });
+    }
+  });
+
+  app.get("/api/notion/sync/jobs", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const jobs = await storage.getImportJobs(orgId);
+      res.json(jobs);
+    } catch (error) {
+      console.error("Get import jobs error:", error);
+      res.status(500).json({ error: "Failed to get import jobs" });
+    }
+  });
+
+  // ============================================
+  // Expenses Routes
+  // ============================================
+
+  app.get("/api/expenses", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const category = req.query.category as any | undefined;
+      const status = req.query.status as any | undefined;
+      const expenses = await storage.getExpenses(orgId, category, status);
+      res.json(expenses);
+    } catch (error) {
+      console.error("Get expenses error:", error);
+      res.status(500).json({ error: "Failed to get expenses" });
+    }
+  });
+
+  app.post("/api/expenses", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const { insertExpenseSchema } = await import("@shared/schema");
+      const data = insertExpenseSchema.parse({ ...req.body, orgId });
+      const expense = await storage.createExpense(data);
+      res.status(201).json(expense);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      console.error("Create expense error:", error);
+      res.status(500).json({ error: "Failed to create expense" });
+    }
+  });
+
+  app.patch("/api/expenses/:id", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const expense = await storage.updateExpense(req.params.id, orgId, req.body);
+      if (!expense) {
+        return res.status(404).json({ error: "Expense not found" });
+      }
+      res.json(expense);
+    } catch (error) {
+      console.error("Update expense error:", error);
+      res.status(500).json({ error: "Failed to update expense" });
+    }
+  });
+
+  app.delete("/api/expenses/:id", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      await storage.deleteExpense(req.params.id, orgId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete expense error:", error);
+      res.status(500).json({ error: "Failed to delete expense" });
+    }
+  });
+
   return httpServer;
 }
