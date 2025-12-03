@@ -12,6 +12,7 @@ import {
   type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
   type UserRole, type Space, type InvitationStatus
 } from "@shared/schema";
+import { sendInvitationEmail, testGmailConnection } from "./gmail";
 
 function generateToken(): string {
   return randomBytes(32).toString("hex");
@@ -1986,6 +1987,7 @@ export async function registerRoutes(
     expiresInMinutes: z.number().min(5).max(525600).default(30), // Max 1 year
     accountId: z.string().uuid().optional(),
     vendorId: z.string().uuid().optional(),
+    sendEmail: z.boolean().default(false),
   });
 
   app.post("/api/invitations", async (req: Request, res: Response) => {
@@ -2014,10 +2016,24 @@ export async function registerRoutes(
         : 'http://localhost:5000';
       const inviteLink = `${baseUrl}/auth/accept-invite?token=${token}`;
       
+      let emailSent = false;
+      if (parsed.sendEmail) {
+        const org = await storage.getOrganization(orgId);
+        emailSent = await sendInvitationEmail({
+          to: parsed.email,
+          inviteLink,
+          role: parsed.role,
+          space: parsed.space,
+          expiresAt,
+          organizationName: org?.name || 'IA Infinity',
+        });
+      }
+      
       const { tokenHash: _, ...safeInvitation } = invitation;
       res.status(201).json({
         ...safeInvitation,
         inviteLink,
+        emailSent,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -2153,6 +2169,17 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Delete invitation error:", error);
       res.status(500).json({ error: "Failed to delete invitation" });
+    }
+  });
+
+  // Gmail connection status
+  app.get("/api/gmail/status", async (req: Request, res: Response) => {
+    try {
+      const status = await testGmailConnection();
+      res.json(status);
+    } catch (error) {
+      console.error("Gmail status error:", error);
+      res.status(500).json({ connected: false, error: "Failed to check Gmail status" });
     }
   });
 
