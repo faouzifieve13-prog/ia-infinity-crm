@@ -120,11 +120,12 @@ Preferred communication style: Simple, everyday language.
 **Magic Link Invitations**
 - Passwordless invitation system for onboarding users
 - Secure token generation using crypto.randomBytes (32 bytes hex)
-- SHA-256 hashed tokens stored in database
-- Configurable expiration (15 min to 7 days)
+- SHA-256 hashed tokens stored in database (never exposed in API responses)
+- Configurable expiration: 15 min, 30 min, 1 hour, 24 hours, 7 days, 1 month, 3 months, 6 months, 1 year
 - Single-use tokens invalidated upon acceptance
 - Role and space assignment at invitation time
 - Optional linking to accounts (for clients) or vendors
+- Accept page at `/auth/accept-invite` (outside main layout)
 
 **Invitation Status Flow**
 - pending → accepted (user clicked link and joined)
@@ -154,6 +155,22 @@ Preferred communication style: Simple, everyday language.
   - client_admin/client_member: client portal only
   - vendor: vendor space only
 - UI components conditionally render based on role and current space
+
+**Three Distinct Portals**
+1. **Portail Admin** (internal space):
+   - Full access: Pipeline, Comptes, Contacts, Projets, Tâches, Contrats, Workflows, Documents, Factures, Dépenses, Prestataires
+   - Admin features: Sync Notion, Invitations, Paramètres
+   - Visual: Shield icon, primary color badge
+   
+2. **Portail Client** (client space):
+   - Limited access: Tableau de bord, Projets, Tâches, Contrats, Documents, Factures
+   - Settings and Help available
+   - Visual: Building icon, blue color badge
+   
+3. **Portail Prestataire** (vendor space):
+   - Focused access: Tableau de bord, Projets, Tâches, Documents, Mes Missions
+   - Settings and Help available
+   - Visual: Wrench icon, emerald color badge
 
 **Planned Enhancement**
 - Full session-based authentication after accepting invitation
