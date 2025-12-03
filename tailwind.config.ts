@@ -81,6 +81,15 @@ export default {
           busy: "rgb(239 68 68)",
           offline: "rgb(156 163 175)",
         },
+        pipeline: {
+          prospect: "hsl(217 91% 35%)",
+          meeting: "hsl(262 83% 58%)",
+          proposal: "hsl(32 95% 44%)",
+          audit: "hsl(199 89% 48%)",
+          negotiation: "hsl(340 82% 52%)",
+          won: "hsl(142 76% 36%)",
+          lost: "hsl(0 84% 42%)",
+        },
       },
       fontFamily: {
         sans: ["var(--font-sans)"],
