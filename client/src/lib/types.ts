@@ -264,3 +264,25 @@ export interface Contract {
   createdAt?: string;
   updatedAt?: string;
 }
+
+export type ExpenseStatus = 'pending' | 'paid' | 'cancelled';
+export type ExpenseCategory = 'tools' | 'software' | 'services' | 'travel' | 'marketing' | 'office' | 'salaries' | 'taxes' | 'other';
+
+export interface Expense {
+  id: string;
+  orgId: string;
+  vendorId?: string | null;
+  title: string;
+  description?: string | null;
+  amount: string;
+  currency: string;
+  category: ExpenseCategory;
+  status: ExpenseStatus;
+  date?: string | null;
+  paidDate?: string | null;
+  receiptUrl?: string | null;
+  notionPageId?: string | null;
+  notionLastEditedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}

@@ -22,8 +22,17 @@ import {
   Building,
   Wrench,
   Sparkles,
+  Calendar,
+  TrendingUp,
+  UserCheck,
+  Handshake,
+  ChevronDown,
+  ChevronRight,
+  PieChart,
+  CreditCard,
+  FolderOpen,
 } from 'lucide-react';
-import { SiNotion } from 'react-icons/si';
+import { useState } from 'react';
 import {
   Sidebar,
   SidebarContent,
@@ -35,9 +44,16 @@ import {
   SidebarMenuItem,
   SidebarHeader,
   SidebarFooter,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+  SidebarMenuSubButton,
 } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { useSpace } from '@/hooks/use-space';
 import type { Space } from '@/lib/types';
 
@@ -69,20 +85,76 @@ interface NavItem {
   spaces: Space[];
 }
 
-const navItems: NavItem[] = [
-  { title: 'Tableau de bord', url: '/', icon: LayoutDashboard, spaces: ['internal', 'client', 'vendor'] },
-  { title: 'Pipeline', url: '/pipeline', icon: Target, spaces: ['internal'] },
-  { title: 'Comptes', url: '/accounts', icon: Building2, spaces: ['internal'] },
-  { title: 'Contacts', url: '/contacts', icon: Users, spaces: ['internal'] },
-  { title: 'Projets', url: '/projects', icon: FolderKanban, spaces: ['internal', 'client', 'vendor'] },
-  { title: 'Tâches', url: '/tasks', icon: ListTodo, spaces: ['internal', 'client', 'vendor'] },
-  { title: 'Contrats', url: '/contracts', icon: FileSignature, spaces: ['internal', 'client'] },
-  { title: 'Workflows', url: '/workflows', icon: Workflow, spaces: ['internal'] },
-  { title: 'Documents', url: '/documents', icon: FileText, spaces: ['internal', 'client', 'vendor'] },
-  { title: 'Factures', url: '/invoices', icon: Receipt, spaces: ['internal', 'client'] },
-  { title: 'Dépenses', url: '/expenses', icon: Wallet, spaces: ['internal'] },
-  { title: 'Prestataires', url: '/vendors', icon: Briefcase, spaces: ['internal'] },
-  { title: 'Mes Missions', url: '/missions', icon: UserCog, spaces: ['vendor'] },
+interface NavCategory {
+  title: string;
+  icon: typeof LayoutDashboard;
+  items: NavItem[];
+  spaces: Space[];
+}
+
+const navCategories: NavCategory[] = [
+  {
+    title: 'Commercial',
+    icon: TrendingUp,
+    spaces: ['internal'],
+    items: [
+      { title: 'Pipeline', url: '/pipeline', icon: Target, spaces: ['internal'] },
+      { title: 'Base Clients', url: '/accounts', icon: Building2, spaces: ['internal'] },
+    ],
+  },
+  {
+    title: 'Contacts',
+    icon: Users,
+    spaces: ['internal'],
+    items: [
+      { title: 'Tous les contacts', url: '/contacts', icon: Users, spaces: ['internal'] },
+    ],
+  },
+  {
+    title: 'Projets',
+    icon: FolderKanban,
+    spaces: ['internal', 'client', 'vendor'],
+    items: [
+      { title: 'Vue Projets', url: '/projects', icon: FolderKanban, spaces: ['internal', 'client', 'vendor'] },
+      { title: 'Mes Missions', url: '/missions', icon: UserCog, spaces: ['vendor'] },
+    ],
+  },
+  {
+    title: 'Finance',
+    icon: PieChart,
+    spaces: ['internal', 'client'],
+    items: [
+      { title: 'Tableau de bord', url: '/finance', icon: PieChart, spaces: ['internal'] },
+      { title: 'Factures Clients', url: '/invoices', icon: Receipt, spaces: ['internal', 'client'] },
+      { title: 'Dépenses', url: '/expenses', icon: Wallet, spaces: ['internal'] },
+      { title: 'Prestataires', url: '/vendors', icon: Briefcase, spaces: ['internal'] },
+    ],
+  },
+  {
+    title: 'Tâches',
+    icon: ListTodo,
+    spaces: ['internal', 'client', 'vendor'],
+    items: [
+      { title: 'Toutes les tâches', url: '/tasks', icon: ListTodo, spaces: ['internal', 'client', 'vendor'] },
+    ],
+  },
+  {
+    title: 'RDV',
+    icon: Calendar,
+    spaces: ['internal'],
+    items: [
+      { title: 'Calendrier', url: '/calendar', icon: Calendar, spaces: ['internal'] },
+    ],
+  },
+  {
+    title: 'Documents',
+    icon: FolderOpen,
+    spaces: ['internal', 'client', 'vendor'],
+    items: [
+      { title: 'Tous les documents', url: '/documents', icon: FileText, spaces: ['internal', 'client', 'vendor'] },
+      { title: 'Contrats', url: '/contracts', icon: FileSignature, spaces: ['internal', 'client'] },
+    ],
+  },
 ];
 
 const secondaryItems: NavItem[] = [
@@ -95,12 +167,31 @@ const secondaryItems: NavItem[] = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { currentSpace } = useSpace();
+  const [openCategories, setOpenCategories] = useState<string[]>(['Commercial', 'Projets', 'Finance', 'Documents']);
 
-  const filteredNavItems = navItems.filter((item) => item.spaces.includes(currentSpace));
-  const filteredSecondaryItems = secondaryItems.filter((item) => item.spaces.includes(currentSpace));
+  const toggleCategory = (category: string) => {
+    setOpenCategories(prev => 
+      prev.includes(category) 
+        ? prev.filter(c => c !== category)
+        : [...prev, category]
+    );
+  };
+
+  const filteredCategories = navCategories
+    .filter(cat => cat.spaces.includes(currentSpace))
+    .map(cat => ({
+      ...cat,
+      items: cat.items.filter(item => item.spaces.includes(currentSpace))
+    }))
+    .filter(cat => cat.items.length > 0);
+  
+  const filteredSecondaryItems = secondaryItems.filter(item => item.spaces.includes(currentSpace));
   
   const portal = portalConfig[currentSpace];
   const PortalIcon = portal.icon;
+
+  const isItemActive = (url: string) => location === url;
+  const isCategoryActive = (items: NavItem[]) => items.some(item => isItemActive(item.url));
 
   return (
     <Sidebar className="border-r-0">
@@ -127,35 +218,77 @@ export function AppSidebar() {
 
       <SidebarContent className="px-2">
         <SidebarGroup>
-          <SidebarGroupLabel className="text-xs font-semibold text-sidebar-foreground/50 uppercase tracking-wider px-2">
-            Navigation
-          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {filteredNavItems.map((item) => {
-                const isActive = location === item.url;
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={isActive}
-                      className={`relative group/item transition-all duration-200 ${isActive ? 'bg-sidebar-accent' : ''}`}
-                      data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
-                    >
-                      <Link href={item.url}>
-                        {isActive && (
-                          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-sidebar-primary" />
-                        )}
-                        <item.icon className={`h-4 w-4 transition-all duration-200 ${isActive ? 'text-sidebar-primary' : ''} group-hover/item:scale-110`} />
-                        <span className={isActive ? 'font-medium' : ''}>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location === '/'}
+                  className={`relative group/item transition-all duration-200 ${location === '/' ? 'bg-sidebar-accent' : ''}`}
+                  data-testid="nav-tableau-de-bord"
+                >
+                  <Link href="/">
+                    {location === '/' && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-sidebar-primary" />
+                    )}
+                    <LayoutDashboard className={`h-4 w-4 transition-all duration-200 ${location === '/' ? 'text-sidebar-primary' : ''} group-hover/item:scale-110`} />
+                    <span className={location === '/' ? 'font-medium' : ''}>Tableau de bord</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {filteredCategories.map((category) => (
+          <SidebarGroup key={category.title}>
+            <Collapsible
+              open={openCategories.includes(category.title)}
+              onOpenChange={() => toggleCategory(category.title)}
+            >
+              <CollapsibleTrigger asChild>
+                <SidebarGroupLabel className="flex items-center justify-between cursor-pointer hover:bg-sidebar-accent/50 rounded-md px-2 py-1.5 text-xs font-semibold text-sidebar-foreground/70 uppercase tracking-wider">
+                  <div className="flex items-center gap-2">
+                    <category.icon className={`h-4 w-4 ${isCategoryActive(category.items) ? 'text-sidebar-primary' : ''}`} />
+                    <span>{category.title}</span>
+                  </div>
+                  {openCategories.includes(category.title) ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </SidebarGroupLabel>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {category.items.map((item) => {
+                      const isActive = isItemActive(item.url);
+                      return (
+                        <SidebarMenuItem key={item.title}>
+                          <SidebarMenuButton
+                            asChild
+                            isActive={isActive}
+                            className={`relative group/item transition-all duration-200 ml-2 ${isActive ? 'bg-sidebar-accent' : ''}`}
+                            data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                          >
+                            <Link href={item.url}>
+                              {isActive && (
+                                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-sidebar-primary" />
+                              )}
+                              <item.icon className={`h-4 w-4 transition-all duration-200 ${isActive ? 'text-sidebar-primary' : ''} group-hover/item:scale-110`} />
+                              <span className={isActive ? 'font-medium' : ''}>{item.title}</span>
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border/50 px-2">

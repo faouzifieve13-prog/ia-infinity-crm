@@ -20,6 +20,8 @@ import Missions from "@/pages/Missions";
 import Documents from "@/pages/Documents";
 import Contracts from "@/pages/Contracts";
 import Expenses from "@/pages/Expenses";
+import Finance from "@/pages/Finance";
+import Calendar from "@/pages/Calendar";
 import NotionSync from "@/pages/NotionSync";
 import Invitations from "@/pages/Invitations";
 import AcceptInvite from "@/pages/AcceptInvite";
@@ -44,6 +46,8 @@ function Router() {
       <Route path="/documents" component={Documents} />
       <Route path="/contracts" component={Contracts} />
       <Route path="/expenses" component={Expenses} />
+      <Route path="/finance" component={Finance} />
+      <Route path="/calendar" component={Calendar} />
       <Route path="/notion-sync" component={NotionSync} />
       <Route path="/invitations" component={Invitations} />
       <Route path="/settings" component={Settings} />

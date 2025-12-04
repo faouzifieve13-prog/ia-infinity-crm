@@ -1,0 +1,126 @@
+Role: Senior Full-Stack Architect & Developer. Goal: Build "IA INFINITY MANAGER", a comprehensive Agency ERP & Dashboard. Target Language for UI: French (Français). Tech Stack: React (Frontend), Node.js/Express (Backend), PostgreSQL (Database), Tailwind CSS (UI), Replit Auth. Key Libraries:
+
+nodemailer (Emails/Gmail)
+
+puppeteer or pdf-lib (PDF Generation & Modification)
+
+react-signature-canvas (E-Signature)
+
+googleapis (Calendar)
+
+1. GLOBAL UI & NAVIGATION (Sidebar)
+The layout must feature a persistent dark sidebar with exactly these 7 categories:
+
+COMMERCIAL
+
+Sub-menus: "Base Prospects" (Pipeline), "Base Clients" (Active).
+
+CONTACTS
+
+Unified directory with filters: "Client", "Sous-traitant" (Provider), "Partenaire".
+
+PROJETS
+
+Kanban & List view. Lifecycle: Audit -> Production -> Livraison.
+
+FINANCE
+
+KPI Cards: CA Total, Dépenses Sous-traitants, Marge Nette.
+
+Tables: Factures en attente (Clients), Factures à payer (Sous-traitants).
+
+TACHES (Tasks)
+
+Internal To-Do list with priorities.
+
+RDV (Meetings)
+
+Calendar view fetching Google Calendar events.
+
+DOCUMENTS
+
+Global repository + Contract Management Center.
+
+2. CORE FUNCTIONALITIES & LOGIC
+A. The Contract Engine (Audit, Prestation & Sous-traitance)
+System: Create an HTML-to-PDF generator.
+
+Workflow:
+
+Prospect -> Audit: Button "Générer Contrat Audit". Fills placeholders (Name, Price, Date).
+
+Audit -> Client: Button "Générer Contrat Prestation".
+
+New Provider: When adding a "Sous-traitant", generate a "Contrat de Sous-traitance" (Confidentiality/Non-compete).
+
+E-Signature Module:
+
+In the Client Portal, add a tab "Documents à signer".
+
+On click, open a Modal with react-signature-canvas.
+
+Process: Capture signature -> Embed PNG into PDF -> Save as [Name]_SIGNED.pdf -> Email copy to Client & Admin.
+
+B. Project Delivery & Automation (The "Closure" Workflow)
+Context: A Subcontractor finishes a mission.
+
+UI Restriction: The "Envoyer Livraison" button is Disabled unless these 3 fields are filled:
+
+Compte Rendu (Text Area).
+
+Workflow Source (File Upload - JSON).
+
+Video Explicative (File Upload - MP4 or Link).
+
+Action: When clicked, it triggers the Email Notification System (see Section 3).
+
+C. Finance & Security
+Profit Calculation: Profit = (Invoices Sent to Clients) - (Invoices Received from Subcontractors).
+
+Security: Create a specific "Credentials Vault" in the Project view for clients to share passwords. Must be encrypted in the Database.
+
+3. AUTOMATION & EMAIL TEMPLATES
+Configure Nodemailer with Gmail Service. IMPORTANT: Use exactly this HTML template structure for the Project Delivery Email (sent to Client):
+
+JavaScript
+
+// Subject: Livraison de votre projet d'automatisation - IA INFINITY
+
+const emailBody = `
+  <div style="font-family: Arial, sans-serif; color: #333;">
+    <h2 style="color: #6d28d9;">Votre automatisation est prête ! 🚀</h2>
+    <p>Bonjour {{client_name}},</p>
+    <p>Nous avons le plaisir de vous informer que la phase de production de votre projet <strong>{{project_name}}</strong> est terminée.</p>
+    
+    <h3>📂 Vos Livrables :</h3>
+    <ul>
+      <li><strong>Compte Rendu :</strong> Inclus dans votre espace.</li>
+      <li><strong>Code Source (Workflow) :</strong> <a href="{{link_json}}">Télécharger le fichier JSON</a></li>
+      <li><strong>Vidéo Explicative :</strong> <a href="{{link_video}}">Visionner la démo</a></li>
+    </ul>
+
+    <p>Vous pouvez retrouver l'ensemble de ces éléments et votre facture directement sur votre espace client IA INFINITY.</p>
+    
+    <p>Nous restons à votre disposition pour le déploiement final.</p>
+    <p>Cordialement,<br><strong>L'équipe IA INFINITY</strong></p>
+  </div>
+`;
+4. DATABASE SCHEMA (Prisma)
+User: id, email, role (ADMIN, CLIENT, SUB), password_hash.
+
+Profile: polymorphic relation (ClientDetails or SubcontractorDetails).
+
+Project: id, status (AUDIT, PROD, DONE), credentials_encrypted.
+
+Document: id, type (CONTRACT_AUDIT, CONTRACT_MISSION, INVOICE), status (PENDING, SIGNED), file_url.
+
+Action: Start by generating the Database Schema and setting up the Server with the E-Signature and Email routes.
+
+3. Les dernières étapes manuelles pour vous
+Une fois que l'agent a terminé le code, vous aurez 3 petites actions à faire dans l'onglet "Secrets" (le cadenas) de Replit pour que tout s'allume :
+
+Ajouter DATABASE_URL : (Replit le fait souvent tout seul).
+
+Ajouter SMTP_EMAIL : Votre adresse Gmail.
+
+Ajouter SMTP_PASSWORD : Le mot de passe d'application Google (celui à 16 lettres).
