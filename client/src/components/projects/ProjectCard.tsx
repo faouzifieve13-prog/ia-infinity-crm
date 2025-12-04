@@ -13,7 +13,8 @@ interface ProjectCardProject {
   progress: number;
   tasksCompleted?: number;
   totalTasks?: number;
-  startDate: string;
+  startDate?: string | null;
+  endDate?: string | null;
 }
 
 interface ProjectCardProps {
@@ -93,7 +94,12 @@ export function ProjectCard({ project, onClick, index = 0 }: ProjectCardProps) {
               </div>
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <Calendar className="h-4 w-4" />
-                <span>{new Date(project.startDate).toLocaleDateString('fr-FR')}</span>
+                <span>
+                  {project.endDate 
+                    ? new Date(project.endDate).toLocaleDateString('fr-FR')
+                    : 'Non définie'
+                  }
+                </span>
               </div>
             </div>
             
