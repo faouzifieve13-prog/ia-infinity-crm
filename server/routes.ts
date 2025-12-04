@@ -2246,5 +2246,93 @@ export async function registerRoutes(
     }
   });
 
+  // ============================================
+  // Google Calendar Routes
+  // ============================================
+
+  app.get("/api/calendar/status", async (req: Request, res: Response) => {
+    try {
+      const { testCalendarConnection } = await import("./calendar");
+      const status = await testCalendarConnection();
+      res.json(status);
+    } catch (error) {
+      console.error("Calendar status error:", error);
+      res.status(500).json({ connected: false, error: "Failed to check Calendar status" });
+    }
+  });
+
+  app.get("/api/calendar/events", async (req: Request, res: Response) => {
+    try {
+      const { getCalendarEvents } = await import("./calendar");
+      const timeMin = req.query.timeMin ? new Date(req.query.timeMin as string) : undefined;
+      const timeMax = req.query.timeMax ? new Date(req.query.timeMax as string) : undefined;
+      const maxResults = req.query.maxResults ? parseInt(req.query.maxResults as string) : 50;
+      
+      const events = await getCalendarEvents(timeMin, timeMax, maxResults);
+      res.json(events);
+    } catch (error) {
+      console.error("Get calendar events error:", error);
+      res.status(500).json({ error: "Failed to get calendar events" });
+    }
+  });
+
+  app.get("/api/calendar/calendars", async (req: Request, res: Response) => {
+    try {
+      const { getCalendarList } = await import("./calendar");
+      const calendars = await getCalendarList();
+      res.json(calendars);
+    } catch (error) {
+      console.error("Get calendar list error:", error);
+      res.status(500).json({ error: "Failed to get calendar list" });
+    }
+  });
+
+  const createEventSchema = z.object({
+    title: z.string().min(1, "Title is required"),
+    description: z.string().optional(),
+    start: z.string().min(1, "Start time is required"),
+    end: z.string().min(1, "End time is required"),
+    location: z.string().optional(),
+    attendees: z.array(z.string().email()).optional(),
+  });
+
+  app.post("/api/calendar/events", async (req: Request, res: Response) => {
+    try {
+      const parsed = createEventSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+
+      const { createCalendarEvent } = await import("./calendar");
+      const event = await createCalendarEvent(parsed.data);
+      res.status(201).json(event);
+    } catch (error) {
+      console.error("Create calendar event error:", error);
+      res.status(500).json({ error: "Failed to create calendar event" });
+    }
+  });
+
+  app.patch("/api/calendar/events/:id", async (req: Request, res: Response) => {
+    try {
+      const { updateCalendarEvent } = await import("./calendar");
+      const event = await updateCalendarEvent(req.params.id, req.body);
+      res.json(event);
+    } catch (error) {
+      console.error("Update calendar event error:", error);
+      res.status(500).json({ error: "Failed to update calendar event" });
+    }
+  });
+
+  app.delete("/api/calendar/events/:id", async (req: Request, res: Response) => {
+    try {
+      const { deleteCalendarEvent } = await import("./calendar");
+      await deleteCalendarEvent(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete calendar event error:", error);
+      res.status(500).json({ error: "Failed to delete calendar event" });
+    }
+  });
+
   return httpServer;
 }
