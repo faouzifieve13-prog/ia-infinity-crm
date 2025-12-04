@@ -107,7 +107,7 @@ export default function Projects() {
 
   const getAccountName = (accountId: string) => {
     const account = accounts.find(a => a.id === accountId);
-    return account?.name || 'Unknown';
+    return account?.name || 'Non assigné';
   };
 
   const projectsWithAccount = projects.map(p => ({
