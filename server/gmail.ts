@@ -238,3 +238,201 @@ export async function testGmailConnection(): Promise<{ connected: boolean; email
     };
   }
 }
+
+export interface ContractEmailParams {
+  to: string;
+  contractNumber: string;
+  contractTitle: string;
+  contractType: string;
+  clientName: string;
+  amount: string;
+  currency: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  scope?: string | null;
+  deliverables?: string[];
+  paymentTerms?: string | null;
+  signatureLink: string;
+  organizationName?: string;
+}
+
+function formatContractType(type: string): string {
+  const typeNames: Record<string, string> = {
+    audit: "Contrat d'Audit",
+    prestation: "Contrat de Prestation",
+    formation: "Contrat de Formation",
+    suivi: "Contrat de Suivi",
+    sous_traitance: "Contrat de Sous-Traitance"
+  };
+  return typeNames[type] || type;
+}
+
+function formatCurrency(amount: string, currency: string): string {
+  const num = parseFloat(amount);
+  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(num);
+}
+
+function formatDate(date: string | null | undefined): string {
+  if (!date) return 'Non définie';
+  return new Intl.DateTimeFormat('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  }).format(new Date(date));
+}
+
+export async function sendContractEmail(params: ContractEmailParams): Promise<boolean> {
+  try {
+    const gmail = await getUncachableGmailClient();
+    
+    const orgName = params.organizationName || 'IA Infinity';
+    const contractTypeName = formatContractType(params.contractType);
+    const formattedAmount = formatCurrency(params.amount, params.currency);
+    
+    const subject = `${contractTypeName} - ${params.contractNumber} | ${orgName}`;
+    
+    const deliverablesHtml = params.deliverables && params.deliverables.length > 0
+      ? `<ul style="margin: 8px 0; padding-left: 20px; color: #18181b;">
+          ${params.deliverables.map(d => `<li style="margin-bottom: 4px;">${d}</li>`).join('')}
+        </ul>`
+      : '<p style="color: #71717a;">Non spécifiés</p>';
+    
+    const htmlBody = `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); padding: 32px 40px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">
+                ${orgName}
+              </h1>
+              <p style="margin: 8px 0 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">
+                ${contractTypeName}
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <h2 style="margin: 0 0 8px 0; color: #18181b; font-size: 20px; font-weight: 600;">
+                Bonjour ${params.clientName},
+              </h2>
+              
+              <p style="margin: 0 0 24px 0; color: #52525b; font-size: 16px; line-height: 1.6;">
+                Veuillez trouver ci-dessous les détails de votre contrat. Pour finaliser, veuillez le consulter et le signer électroniquement.
+              </p>
+              
+              <!-- Contract Details Card -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px; border: 1px solid #e4e4e7; border-radius: 8px; overflow: hidden;">
+                <tr>
+                  <td style="background-color: #fafafa; padding: 16px; border-bottom: 1px solid #e4e4e7;">
+                    <h3 style="margin: 0; color: #18181b; font-size: 16px; font-weight: 600;">
+                      ${params.contractTitle}
+                    </h3>
+                    <p style="margin: 4px 0 0 0; color: #71717a; font-size: 14px;">
+                      N° ${params.contractNumber}
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 16px;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="color: #71717a; font-size: 14px; padding-bottom: 12px; width: 40%;">Montant</td>
+                        <td style="color: #18181b; font-size: 14px; font-weight: 600; text-align: right; padding-bottom: 12px;">${formattedAmount}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #71717a; font-size: 14px; padding-bottom: 12px;">Date de début</td>
+                        <td style="color: #18181b; font-size: 14px; text-align: right; padding-bottom: 12px;">${formatDate(params.startDate)}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #71717a; font-size: 14px; padding-bottom: 12px;">Date de fin</td>
+                        <td style="color: #18181b; font-size: 14px; text-align: right; padding-bottom: 12px;">${formatDate(params.endDate)}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #71717a; font-size: 14px;">Conditions de paiement</td>
+                        <td style="color: #18181b; font-size: 14px; text-align: right;">${params.paymentTerms || 'Standard'}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              ${params.scope ? `
+              <div style="margin-bottom: 24px;">
+                <h4 style="margin: 0 0 8px 0; color: #18181b; font-size: 14px; font-weight: 600;">Périmètre</h4>
+                <p style="margin: 0; color: #52525b; font-size: 14px; line-height: 1.6;">${params.scope}</p>
+              </div>
+              ` : ''}
+
+              <div style="margin-bottom: 24px;">
+                <h4 style="margin: 0 0 8px 0; color: #18181b; font-size: 14px; font-weight: 600;">Livrables</h4>
+                ${deliverablesHtml}
+              </div>
+              
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
+                <tr>
+                  <td align="center">
+                    <a href="${params.signatureLink}" style="display: inline-block; background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-size: 16px; font-weight: 600;">
+                      Consulter et Signer le Contrat
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              
+              <p style="margin: 0 0 16px 0; color: #71717a; font-size: 14px; line-height: 1.6;">
+                Si le bouton ne fonctionne pas, copiez et collez ce lien dans votre navigateur :
+              </p>
+              
+              <p style="margin: 0 0 24px 0; color: #8b5cf6; font-size: 12px; word-break: break-all; background-color: #f4f4f5; padding: 12px; border-radius: 4px;">
+                ${params.signatureLink}
+              </p>
+              
+              <p style="margin: 0; color: #a1a1aa; font-size: 12px; line-height: 1.6;">
+                Pour toute question, n'hésitez pas à nous contacter. Ce contrat nécessite votre signature électronique pour être validé.
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #fafafa; padding: 24px 40px; text-align: center; border-top: 1px solid #e4e4e7;">
+              <p style="margin: 0; color: #a1a1aa; font-size: 12px;">
+                © ${new Date().getFullYear()} ${orgName}. Tous droits réservés.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim();
+    
+    const encodedMessage = createEmailMessage(params.to, subject, htmlBody);
+    
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage
+      }
+    });
+    
+    console.log(`Contract email sent successfully to ${params.to} for contract ${params.contractNumber}`);
+    return true;
+  } catch (error) {
+    console.error('Failed to send contract email:', error);
+    return false;
+  }
+}

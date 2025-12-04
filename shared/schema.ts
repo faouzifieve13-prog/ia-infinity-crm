@@ -591,7 +591,11 @@ export const insertMissionSchema = createInsertSchema(missions).omit({ id: true,
 export const insertDocumentSchema = createInsertSchema(documents).omit({ id: true, createdAt: true });
 export const insertWorkflowRunSchema = createInsertSchema(workflowRuns).omit({ id: true });
 export const insertImportJobSchema = createInsertSchema(importJobs).omit({ id: true, startedAt: true });
-export const insertContractSchema = createInsertSchema(contracts).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertContractSchema = createInsertSchema(contracts).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  startDate: z.coerce.date().optional().nullable(),
+  endDate: z.coerce.date().optional().nullable(),
+  signedAt: z.coerce.date().optional().nullable(),
+});
 export const insertExpenseSchema = createInsertSchema(expenses).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   date: z.coerce.date(),
   notionLastEditedAt: z.coerce.date().optional().nullable(),

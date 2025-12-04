@@ -109,6 +109,19 @@ function ContractCard({ contract }: { contract: Contract }) {
     },
   });
 
+  const sendContractMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest('POST', `/api/contracts/${contract.id}/send`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/contracts'] });
+      toast({ title: 'Contrat envoyé', description: `Email envoyé à ${contract.clientEmail}` });
+    },
+    onError: (error: any) => {
+      toast({ title: 'Erreur', description: error.message || "Échec de l'envoi du contrat", variant: 'destructive' });
+    },
+  });
+
   const signContractMutation = useMutation({
     mutationFn: async (signatureData: string) => {
       return apiRequest('PATCH', `/api/contracts/${contract.id}`, {
@@ -253,10 +266,15 @@ function ContractCard({ contract }: { contract: Contract }) {
           <DialogFooter className="flex-wrap gap-2">
             {contract.status === 'draft' && (
               <Button
-                onClick={() => updateStatusMutation.mutate({ status: 'sent' })}
-                disabled={updateStatusMutation.isPending}
+                onClick={() => sendContractMutation.mutate()}
+                disabled={sendContractMutation.isPending}
+                data-testid="button-send-contract"
               >
-                <Send className="mr-2 h-4 w-4" />
+                {sendContractMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="mr-2 h-4 w-4" />
+                )}
                 Envoyer au client
               </Button>
             )}

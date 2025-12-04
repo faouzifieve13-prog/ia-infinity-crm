@@ -944,6 +944,57 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/contracts/:id/send", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const contract = await storage.getContract(req.params.id, orgId);
+      
+      if (!contract) {
+        return res.status(404).json({ error: "Contract not found" });
+      }
+      
+      if (!contract.clientEmail) {
+        return res.status(400).json({ error: "Client email is required to send contract" });
+      }
+      
+      const { sendContractEmail } = await import("./gmail");
+      
+      const baseUrl = req.headers.host?.includes('localhost') 
+        ? `http://${req.headers.host}`
+        : `https://${req.headers.host}`;
+      const signatureLink = `${baseUrl}/contracts/${contract.id}/sign`;
+      
+      const org = await storage.getOrganization(orgId);
+      
+      const emailSent = await sendContractEmail({
+        to: contract.clientEmail,
+        contractNumber: contract.contractNumber,
+        contractTitle: contract.title,
+        contractType: contract.type,
+        clientName: contract.clientName,
+        amount: contract.amount,
+        currency: contract.currency,
+        startDate: contract.startDate?.toISOString() || null,
+        endDate: contract.endDate?.toISOString() || null,
+        scope: contract.scope,
+        deliverables: contract.deliverables || [],
+        paymentTerms: contract.paymentTerms,
+        signatureLink,
+        organizationName: org?.name || 'IA Infinity',
+      });
+      
+      if (emailSent) {
+        const updatedContract = await storage.updateContract(req.params.id, orgId, { status: 'sent' });
+        res.json({ success: true, contract: updatedContract });
+      } else {
+        res.status(500).json({ error: "Failed to send email" });
+      }
+    } catch (error) {
+      console.error("Send contract error:", error);
+      res.status(500).json({ error: "Failed to send contract" });
+    }
+  });
+
   // ============================================
   // Notion Integration Routes
   // ============================================
