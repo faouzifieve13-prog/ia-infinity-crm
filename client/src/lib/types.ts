@@ -10,7 +10,7 @@ export type VendorAvailability = 'available' | 'busy' | 'unavailable';
 export type MissionStatus = 'pending' | 'in_progress' | 'review' | 'completed';
 export type ActivityType = 'call' | 'email' | 'meeting' | 'note';
 export type WorkflowStatus = 'active' | 'paused' | 'error' | 'success' | 'failed';
-export type ContractType = 'audit' | 'prestation' | 'formation' | 'suivi';
+export type ContractType = 'audit' | 'prestation' | 'formation' | 'suivi' | 'sous_traitance';
 export type ContractStatus = 'draft' | 'sent' | 'signed' | 'active' | 'completed' | 'cancelled';
 export type ContactType = 'client' | 'vendor' | 'partner' | 'prospect';
 
@@ -98,9 +98,14 @@ export interface Project {
   name: string;
   description?: string | null;
   status: ProjectStatus;
-  startDate: string;
+  startDate?: string | null;
   endDate?: string | null;
   progress: number;
+  deliverySteps?: string | null;
+  clientValidationNotes?: string | null;
+  clientApprovalSignature?: string | null;
+  clientApprovalDate?: string | null;
+  clientApprovedBy?: string | null;
   notionPageId?: string | null;
   notionLastEditedAt?: string | null;
   createdAt?: string;
@@ -241,6 +246,7 @@ export interface Contract {
   id: string;
   orgId: string;
   accountId?: string | null;
+  vendorId?: string | null;
   dealId?: string | null;
   projectId?: string | null;
   contractNumber: string;
@@ -262,6 +268,8 @@ export interface Contract {
   paymentTerms?: string | null;
   signedAt?: string | null;
   signedByClient?: string | null;
+  signatureData?: string | null;
+  clientSignatureData?: string | null;
   documentUrl?: string | null;
   createdById?: string | null;
   createdAt?: string;

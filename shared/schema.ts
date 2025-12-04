@@ -17,7 +17,7 @@ export const missionStatusEnum = pgEnum('mission_status', ['pending', 'in_progre
 export const activityTypeEnum = pgEnum('activity_type', ['call', 'email', 'meeting', 'note']);
 export const workflowStatusEnum = pgEnum('workflow_status', ['active', 'paused', 'error', 'success', 'failed']);
 export const storageProviderEnum = pgEnum('storage_provider', ['drive', 'local']);
-export const contractTypeEnum = pgEnum('contract_type', ['audit', 'prestation', 'formation', 'suivi']);
+export const contractTypeEnum = pgEnum('contract_type', ['audit', 'prestation', 'formation', 'suivi', 'sous_traitance']);
 export const contractStatusEnum = pgEnum('contract_status', ['draft', 'sent', 'signed', 'active', 'completed', 'cancelled']);
 export const expenseStatusEnum = pgEnum('expense_status', ['pending', 'paid', 'cancelled']);
 export const expenseCategoryEnum = pgEnum('expense_category', ['tools', 'software', 'services', 'travel', 'marketing', 'office', 'salaries', 'taxes', 'other']);
@@ -141,6 +141,11 @@ export const projects = pgTable("projects", {
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   progress: integer("progress").notNull().default(0),
+  deliverySteps: text("delivery_steps"),
+  clientValidationNotes: text("client_validation_notes"),
+  clientApprovalSignature: text("client_approval_signature"),
+  clientApprovalDate: timestamp("client_approval_date"),
+  clientApprovedBy: text("client_approved_by"),
   notionPageId: text("notion_page_id"),
   notionLastEditedAt: timestamp("notion_last_edited_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -309,6 +314,7 @@ export const contracts = pgTable("contracts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
   accountId: varchar("account_id").references(() => accounts.id),
+  vendorId: varchar("vendor_id").references(() => vendors.id),
   dealId: varchar("deal_id").references(() => deals.id),
   projectId: varchar("project_id").references(() => projects.id),
   contractNumber: text("contract_number").notNull(),
@@ -330,6 +336,8 @@ export const contracts = pgTable("contracts", {
   paymentTerms: text("payment_terms"),
   signedAt: timestamp("signed_at"),
   signedByClient: text("signed_by_client"),
+  signatureData: text("signature_data"),
+  clientSignatureData: text("client_signature_data"),
   documentUrl: text("document_url"),
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -529,6 +537,10 @@ export const contractsRelations = relations(contracts, ({ one }) => ({
   account: one(accounts, {
     fields: [contracts.accountId],
     references: [accounts.id],
+  }),
+  vendor: one(vendors, {
+    fields: [contracts.vendorId],
+    references: [vendors.id],
   }),
   deal: one(deals, {
     fields: [contracts.dealId],

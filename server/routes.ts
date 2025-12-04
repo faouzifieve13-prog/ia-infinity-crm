@@ -337,12 +337,17 @@ export async function registerRoutes(
   app.patch("/api/projects/:id", async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const project = await storage.updateProject(req.params.id, orgId, req.body);
+      const updateSchema = insertProjectSchema.partial().omit({ orgId: true });
+      const validatedData = updateSchema.parse(req.body);
+      const project = await storage.updateProject(req.params.id, orgId, validatedData);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
       res.json(project);
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
       console.error("Update project error:", error);
       res.status(500).json({ error: "Failed to update project" });
     }
@@ -874,7 +879,7 @@ export async function registerRoutes(
   app.post("/api/contracts/generate", async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const { type, dealId, accountId, clientName, clientEmail, clientCompany, clientAddress, clientSiret, amount, description, scope, deliverables, startDate, endDate, paymentTerms } = req.body;
+      const { type, dealId, accountId, vendorId, clientName, clientEmail, clientCompany, clientAddress, clientSiret, amount, description, scope, deliverables, startDate, endDate, paymentTerms } = req.body;
       
       const contractNumber = await storage.generateContractNumber(orgId, type);
       
@@ -884,6 +889,8 @@ export async function registerRoutes(
         ? `Contrat de Prestation - ${clientCompany || clientName}`
         : type === 'formation'
         ? `Contrat de Formation - ${clientCompany || clientName}`
+        : type === 'sous_traitance'
+        ? `Contrat de Sous-Traitance - ${clientCompany || clientName}`
         : `Contrat de Suivi - ${clientCompany || clientName}`;
 
       const defaultScope = type === 'audit'
@@ -892,6 +899,8 @@ export async function registerRoutes(
         ? "Développement et déploiement de solutions IA sur-mesure selon les besoins identifiés lors de l'audit."
         : type === 'formation'
         ? "Formation de vos équipes à l'utilisation des outils IA déployés."
+        : type === 'sous_traitance'
+        ? "Mission de sous-traitance pour la réalisation de prestations techniques et/ou de conseil."
         : "Suivi régulier et optimisation des solutions IA mises en place.";
 
       const defaultDeliverables = type === 'audit'
@@ -900,12 +909,15 @@ export async function registerRoutes(
         ? ["Solutions IA développées", "Documentation technique", "Formation utilisateur", "Support de démarrage"]
         : type === 'formation'
         ? ["Sessions de formation", "Supports pédagogiques", "Certification des participants", "Évaluation des compétences"]
+        : type === 'sous_traitance'
+        ? ["Livrables convenus", "Rapport de mission", "Documentation technique", "Transfert de compétences"]
         : ["Points mensuels", "Rapports de performance", "Optimisations continues", "Support technique"];
 
       const contract = await storage.createContract({
         orgId,
         dealId: dealId || null,
         accountId: accountId || null,
+        vendorId: vendorId || null,
         contractNumber,
         title,
         type,

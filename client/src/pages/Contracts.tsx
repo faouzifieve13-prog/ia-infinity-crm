@@ -35,12 +35,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
-import type { Contract, ContractType, ContractStatus, Deal, Account } from '@/lib/types';
+import type { Contract, ContractType, ContractStatus, Deal, Account, Vendor } from '@/lib/types';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { SignaturePad, SignatureDisplay } from '@/components/SignaturePad';
 
 const contractFormSchema = z.object({
-  type: z.enum(['audit', 'prestation', 'formation', 'suivi']),
+  type: z.enum(['audit', 'prestation', 'formation', 'suivi', 'sous_traitance']),
   clientName: z.string().min(1, 'Nom du client requis'),
   clientEmail: z.string().email('Email invalide'),
   clientCompany: z.string().optional(),
@@ -54,6 +55,7 @@ const contractFormSchema = z.object({
   paymentTerms: z.string().optional(),
   dealId: z.string().optional(),
   accountId: z.string().optional(),
+  vendorId: z.string().optional(),
 });
 
 type ContractFormData = z.infer<typeof contractFormSchema>;
@@ -63,6 +65,7 @@ const typeLabels: Record<ContractType, string> = {
   prestation: 'Contrat de Prestation',
   formation: 'Contrat de Formation',
   suivi: 'Contrat de Suivi',
+  sous_traitance: 'Contrat de Sous-Traitance',
 };
 
 const typeColors: Record<ContractType, string> = {
@@ -70,6 +73,7 @@ const typeColors: Record<ContractType, string> = {
   prestation: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300',
   formation: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
   suivi: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300',
+  sous_traitance: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300',
 };
 
 const statusLabels: Record<ContractStatus, string> = {
@@ -93,6 +97,7 @@ const statusColors: Record<ContractStatus, string> = {
 function ContractCard({ contract }: { contract: Contract }) {
   const { toast } = useToast();
   const [isViewOpen, setIsViewOpen] = useState(false);
+  const [isSignatureOpen, setIsSignatureOpen] = useState(false);
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ status }: { status: ContractStatus }) => {
@@ -101,6 +106,25 @@ function ContractCard({ contract }: { contract: Contract }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/contracts'] });
       toast({ title: 'Statut mis à jour' });
+    },
+  });
+
+  const signContractMutation = useMutation({
+    mutationFn: async (signatureData: string) => {
+      return apiRequest('PATCH', `/api/contracts/${contract.id}`, {
+        clientSignatureData: signatureData,
+        signedByClient: contract.clientName,
+        signedAt: new Date().toISOString(),
+        status: 'signed'
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/contracts'] });
+      toast({ title: 'Contrat signé avec succès' });
+      setIsSignatureOpen(false);
+    },
+    onError: () => {
+      toast({ title: 'Erreur lors de la signature', variant: 'destructive' });
     },
   });
 
@@ -213,6 +237,17 @@ function ContractCard({ contract }: { contract: Contract }) {
                 )}
               </div>
             )}
+
+            {contract.clientSignatureData && (
+              <div>
+                <h4 className="font-medium mb-2">Signature du client</h4>
+                <SignatureDisplay 
+                  signatureData={contract.clientSignatureData}
+                  signerName={contract.signedByClient || contract.clientName}
+                  signedAt={contract.signedAt || undefined}
+                />
+              </div>
+            )}
           </div>
 
           <DialogFooter className="flex-wrap gap-2">
@@ -225,14 +260,24 @@ function ContractCard({ contract }: { contract: Contract }) {
                 Envoyer au client
               </Button>
             )}
-            {contract.status === 'sent' && (
+            {contract.status === 'sent' && !contract.clientSignatureData && (
+              <Button
+                onClick={() => setIsSignatureOpen(true)}
+                variant="default"
+                data-testid="button-sign-contract"
+              >
+                <FileSignature className="mr-2 h-4 w-4" />
+                Signer le contrat
+              </Button>
+            )}
+            {contract.status === 'sent' && contract.clientSignatureData && (
               <Button
                 onClick={() => updateStatusMutation.mutate({ status: 'signed' })}
                 disabled={updateStatusMutation.isPending}
                 variant="default"
               >
                 <Check className="mr-2 h-4 w-4" />
-                Marquer comme signé
+                Valider la signature
               </Button>
             )}
             {contract.status === 'signed' && (
@@ -260,6 +305,24 @@ function ContractCard({ contract }: { contract: Contract }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={isSignatureOpen} onOpenChange={setIsSignatureOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Signature du contrat</DialogTitle>
+            <DialogDescription>
+              {contract.title} - {contract.contractNumber}
+            </DialogDescription>
+          </DialogHeader>
+          <SignaturePad
+            onSave={(signatureData) => signContractMutation.mutate(signatureData)}
+            onCancel={() => setIsSignatureOpen(false)}
+            title="Signez ci-dessous"
+            description="Votre signature électronique sera enregistrée et associée au contrat"
+            signerName={contract.clientName}
+          />
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -281,6 +344,10 @@ export default function Contracts() {
 
   const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: ['/api/accounts'],
+  });
+
+  const { data: vendors = [] } = useQuery<Vendor[]>({
+    queryKey: ['/api/vendors'],
   });
 
   const form = useForm<ContractFormData>({
@@ -353,6 +420,18 @@ export default function Contracts() {
     }
   };
 
+  const handleVendorSelect = (vendorId: string) => {
+    const vendor = vendors.find(v => v.id === vendorId);
+    if (vendor) {
+      form.setValue('vendorId', vendorId);
+      form.setValue('clientName', vendor.name);
+      form.setValue('clientEmail', vendor.email);
+      form.setValue('clientCompany', vendor.company);
+    }
+  };
+
+  const watchType = form.watch('type');
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -403,6 +482,7 @@ export default function Contracts() {
                           <SelectItem value="prestation">Contrat de Prestation</SelectItem>
                           <SelectItem value="formation">Contrat de Formation</SelectItem>
                           <SelectItem value="suivi">Contrat de Suivi</SelectItem>
+                          <SelectItem value="sous_traitance">Contrat de Sous-Traitance</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -410,7 +490,25 @@ export default function Contracts() {
                   )}
                 />
 
-                {deals.length > 0 && (
+                {watchType === 'sous_traitance' && vendors.length > 0 && (
+                  <FormItem>
+                    <FormLabel>Sélectionner un prestataire</FormLabel>
+                    <Select onValueChange={handleVendorSelect}>
+                      <SelectTrigger data-testid="select-vendor">
+                        <SelectValue placeholder="Sélectionner un prestataire" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {vendors.map((vendor) => (
+                          <SelectItem key={vendor.id} value={vendor.id}>
+                            {vendor.name} - {vendor.company} ({Number(vendor.dailyRate).toLocaleString('fr-FR')} EUR/jour)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+
+                {watchType !== 'sous_traitance' && deals.length > 0 && (
                   <FormItem>
                     <FormLabel>Lier à une opportunité (optionnel)</FormLabel>
                     <Select onValueChange={handleDealSelect}>
@@ -649,6 +747,7 @@ export default function Contracts() {
             <SelectItem value="prestation">Prestation</SelectItem>
             <SelectItem value="formation">Formation</SelectItem>
             <SelectItem value="suivi">Suivi</SelectItem>
+            <SelectItem value="sous_traitance">Sous-Traitance</SelectItem>
           </SelectContent>
         </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>

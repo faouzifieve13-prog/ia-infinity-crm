@@ -723,7 +723,11 @@ export class DatabaseStorage implements IStorage {
 
   async generateContractNumber(orgId: string, type: ContractType): Promise<string> {
     const year = new Date().getFullYear();
-    const typePrefix = type === 'audit' ? 'AUD' : type === 'prestation' ? 'PRE' : type === 'formation' ? 'FOR' : 'SUI';
+    const typePrefix = type === 'audit' ? 'AUD' 
+      : type === 'prestation' ? 'PRE' 
+      : type === 'formation' ? 'FOR' 
+      : type === 'sous_traitance' ? 'STR'
+      : 'SUI';
     const existingContracts = await db.select().from(contracts)
       .where(and(eq(contracts.orgId, orgId), eq(contracts.type, type)));
     const nextNumber = String(existingContracts.length + 1).padStart(4, '0');

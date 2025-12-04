@@ -18,6 +18,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
+import { DeliveryWorkflow } from '@/components/projects/DeliveryWorkflow';
+import { queryClient } from '@/lib/queryClient';
 import type { Project, Account, Task, Document } from '@/lib/types';
 
 const statusConfig = {
@@ -250,6 +252,15 @@ export default function ProjectDetail() {
               )}
             </CardContent>
           </Card>
+
+          {project.status !== 'cancelled' && (
+            <DeliveryWorkflow 
+              project={project} 
+              onUpdate={() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId] });
+              }}
+            />
+          )}
         </div>
 
         <div className="space-y-6">
