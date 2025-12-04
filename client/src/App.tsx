@@ -23,6 +23,7 @@ import NotionSync from "@/pages/NotionSync";
 import Invitations from "@/pages/Invitations";
 import AcceptInvite from "@/pages/AcceptInvite";
 import Settings from "@/pages/Settings";
+import { LandingPage } from "@/pages/LandingPage";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -57,6 +58,11 @@ function Router() {
 
 function AppContent() {
   const [location] = useLocation();
+  
+  // Public landing page route
+  if (location === "/landing" || location === "/welcome") {
+    return <LandingPage />;
+  }
   
   // Auth routes are rendered outside the main layout
   if (location.startsWith("/auth/")) {

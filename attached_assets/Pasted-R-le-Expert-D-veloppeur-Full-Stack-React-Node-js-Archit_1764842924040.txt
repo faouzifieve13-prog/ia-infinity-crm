@@ -1,0 +1,48 @@
+Rôle : Expert Développeur Full-Stack (React/Node.js) & Architecte SaaS. Objectif : Créer "IA INFINITY MANAGER", un SaaS de gestion de projet automatisé. Stack : React, Node.js, PostgreSQL, Tailwind CSS, Nodemailer (Email), Puppeteer ou PDF-lib (Génération PDF).
+
+Architecture & Rôles
+Admin (Moi) : Vue totale. Gestion des prospects, projets, finances, sous-traitants.
+
+Client : Espace sécurisé pour signer les contrats, déposer les accès, voir l'avancement.
+
+Sous-traitant : Espace pour récupérer les missions, uploader les livrables (JSON, Vidéo), envoyer les rapports.
+
+Core Feature : Workflow "Double Contrat"
+Le cycle de vie d'un client est divisé en deux phases contractuelles distinctes. Le système doit gérer cela automatiquement.
+
+Phase 1 : De Prospect à Audit
+
+Création Prospect : L'Admin crée une fiche prospect (Nom, Email, Entreprise).
+
+Action "Lancer Audit" : Bouton côté Admin.
+
+Le système génère le Contrat d'Audit (PDF) à partir d'un template HTML. Il remplit : Nom, Date, Prix Audit.
+
+Envoi automatique d'un email au prospect avec le PDF en pièce jointe (via Gmail/Nodemailer).
+
+Le statut passe à "Audit en cours".
+
+Phase 2 : De Audit à Prestation (Mission) 3. Fin d'Audit : L'Admin upload le rapport d'audit final. 4. Action "Signer Prestation" : Si le client valide, l'Admin clique sur ce bouton. * Le système génère le Contrat de Prestation (PDF) à partir du second template. Il remplit : Périmètre, Prix Global, Date de début. * Envoi automatique par email au client. * Le statut passe à "Onboarding".
+
+Phase 3 : Production & Livraison 5. Onboarding (Secure) : Le Client accède à son espace pour : * Remplir un formulaire "Credentials" (Mots de passe cryptés en DB). * Uploader ses fichiers ressources. 6. Affectation : Admin assigne un Sous-traitant -> Notification Email automatique au sous-traitant. 7. Livraison : Le Sous-traitant doit uploader obligatoirement : 1. Vidéo (MP4/Lien), 2. Workflow (JSON), 3. Doc (PDF) pour débloquer le bouton "Envoyer le rapport".
+
+Fonctionnalités Techniques Avancées
+Génération PDF Dynamique : Crée deux modèles de documents HTML/CSS (un pour l'Audit, un pour la Prestation) avec des variables {{client_name}}, {{date}}, {{price}} que le backend remplacera avant de générer le PDF.
+
+Emailing Gmail : Configure le transporteur Nodemailer pour utiliser le service Gmail (prévois les variables d'environnement GMAIL_USER et GMAIL_PASS pour le mot de passe d'application).
+
+Sync Notion (Optionnel mais prévu) : Prévois un hook à chaque changement de statut pour envoyer un payload JSON vers une API externe (pour mise à jour future de mon Notion).
+
+Finances : Dashboard simple affichant le CA "Audit" séparé du CA "Prestation".
+
+Design
+Ambiance "IA / Tech" : Fond sombre, accents violets/bleus néon, cartes en verre dépoli (glassmorphism). Interface très épurée.
+
+Instructions de démarrage : Commence par créer la structure de la base de données (Tables : Users, Projects, Contracts, Invoices) en distinguant bien les deux types de contrats liés à un même projet.
+
+Conseil pour vos templates de contrat
+Puisque vous avez déjà les fichiers sur votre Drive, l'idéal pour que le SaaS les remplisse automatiquement est de les convertir en HTML simple ou en Texte brut avec des balises.
+
+Ce que vous ferez dans le code généré par Replit : Vous copierez le texte de votre contrat et remplacerez les zones variables (ex: le nom du client) par des balises comme {{nom_client}}. Replit se chargera de la logique de remplacement.
+
+C'est une structure très robuste qui va vous faire gagner un temps fou sur l'administratif.
