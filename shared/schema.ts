@@ -22,6 +22,7 @@ export const contractStatusEnum = pgEnum('contract_status', ['draft', 'sent', 's
 export const expenseStatusEnum = pgEnum('expense_status', ['pending', 'paid', 'cancelled']);
 export const expenseCategoryEnum = pgEnum('expense_category', ['tools', 'software', 'services', 'travel', 'marketing', 'office', 'salaries', 'taxes', 'other']);
 export const invitationStatusEnum = pgEnum('invitation_status', ['pending', 'accepted', 'expired', 'revoked']);
+export const contactTypeEnum = pgEnum('contact_type', ['client', 'vendor', 'partner', 'prospect']);
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -73,9 +74,11 @@ export const contacts = pgTable("contacts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
   accountId: varchar("account_id").references(() => accounts.id),
+  vendorId: varchar("vendor_id"),
   name: text("name").notNull(),
   email: text("email").notNull(),
   role: text("role").notNull(),
+  contactType: contactTypeEnum("contact_type").notNull().default('client'),
   phone: text("phone"),
   linkedIn: text("linkedin"),
   notionPageId: text("notion_page_id"),
@@ -84,6 +87,7 @@ export const contacts = pgTable("contacts", {
 }, (table) => [
   index("contacts_org_idx").on(table.orgId),
   index("contacts_account_idx").on(table.orgId, table.accountId),
+  index("contacts_type_idx").on(table.orgId, table.contactType),
   index("contacts_notion_idx").on(table.notionPageId),
 ]);
 

@@ -12,6 +12,7 @@ export type ActivityType = 'call' | 'email' | 'meeting' | 'note';
 export type WorkflowStatus = 'active' | 'paused' | 'error' | 'success' | 'failed';
 export type ContractType = 'audit' | 'prestation' | 'formation' | 'suivi';
 export type ContractStatus = 'draft' | 'sent' | 'signed' | 'active' | 'completed' | 'cancelled';
+export type ContactType = 'client' | 'vendor' | 'partner' | 'prospect';
 
 export interface User {
   id: string;
@@ -39,9 +40,11 @@ export interface Contact {
   id: string;
   orgId: string;
   accountId: string;
+  vendorId?: string | null;
   name: string;
   email: string;
   role: string;
+  contactType: ContactType;
   phone?: string | null;
   linkedIn?: string | null;
   notionPageId?: string | null;
