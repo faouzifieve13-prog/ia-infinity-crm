@@ -75,11 +75,18 @@ export default function Projects() {
 
   const createMutation = useMutation({
     mutationFn: async (data: ProjectFormValues) => {
+      const parseDate = (dateStr: string | undefined) => {
+        if (!dateStr) return null;
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const date = new Date(year, month - 1, day, 12, 0, 0);
+        return date.toISOString();
+      };
+      
       const payload = {
         ...data,
         accountId: data.accountId || null,
-        startDate: data.startDate ? new Date(data.startDate).toISOString() : null,
-        endDate: data.endDate ? new Date(data.endDate).toISOString() : null,
+        startDate: parseDate(data.startDate),
+        endDate: parseDate(data.endDate),
       };
       return apiRequest('POST', '/api/projects', payload);
     },
