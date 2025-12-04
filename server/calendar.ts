@@ -64,11 +64,12 @@ export interface CalendarEvent {
 export async function testCalendarConnection(): Promise<{ connected: boolean; email?: string; error?: string }> {
   try {
     const calendar = await getUncachableGoogleCalendarClient();
-    const calendarList = await calendar.calendarList.list({ maxResults: 1 });
+    const calendarList = await calendar.calendarList.list({ maxResults: 10 });
     const primaryCalendar = calendarList.data.items?.find(cal => cal.primary);
+    const email = primaryCalendar?.id || calendarList.data.items?.[0]?.id;
     return { 
       connected: true, 
-      email: primaryCalendar?.id || undefined 
+      email: email || undefined 
     };
   } catch (error: any) {
     return { 
