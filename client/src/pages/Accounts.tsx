@@ -50,16 +50,15 @@ const accountFormSchema = z.object({
   contactName: z.string().optional(),
   contactEmail: z.string().email('Email invalide').optional().or(z.literal('')),
   domain: z.string().optional(),
-  plan: z.enum(['standard', 'premium', 'automation']).default('standard'),
+  plan: z.enum(['audit', 'automatisation']).default('audit'),
   status: z.enum(['active', 'inactive', 'churned']).default('active'),
 });
 
 type AccountFormValues = z.infer<typeof accountFormSchema>;
 
 const planConfig = {
-  standard: { label: 'Standard', variant: 'secondary' as const },
-  premium: { label: 'Premium', variant: 'default' as const },
-  automation: { label: 'Automation', variant: 'outline' as const },
+  audit: { label: 'Audit', variant: 'secondary' as const },
+  automatisation: { label: 'Automatisation', variant: 'default' as const },
 };
 
 const statusConfig = {
@@ -81,7 +80,7 @@ export default function Accounts() {
       contactName: '',
       contactEmail: '',
       domain: '',
-      plan: 'standard',
+      plan: 'audit',
       status: 'active',
     },
   });
@@ -272,9 +271,8 @@ export default function Accounts() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="standard">Standard</SelectItem>
-                            <SelectItem value="premium">Premium</SelectItem>
-                            <SelectItem value="automation">Automation</SelectItem>
+                            <SelectItem value="audit">Audit</SelectItem>
+                            <SelectItem value="automatisation">Automatisation</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -377,7 +375,7 @@ export default function Accounts() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredAccounts.map((account) => {
             const status = statusConfig[account.status as keyof typeof statusConfig] || statusConfig.active;
-            const plan = planConfig[account.plan as keyof typeof planConfig] || planConfig.standard;
+            const plan = planConfig[account.plan as keyof typeof planConfig] || planConfig.audit;
             
             return (
               <Card 

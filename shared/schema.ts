@@ -57,7 +57,7 @@ export const accounts = pgTable("accounts", {
   orgId: varchar("org_id").notNull().references(() => organizations.id),
   name: text("name").notNull(),
   domain: text("domain"),
-  plan: text("plan").notNull().default('standard'),
+  plan: text("plan").notNull().default('audit'),
   status: accountStatusEnum("status").notNull().default('active'),
   contactName: text("contact_name").notNull(),
   contactEmail: text("contact_email").notNull(),
