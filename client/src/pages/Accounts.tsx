@@ -3,6 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useLocation } from 'wouter';
 import { Plus, Loader2, Building2, Mail, Globe, Phone, Search, MoreHorizontal, Eye, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -71,6 +72,7 @@ export default function Accounts() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [, navigate] = useLocation();
   const { toast } = useToast();
 
   const form = useForm<AccountFormValues>({
@@ -381,6 +383,7 @@ export default function Accounts() {
               <Card 
                 key={account.id} 
                 className="group hover-elevate cursor-pointer"
+                onClick={() => navigate(`/accounts/${account.id}`)}
                 data-testid={`card-account-${account.id}`}
               >
                 <CardHeader className="pb-3">
@@ -410,7 +413,10 @@ export default function Accounts() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem data-testid={`button-view-account-${account.id}`}>
+                        <DropdownMenuItem 
+                          onClick={(e) => { e.stopPropagation(); navigate(`/accounts/${account.id}`); }}
+                          data-testid={`button-view-account-${account.id}`}
+                        >
                           <Eye className="mr-2 h-4 w-4" />
                           Voir les détails
                         </DropdownMenuItem>
@@ -420,7 +426,7 @@ export default function Accounts() {
                         </DropdownMenuItem>
                         <DropdownMenuItem 
                           className="text-destructive"
-                          onClick={() => deleteMutation.mutate(account.id)}
+                          onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(account.id); }}
                           data-testid={`button-delete-account-${account.id}`}
                         >
                           <Trash2 className="mr-2 h-4 w-4" />

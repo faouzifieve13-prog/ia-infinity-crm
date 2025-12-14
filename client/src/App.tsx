@@ -13,6 +13,7 @@ import Projects from "@/pages/Projects";
 import ProjectDetail from "@/pages/ProjectDetail";
 import Tasks from "@/pages/Tasks";
 import Accounts from "@/pages/Accounts";
+import AccountDetail from "@/pages/AccountDetail";
 import Contacts from "@/pages/Contacts";
 import Workflows from "@/pages/Workflows";
 import Invoices from "@/pages/Invoices";
@@ -40,6 +41,7 @@ function Router() {
       <Route path="/projects/:id" component={ProjectDetail} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/accounts" component={Accounts} />
+      <Route path="/accounts/:id" component={AccountDetail} />
       <Route path="/contacts" component={Contacts} />
       <Route path="/workflows" component={Workflows} />
       <Route path="/invoices" component={Invoices} />
