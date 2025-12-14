@@ -3,7 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Filter, Download, Loader2, Building2, User, DollarSign } from 'lucide-react';
+import { Plus, Filter, Download, Loader2, Building2, User, DollarSign, Phone, Video } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -41,6 +41,7 @@ const prospectFormSchema = z.object({
   companyName: z.string().min(1, 'Le nom de l\'entreprise est requis'),
   contactName: z.string().optional(),
   contactEmail: z.string().email('Email invalide').optional().or(z.literal('')),
+  contactPhone: z.string().optional(),
   amount: z.string().optional(),
   probability: z.string().optional(),
   nextAction: z.string().optional(),
@@ -64,6 +65,7 @@ export default function Pipeline() {
       companyName: '',
       contactName: '',
       contactEmail: '',
+      contactPhone: '',
       amount: '',
       probability: '10',
       nextAction: '',
@@ -103,7 +105,7 @@ export default function Pipeline() {
       return apiRequest('POST', '/api/deals', {
         name: data.name,
         accountId,
-        amount: data.amount ? parseFloat(data.amount) : 0,
+        amount: data.amount || '0',
         probability: data.probability ? parseInt(data.probability) : 10,
         stage: 'prospect',
         nextAction: data.nextAction || null,
@@ -272,6 +274,22 @@ export default function Pipeline() {
                       )}
                     />
                   </div>
+                  <FormField
+                    control={form.control}
+                    name="contactPhone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Téléphone</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Phone className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                            <Input className="pl-9" type="tel" placeholder="+33 6 12 34 56 78" {...field} data-testid="input-prospect-phone" />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
@@ -327,6 +345,23 @@ export default function Pipeline() {
                       </FormItem>
                     )}
                   />
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border">
+                    <Video className="h-5 w-5 text-primary" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Réserver une visio</p>
+                      <p className="text-xs text-muted-foreground">Planifier un rendez-vous découverte</p>
+                    </div>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => window.open('/calendar', '_blank')}
+                      data-testid="button-book-visio"
+                    >
+                      <Video className="mr-2 h-4 w-4" />
+                      Réserver
+                    </Button>
+                  </div>
                   <DialogFooter>
                     <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                       Annuler
