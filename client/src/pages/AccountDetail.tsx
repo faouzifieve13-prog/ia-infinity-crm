@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useRoute, Link, useLocation } from 'wouter';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -124,16 +124,18 @@ export default function AccountDetail() {
     },
   });
 
-  if (account && !form.formState.isDirty && !isEditing) {
-    form.reset({
-      name: account.name || '',
-      contactName: account.contactName || '',
-      contactEmail: account.contactEmail || '',
-      domain: account.domain || '',
-      plan: (account.plan as 'audit' | 'automatisation' | 'standard' | 'automation') || 'audit',
-      status: (account.status as 'active' | 'inactive' | 'churned') || 'active',
-    });
-  }
+  useEffect(() => {
+    if (account && !isEditing) {
+      form.reset({
+        name: account.name || '',
+        contactName: account.contactName || '',
+        contactEmail: account.contactEmail || '',
+        domain: account.domain || '',
+        plan: (account.plan as 'audit' | 'automatisation' | 'standard' | 'automation') || 'audit',
+        status: (account.status as 'active' | 'inactive' | 'churned') || 'active',
+      });
+    }
+  }, [account, isEditing]);
 
   if (accountLoading) {
     return (
