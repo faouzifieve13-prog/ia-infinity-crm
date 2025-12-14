@@ -109,6 +109,7 @@ export default function Pipeline() {
         probability: data.probability ? parseInt(data.probability) : 10,
         stage: 'prospect',
         nextAction: data.nextAction || null,
+        contactPhone: data.contactPhone || null,
       });
     },
     onSuccess: () => {
