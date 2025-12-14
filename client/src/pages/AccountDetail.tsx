@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { useRoute, Link, useLocation } from 'wouter';
+import { useRoute, Link } from 'wouter';
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -16,13 +16,20 @@ import {
   X,
   FileText,
   Briefcase,
-  Phone
+  Phone,
+  Video,
+  ExternalLink,
+  CheckCircle2,
+  Circle,
+  StickyNote
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Form,
   FormControl,
@@ -46,12 +53,30 @@ const accountFormSchema = z.object({
   name: z.string().min(1, 'Le nom est requis'),
   contactName: z.string().optional(),
   contactEmail: z.string().email('Email invalide').optional().or(z.literal('')),
+  contactPhone: z.string().optional(),
   domain: z.string().optional(),
   plan: z.enum(['audit', 'automatisation', 'standard', 'automation']).default('audit'),
   status: z.enum(['active', 'inactive', 'churned']).default('active'),
+  notes: z.string().optional(),
+  loomVideoUrl: z.string().optional(),
 });
 
 type AccountFormValues = z.infer<typeof accountFormSchema>;
+
+interface FollowUpStep {
+  id: string;
+  label: string;
+  completed: boolean;
+}
+
+const DEFAULT_FOLLOW_UP_STEPS: FollowUpStep[] = [
+  { id: 'premier_contact', label: 'Premier contact', completed: false },
+  { id: 'decouverte_besoins', label: 'Découverte besoins', completed: false },
+  { id: 'proposition_envoyee', label: 'Proposition envoyée', completed: false },
+  { id: 'contrat_signe', label: 'Contrat signé', completed: false },
+  { id: 'onboarding', label: 'Onboarding', completed: false },
+  { id: 'suivi_regulier', label: 'Suivi régulier', completed: false },
+];
 
 const planConfig = {
   audit: { label: 'Audit', variant: 'secondary' as const },
@@ -68,7 +93,6 @@ const statusConfig = {
 
 export default function AccountDetail() {
   const [, params] = useRoute('/accounts/:id');
-  const [, navigate] = useLocation();
   const accountId = params?.id;
   const [isEditing, setIsEditing] = useState(false);
   const { toast } = useToast();
@@ -96,14 +120,38 @@ export default function AccountDetail() {
       name: '',
       contactName: '',
       contactEmail: '',
+      contactPhone: '',
       domain: '',
       plan: 'audit',
       status: 'active',
+      notes: '',
+      loomVideoUrl: '',
     },
   });
 
+  const parseFollowUpSteps = (stepsJson: string | null | undefined): FollowUpStep[] => {
+    if (!stepsJson) return [...DEFAULT_FOLLOW_UP_STEPS];
+    try {
+      const parsed = JSON.parse(stepsJson);
+      if (!Array.isArray(parsed)) return [...DEFAULT_FOLLOW_UP_STEPS];
+      
+      return DEFAULT_FOLLOW_UP_STEPS.map(defaultStep => {
+        const savedStep = parsed.find((s: { id?: string }) => s?.id === defaultStep.id);
+        if (savedStep && typeof savedStep.completed === 'boolean') {
+          return { ...defaultStep, completed: savedStep.completed };
+        }
+        return { ...defaultStep };
+      });
+    } catch {
+      return [...DEFAULT_FOLLOW_UP_STEPS];
+    }
+  };
+
+  const [followUpSteps, setFollowUpSteps] = useState<FollowUpStep[]>([...DEFAULT_FOLLOW_UP_STEPS]);
+  const [previousSteps, setPreviousSteps] = useState<FollowUpStep[]>([...DEFAULT_FOLLOW_UP_STEPS]);
+
   const updateMutation = useMutation({
-    mutationFn: async (data: AccountFormValues) => {
+    mutationFn: async (data: AccountFormValues & { followUpSteps?: string }) => {
       return apiRequest('PATCH', `/api/accounts/${accountId}`, data);
     },
     onSuccess: () => {
@@ -124,18 +172,58 @@ export default function AccountDetail() {
     },
   });
 
+  const updateFollowUpMutation = useMutation({
+    mutationFn: async (steps: FollowUpStep[]) => {
+      return apiRequest('PATCH', `/api/accounts/${accountId}`, {
+        followUpSteps: JSON.stringify(steps),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts', accountId] });
+      setPreviousSteps([...followUpSteps]);
+      toast({
+        title: 'Suivi mis à jour',
+        description: 'L\'étape de suivi a été mise à jour.',
+      });
+    },
+    onError: (error: Error) => {
+      setFollowUpSteps([...previousSteps]);
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de mettre à jour le suivi.',
+        variant: 'destructive',
+      });
+    },
+  });
+
   useEffect(() => {
     if (account && !isEditing) {
       form.reset({
         name: account.name || '',
         contactName: account.contactName || '',
         contactEmail: account.contactEmail || '',
+        contactPhone: account.contactPhone || '',
         domain: account.domain || '',
         plan: (account.plan as 'audit' | 'automatisation' | 'standard' | 'automation') || 'audit',
         status: (account.status as 'active' | 'inactive' | 'churned') || 'active',
+        notes: account.notes || '',
+        loomVideoUrl: account.loomVideoUrl || '',
       });
+      const parsedSteps = parseFollowUpSteps(account.followUpSteps);
+      setFollowUpSteps(parsedSteps);
+      setPreviousSteps(parsedSteps);
     }
   }, [account, isEditing]);
+
+  const handleFollowUpToggle = (stepId: string) => {
+    if (updateFollowUpMutation.isPending) return;
+    
+    const updatedSteps = followUpSteps.map(step =>
+      step.id === stepId ? { ...step, completed: !step.completed } : step
+    );
+    setFollowUpSteps(updatedSteps);
+    updateFollowUpMutation.mutate(updatedSteps);
+  };
 
   if (accountLoading) {
     return (
@@ -165,13 +253,20 @@ export default function AccountDetail() {
   const status = statusConfig[account.status as keyof typeof statusConfig] || statusConfig.active;
   const plan = planConfig[account.plan as keyof typeof planConfig] || planConfig.audit;
 
+  const completedSteps = followUpSteps.filter(s => s.completed).length;
+  const totalSteps = followUpSteps.length;
+  const progressPercentage = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+
   const onSubmit = (data: AccountFormValues) => {
-    updateMutation.mutate(data);
+    updateMutation.mutate({
+      ...data,
+      followUpSteps: JSON.stringify(followUpSteps),
+    });
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 flex-wrap">
         <Link href="/accounts">
           <Button variant="ghost" size="icon" data-testid="button-back">
             <ArrowLeft className="h-5 w-5" />
@@ -186,7 +281,7 @@ export default function AccountDetail() {
               <h1 className="text-3xl font-semibold" data-testid="text-account-title">
                 {account.name}
               </h1>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <Badge variant={status.variant}>
                   <span className={`w-1.5 h-1.5 rounded-full ${status.color} mr-1.5`} />
                   {status.label}
@@ -203,11 +298,11 @@ export default function AccountDetail() {
           </Button>
         ) : (
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setIsEditing(false)}>
+            <Button variant="outline" onClick={() => setIsEditing(false)} data-testid="button-cancel-edit">
               <X className="mr-2 h-4 w-4" />
               Annuler
             </Button>
-            <Button onClick={form.handleSubmit(onSubmit)} disabled={updateMutation.isPending}>
+            <Button onClick={form.handleSubmit(onSubmit)} disabled={updateMutation.isPending} data-testid="button-save-account">
               {updateMutation.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -266,13 +361,11 @@ export default function AccountDetail() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-amber-500/10">
-                <Globe className="h-5 w-5 text-amber-500" />
+                <CheckCircle2 className="h-5 w-5 text-amber-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Site web</p>
-                <p className="text-sm font-medium truncate max-w-[120px]">
-                  {account.domain || 'Non défini'}
-                </p>
+                <p className="text-sm text-muted-foreground">Suivi</p>
+                <p className="text-2xl font-semibold">{progressPercentage}%</p>
               </div>
             </div>
           </CardContent>
@@ -280,36 +373,141 @@ export default function AccountDetail() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Informations du client</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isEditing ? (
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Nom de l'entreprise</FormLabel>
-                        <FormControl>
-                          <Input {...field} data-testid="input-edit-name" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="grid grid-cols-2 gap-4">
+        <div className="lg:col-span-2 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Informations du client</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isEditing ? (
+                <Form {...form}>
+                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                     <FormField
                       control={form.control}
-                      name="contactName"
+                      name="name"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Contact principal</FormLabel>
+                          <FormLabel>Nom de l'entreprise</FormLabel>
                           <FormControl>
-                            <Input {...field} data-testid="input-edit-contact" />
+                            <Input {...field} data-testid="input-edit-name" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="contactName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Contact principal</FormLabel>
+                            <FormControl>
+                              <Input {...field} data-testid="input-edit-contact" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="contactEmail"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Email</FormLabel>
+                            <FormControl>
+                              <Input type="email" {...field} data-testid="input-edit-email" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="contactPhone"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Téléphone</FormLabel>
+                            <FormControl>
+                              <Input {...field} data-testid="input-edit-phone" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="domain"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Site web</FormLabel>
+                            <FormControl>
+                              <Input {...field} data-testid="input-edit-domain" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="plan"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Plan</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-edit-plan">
+                                  <SelectValue placeholder="Sélectionner un plan" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="audit">Audit</SelectItem>
+                                <SelectItem value="automatisation">Automatisation</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="status"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Statut</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-edit-status">
+                                  <SelectValue placeholder="Sélectionner un statut" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="active">Actif</SelectItem>
+                                <SelectItem value="inactive">Inactif</SelectItem>
+                                <SelectItem value="churned">Perdu</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <FormField
+                      control={form.control}
+                      name="loomVideoUrl"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Lien vidéo Loom</FormLabel>
+                          <FormControl>
+                            <Input 
+                              {...field} 
+                              placeholder="https://www.loom.com/share/..." 
+                              data-testid="input-edit-loom"
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -317,116 +515,171 @@ export default function AccountDetail() {
                     />
                     <FormField
                       control={form.control}
-                      name="contactEmail"
+                      name="notes"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Email</FormLabel>
+                          <FormLabel>Notes / Compte-rendu</FormLabel>
                           <FormControl>
-                            <Input type="email" {...field} data-testid="input-edit-email" />
+                            <Textarea 
+                              {...field} 
+                              rows={6}
+                              placeholder="Notes de réunion, compte-rendu d'échanges..."
+                              data-testid="input-edit-notes"
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                  </div>
-                  <FormField
-                    control={form.control}
-                    name="domain"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Site web</FormLabel>
-                        <FormControl>
-                          <Input {...field} data-testid="input-edit-domain" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="plan"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Plan</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
-                            <FormControl>
-                              <SelectTrigger data-testid="select-edit-plan">
-                                <SelectValue placeholder="Sélectionner un plan" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="audit">Audit</SelectItem>
-                              <SelectItem value="automatisation">Automatisation</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="status"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Statut</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
-                            <FormControl>
-                              <SelectTrigger data-testid="select-edit-status">
-                                <SelectValue placeholder="Sélectionner un statut" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="active">Actif</SelectItem>
-                              <SelectItem value="inactive">Inactif</SelectItem>
-                              <SelectItem value="churned">Perdu</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </form>
-              </Form>
-            ) : (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Contact principal</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <User className="h-4 w-4 text-muted-foreground" />
-                      <span>{account.contactName || 'Non défini'}</span>
+                  </form>
+                </Form>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Contact principal</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <User className="h-4 w-4 text-muted-foreground" />
+                        <span>{account.contactName || 'Non défini'}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Email</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Mail className="h-4 w-4 text-muted-foreground" />
+                        <span>{account.contactEmail || 'Non défini'}</span>
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Email</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Mail className="h-4 w-4 text-muted-foreground" />
-                      <span>{account.contactEmail || 'Non défini'}</span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Téléphone</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Phone className="h-4 w-4 text-muted-foreground" />
+                        <span>{account.contactPhone || 'Non défini'}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Site web</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Globe className="h-4 w-4 text-muted-foreground" />
+                        {account.domain ? (
+                          <a href={account.domain} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                            {account.domain}
+                          </a>
+                        ) : (
+                          <span>Non défini</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-                <Separator />
-                <div>
-                  <p className="text-sm text-muted-foreground">Site web</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Globe className="h-4 w-4 text-muted-foreground" />
-                    {account.domain ? (
-                      <a href={account.domain} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                        {account.domain}
-                      </a>
-                    ) : (
-                      <span>Non défini</span>
-                    )}
-                  </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <Video className="h-5 w-5 text-primary" />
+                Vidéo Loom
+              </CardTitle>
+              {account.loomVideoUrl && (
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => window.open(account.loomVideoUrl!, '_blank')}
+                  data-testid="button-open-loom"
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Ouvrir
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent>
+              {account.loomVideoUrl ? (
+                <div className="p-3 rounded-lg bg-muted/50">
+                  <p className="text-sm text-muted-foreground break-all" data-testid="text-loom-url">
+                    {account.loomVideoUrl}
+                  </p>
                 </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Aucun lien vidéo enregistré. Cliquez sur "Modifier" pour ajouter un lien Loom.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <StickyNote className="h-5 w-5 text-primary" />
+                Notes / Compte-rendu
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {account.notes ? (
+                <div className="prose prose-sm dark:prose-invert max-w-none">
+                  <p className="whitespace-pre-wrap" data-testid="text-notes">{account.notes}</p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Aucune note enregistrée. Cliquez sur "Modifier" pour ajouter des notes.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-primary" />
+                Suivi client
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-1 mb-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Progression</span>
+                  <span className="font-medium">{completedSteps}/{totalSteps}</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2">
+                  <div 
+                    className="bg-primary h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${progressPercentage}%` }}
+                  />
+                </div>
+              </div>
+              <div className="space-y-3">
+                {followUpSteps.map((step) => (
+                  <div 
+                    key={step.id} 
+                    className="flex items-center gap-3 p-2 rounded-lg hover-elevate cursor-pointer"
+                    onClick={() => handleFollowUpToggle(step.id)}
+                    data-testid={`checkbox-step-${step.id}`}
+                  >
+                    <Checkbox
+                      checked={step.completed}
+                      onCheckedChange={() => handleFollowUpToggle(step.id)}
+                      disabled={updateFollowUpMutation.isPending}
+                    />
+                    <span className={step.completed ? 'line-through text-muted-foreground' : ''}>
+                      {step.label}
+                    </span>
+                    {step.completed ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500 ml-auto" />
+                    ) : (
+                      <Circle className="h-4 w-4 text-muted-foreground ml-auto" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Opportunités récentes</CardTitle>

@@ -29,8 +29,12 @@ export interface Account {
   domain?: string | null;
   plan: string;
   status: AccountStatus;
-  contactName: string;
-  contactEmail: string;
+  contactName?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  notes?: string | null;
+  loomVideoUrl?: string | null;
+  followUpSteps?: string | null;
   notionPageId?: string | null;
   notionLastEditedAt?: string | null;
   createdAt?: string;
