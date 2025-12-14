@@ -1,0 +1,121 @@
+Rôle : Tu es un Architecte Solution Senior et Développeur Expert en SaaS B2B (Spécialisation Google AppSheet & Automation).
+
+Projet : Créer le SaaS de gestion global pour l'agence d'automatisation "IA INFINITY" (https://i-a-infinity.com/).
+
+Objectif : Une plateforme centrale "All-in-One" pour gérer la relation Client, la Production technique et la Finance, avec une sécurité des données stricte.
+
+1. ARCHITECTURE & SÉCURITÉ (RBAC - CRITIQUE) L'application doit gérer 3 niveaux d'accès avec une cloison étanche des données (Row-Level Security) :
+
+ADMIN (Moi) : Vue "Dieu". Accès à tout : Marges, Coûts sous-traitants, Facturation Client, CRM.
+
+CLIENT : Vue "Portail". Ne voit que SES projets, SES documents, SES stats ROI. Interdiction formelle de voir les sous-traitants ou les coûts de production.
+
+SOUS-TRAITANT : Vue "Tâches". Ne voit que les projets assignés et SA propre rémunération. Interdiction formelle de voir le budget global du client ou les autres projets.
+
+2. LE CYCLE DE VENTE & FINANCIER (3 PHASES) Le pipeline commercial suit une logique stricte :
+
+PHASE 1 : PROSPECT
+
+Création fiche prospect.
+
+L'Admin peut générer un devis pour un "Audit Payant".
+
+PHASE 2 : AUDIT (Le Pivot)
+
+Statut : "En attente paiement Audit".
+
+Dès que la Facture d'Audit est marquée "Payée", le Prospect devient automatiquement CLIENT (Stage Audit).
+
+L'Admin peut assigner un sous-traitant spécifique pour l'Audit (Rémunération spécifique Audit).
+
+PHASE 3 : INTÉGRATION (Projet Final)
+
+Une fois l'audit terminé, l'Admin génère un Devis d'Intégration.
+
+Si Signé + Acompte versé -> Le statut passe à "PROJET ACTIF".
+
+Déclenchement des tâches de production.
+
+3. AUTOMATION & RELANCES (Moteur Intelligent)
+
+Trigger Relance : Si un document (Devis Audit ou Devis Intégration) est "Envoyé" et non signé à J+3 -> Email de relance automatique.
+
+Alertes : Si J+7 sans signature -> Notification Admin "Risque Perte".
+
+4. GESTION DE PROJET & LIVRABLES (Production)
+
+Vue Admin : Création de tâches, assignation Sous-traitant, définition Date Fin et Rémunération Prestataire.
+
+Vue Sous-traitant :
+
+Voit ses tâches et deadlines.
+
+Module Livrables : Upload obligatoire de fichiers (Code, Images, PDF) pour pouvoir cliquer sur "Soumettre".
+
+Action : Bouton "Soumettre pour validation" (Verrouille la tâche).
+
+Validation Admin :
+
+L'Admin reçoit la notif.
+
+Action : "Refuser" (Retour commentaire) OU "Valider" (Débloque le paiement).
+
+5. FACTURATION SOUS-TRAITANT (Reverse Billing)
+
+Règle d'Or : Un sous-traitant ne peut JAMAIS émettre de facture si le statut du projet n'est pas "VALIDÉ PAR ADMIN".
+
+Workflow :
+
+Projet Validé -> Un bouton "Uploader ma Facture" apparaît chez le sous-traitant.
+
+Le système lui rappelle le montant convenu (Rémunération Prestataire).
+
+L'Admin a une vue "Factures Fournisseurs à Payer".
+
+6. FONCTIONNALITÉS DE CROISSANCE & RÉTENTION (Nouveau)
+
+Dashboard ROI (Vue Client) :
+
+Affichage de widgets : "Temps économisé ce mois" / "Argent économisé".
+
+Calculé via : Nombre d'exécutions x Valeur unitaire.
+
+Maintenance & Abonnement :
+
+Possibilité d'activer un "Contrat Maintenance" mensuel.
+
+Indicateur visuel Admin : Client à jour (Vert) / En retard (Rouge).
+
+Gestion des "Change Requests" :
+
+Le Client peut demander une "Évolution".
+
+L'Admin transforme la demande en "Micro-Devis" additionnel.
+
+Parrainage :
+
+Champ Parrain_ID dans la table Client.
+
+Si un nouveau client vient de la part d'un parrain, notification Admin pour appliquer une remise.
+
+7. DATA MODEL (Structure de base de données suggérée)
+
+Users : ID, Email, Role (Admin/Client/Sub), Nom, Infos_Bancaires, Code_Parrain.
+
+Projets : ID, Client_ID, Statut_Global (Prospect/Audit/Intégration/Maintenance), Budget_Vendu, Marge_Brute (Calculée).
+
+Taches_SousTraitance : ID, Projet_ID, Sub_ID, Cout_Achat, Statut_Validation, Lien_Livrables.
+
+Documents_Vente : ID, Client_ID, Type (Devis_Audit, Facture_Audit, Devis_Integ, Facture_Integ), Statut, Date_Envoi.
+
+Factures_Achat : ID, Sub_ID, Tache_ID, Montant, Fichier_PDF, Statut_Paiement.
+
+Stats_ROI : ID, Projet_ID, Mois, Heures_Gagnees, Euros_Economises.
+
+LIVRABLE ATTENDU :
+
+Génère la structure complète des tables (format compatible Google Sheets / AppSheet).
+
+Liste les formules logiques (Slices/Vues) pour gérer la sécurité (Qui voit quoi).
+
+Détaille le workflow d'automatisation pour les relances email.
