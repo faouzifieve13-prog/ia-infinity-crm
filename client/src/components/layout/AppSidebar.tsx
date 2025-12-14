@@ -124,7 +124,7 @@ const navCategories: NavCategory[] = [
     icon: PieChart,
     spaces: ['internal', 'client'],
     items: [
-      { title: 'Tableau de bord', url: '/finance', icon: PieChart, spaces: ['internal'] },
+      { title: 'Finance globale', url: '/finance', icon: PieChart, spaces: ['internal'] },
       { title: 'Factures Clients', url: '/invoices', icon: Receipt, spaces: ['internal', 'client'] },
       { title: 'Dépenses', url: '/expenses', icon: Wallet, spaces: ['internal'] },
       { title: 'Prestataires', url: '/vendors', icon: Briefcase, spaces: ['internal'] },
@@ -167,7 +167,7 @@ const secondaryItems: NavItem[] = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { currentSpace } = useSpace();
-  const [openCategories, setOpenCategories] = useState<string[]>(['Commercial', 'Projets', 'Finance', 'Documents']);
+  const [openCategories, setOpenCategories] = useState<string[]>(['Commercial', 'Projets', 'Finance', 'Tâches', 'RDV', 'Documents']);
 
   const toggleCategory = (category: string) => {
     setOpenCategories(prev => 

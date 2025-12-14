@@ -1,7 +1,12 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Plus, Filter, Download, Loader2 } from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Plus, Filter, Download, Loader2, Building2, User, DollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -9,9 +14,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
 import { PipelineBoard } from '@/components/pipeline/PipelineBoard';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import type { Deal, DealStage } from '@/lib/types';
+import { useToast } from '@/hooks/use-toast';
+import type { Deal, DealStage, Account } from '@/lib/types';
+
+const prospectFormSchema = z.object({
+  name: z.string().min(1, 'Le nom est requis'),
+  companyName: z.string().min(1, 'Le nom de l\'entreprise est requis'),
+  contactName: z.string().optional(),
+  contactEmail: z.string().email('Email invalide').optional().or(z.literal('')),
+  amount: z.string().optional(),
+  probability: z.string().optional(),
+  nextAction: z.string().optional(),
+});
+
+type ProspectFormValues = z.infer<typeof prospectFormSchema>;
 
 interface DealWithRelations extends Deal {
   owner: { id: string; name: string; email: string; avatar?: string | null };
@@ -19,10 +54,83 @@ interface DealWithRelations extends Deal {
 
 export default function Pipeline() {
   const [ownerFilter, setOwnerFilter] = useState<string>('all');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const { toast } = useToast();
+
+  const form = useForm<ProspectFormValues>({
+    resolver: zodResolver(prospectFormSchema),
+    defaultValues: {
+      name: '',
+      companyName: '',
+      contactName: '',
+      contactEmail: '',
+      amount: '',
+      probability: '10',
+      nextAction: '',
+    },
+  });
 
   const { data: deals = [], isLoading: dealsLoading } = useQuery<Deal[]>({
     queryKey: ['/api/deals'],
   });
+
+  const { data: accounts = [] } = useQuery<Account[]>({
+    queryKey: ['/api/accounts'],
+  });
+
+  const createProspectMutation = useMutation({
+    mutationFn: async (data: ProspectFormValues) => {
+      let accountId = null;
+      
+      const existingAccount = accounts.find(
+        a => a.name.toLowerCase() === data.companyName.toLowerCase()
+      );
+      
+      if (existingAccount) {
+        accountId = existingAccount.id;
+      } else {
+        const newAccount = await apiRequest('POST', '/api/accounts', {
+          name: data.companyName,
+          contactName: data.contactName || 'Contact principal',
+          contactEmail: data.contactEmail || `contact@${data.companyName.toLowerCase().replace(/\s+/g, '')}.com`,
+          plan: 'audit',
+          status: 'active',
+        });
+        const accountData = await newAccount.json();
+        accountId = accountData.id;
+      }
+
+      return apiRequest('POST', '/api/deals', {
+        name: data.name,
+        accountId,
+        amount: data.amount ? parseFloat(data.amount) : 0,
+        probability: data.probability ? parseInt(data.probability) : 10,
+        stage: 'prospect',
+        nextAction: data.nextAction || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/deals'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      toast({
+        title: 'Prospect créé',
+        description: 'Le prospect a été ajouté au pipeline.',
+      });
+      setDialogOpen(false);
+      form.reset();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de créer le prospect.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const onSubmit = (data: ProspectFormValues) => {
+    createProspectMutation.mutate(data);
+  };
 
   const updateDealStageMutation = useMutation({
     mutationFn: async ({ dealId, stage, position }: { dealId: string; stage: DealStage; position: number }) => {
@@ -88,10 +196,154 @@ export default function Pipeline() {
             <Download className="h-4 w-4" />
           </Button>
 
-          <Button data-testid="button-add-deal">
-            <Plus className="mr-2 h-4 w-4" />
-            Add Deal
-          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-add-deal">
+                <Plus className="mr-2 h-4 w-4" />
+                Nouveau Prospect
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Ajouter un prospect</DialogTitle>
+                <DialogDescription>
+                  Créez une nouvelle opportunité dans le pipeline
+                </DialogDescription>
+              </DialogHeader>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Nom de l'opportunité *</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Ex: Audit IA pour entreprise X" {...field} data-testid="input-prospect-name" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="companyName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Entreprise *</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Building2 className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                            <Input className="pl-9" placeholder="Nom de l'entreprise" {...field} data-testid="input-prospect-company" />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="contactName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Contact</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                              <Input className="pl-9" placeholder="Nom du contact" {...field} data-testid="input-prospect-contact" />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="contactEmail"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <Input type="email" placeholder="email@exemple.com" {...field} data-testid="input-prospect-email" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="amount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Montant estimé (€)</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <DollarSign className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                              <Input className="pl-9" type="number" placeholder="5000" {...field} data-testid="input-prospect-amount" />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="probability"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Probabilité (%)</FormLabel>
+                          <FormControl>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <SelectTrigger data-testid="select-prospect-probability">
+                                <SelectValue placeholder="Probabilité" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="10">10%</SelectItem>
+                                <SelectItem value="25">25%</SelectItem>
+                                <SelectItem value="50">50%</SelectItem>
+                                <SelectItem value="75">75%</SelectItem>
+                                <SelectItem value="90">90%</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="nextAction"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Prochaine action</FormLabel>
+                        <FormControl>
+                          <Textarea placeholder="Ex: Appeler pour présenter l'offre d'audit" {...field} data-testid="input-prospect-action" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                      Annuler
+                    </Button>
+                    <Button type="submit" disabled={createProspectMutation.isPending} data-testid="button-submit-prospect">
+                      {createProspectMutation.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Plus className="mr-2 h-4 w-4" />
+                      )}
+                      Créer le prospect
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
