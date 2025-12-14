@@ -1,6 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { motion } from 'framer-motion';
+import { useLocation } from 'wouter';
 import { GripVertical, Calendar, TrendingUp, Clock } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -42,6 +43,7 @@ const getDaysColor = (days: number) => {
 };
 
 export function DealCard({ deal }: DealCardProps) {
+  const [, navigate] = useLocation();
   const {
     attributes,
     listeners,
@@ -50,6 +52,14 @@ export function DealCard({ deal }: DealCardProps) {
     transition,
     isDragging,
   } = useSortable({ id: deal.id });
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    // Don't navigate if clicking on the drag handle
+    if ((e.target as HTMLElement).closest('[data-testid^="deal-drag-handle"]')) {
+      return;
+    }
+    navigate(`/deals/${deal.id}`);
+  };
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -78,18 +88,22 @@ export function DealCard({ deal }: DealCardProps) {
     >
       <Card
         className="cursor-pointer group overflow-hidden border-0 shadow-sm hover:shadow-md transition-all duration-200"
+        onClick={handleCardClick}
         data-testid={`deal-card-${deal.id}`}
       >
         <CardContent className="p-3">
           <div className="flex items-start gap-2">
-            <button
+            <div
               {...attributes}
               {...listeners}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
               className="mt-1 cursor-grab text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
               data-testid={`deal-drag-handle-${deal.id}`}
             >
-              <GripVertical className="h-4 w-4" />
-            </button>
+              <GripVertical className="h-4 w-4 pointer-events-none" />
+            </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2 mb-1">
                 <h4 className="font-semibold text-sm truncate group-hover:text-primary transition-colors">

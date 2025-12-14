@@ -8,6 +8,7 @@ import { SpaceProvider } from "@/hooks/use-space";
 import { AppLayout } from "@/components/layout/AppLayout";
 import Dashboard from "@/pages/Dashboard";
 import Pipeline from "@/pages/Pipeline";
+import DealDetail from "@/pages/DealDetail";
 import Projects from "@/pages/Projects";
 import ProjectDetail from "@/pages/ProjectDetail";
 import Tasks from "@/pages/Tasks";
@@ -34,6 +35,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/pipeline" component={Pipeline} />
+      <Route path="/deals/:id" component={DealDetail} />
       <Route path="/projects" component={Projects} />
       <Route path="/projects/:id" component={ProjectDetail} />
       <Route path="/tasks" component={Tasks} />

@@ -58,6 +58,7 @@ export interface Deal {
   accountId: string;
   contactId?: string | null;
   ownerId: string;
+  name: string;
   amount: string;
   probability: number;
   stage: DealStage;
@@ -65,6 +66,9 @@ export interface Deal {
   nextActionDate?: string | null;
   daysInStage: number;
   position: number;
+  notes?: string | null;
+  loomVideoUrl?: string | null;
+  contactPhone?: string | null;
   notionPageId?: string | null;
   notionLastEditedAt?: string | null;
   createdAt?: string;
