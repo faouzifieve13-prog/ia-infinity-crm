@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Plus, FileSignature, Search, Filter, Loader2, Eye, Download, Send, Check, X, Building2, Mail, Phone, MapPin, FileText } from 'lucide-react';
+import { Plus, FileSignature, Search, Filter, Loader2, Eye, Download, Send, Check, X, Building2, Mail, Phone, MapPin, FileText, Edit, CloudUpload, ExternalLink, FileDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -98,6 +98,72 @@ function ContractCard({ contract }: { contract: Contract }) {
   const { toast } = useToast();
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isSignatureOpen, setIsSignatureOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  
+  const editForm = useForm({
+    defaultValues: {
+      clientName: contract.clientName || '',
+      clientCompany: contract.clientCompany || '',
+      clientAddress: contract.clientAddress || '',
+      clientEmail: contract.clientEmail || '',
+      amount: contract.amount || '',
+      dateDebut: contract.startDate ? new Date(contract.startDate).toISOString().split('T')[0] : '',
+      dateFin: contract.endDate ? new Date(contract.endDate).toISOString().split('T')[0] : '',
+      outilPlateforme: '',
+      nombreSemaines: '',
+      nomPhase: '',
+      lieu: 'Paris',
+    },
+  });
+
+  const updateContractMutation = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      return apiRequest('PATCH', `/api/contracts/${contract.id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/contracts'] });
+      toast({ title: 'Contrat mis à jour' });
+      setIsEditOpen(false);
+    },
+    onError: (error: any) => {
+      toast({ title: 'Erreur', description: error.message || 'Échec de la mise à jour', variant: 'destructive' });
+    },
+  });
+
+  const generateDocxMutation = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      return apiRequest('POST', `/api/contracts/${contract.id}/generate-docx-drive`, data);
+    },
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/contracts'] });
+      toast({ 
+        title: 'Document généré', 
+        description: 'Le contrat Word a été sauvegardé sur Google Drive' 
+      });
+      setIsEditOpen(false);
+    },
+    onError: (error: any) => {
+      toast({ title: 'Erreur', description: error.message || 'Échec de la génération', variant: 'destructive' });
+    },
+  });
+
+  const handleSaveAndGenerate = () => {
+    const values = editForm.getValues();
+    const updateData: Record<string, unknown> = {
+      clientName: values.clientName,
+      clientCompany: values.clientCompany,
+      clientAddress: values.clientAddress,
+      clientEmail: values.clientEmail,
+      amount: values.amount,
+      startDate: values.dateDebut ? new Date(values.dateDebut).toISOString() : null,
+      endDate: values.dateFin ? new Date(values.dateFin).toISOString() : null,
+    };
+    updateContractMutation.mutate(updateData, {
+      onSuccess: () => {
+        generateDocxMutation.mutate(values);
+      }
+    });
+  };
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ status }: { status: ContractStatus }) => {
@@ -322,7 +388,193 @@ function ContractCard({ contract }: { contract: Contract }) {
               data-testid="button-download-pdf"
             >
               <Download className="mr-2 h-4 w-4" />
-              Télécharger PDF
+              PDF
+            </Button>
+            <Button 
+              variant="outline"
+              onClick={() => window.open(`/api/contracts/${contract.id}/docx`, '_blank')}
+              data-testid="button-download-docx"
+            >
+              <FileDown className="mr-2 h-4 w-4" />
+              DOCX
+            </Button>
+            {contract.status === 'draft' && (
+              <Button
+                variant="outline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsViewOpen(false);
+                  setIsEditOpen(true);
+                }}
+                data-testid="button-edit-contract"
+              >
+                <Edit className="mr-2 h-4 w-4" />
+                Personnaliser
+              </Button>
+            )}
+            {(contract as any).driveWebViewLink && (
+              <Button
+                variant="outline"
+                onClick={() => window.open((contract as any).driveWebViewLink, '_blank')}
+                data-testid="button-view-drive"
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Drive
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit className="h-5 w-5" />
+              Personnaliser le contrat
+            </DialogTitle>
+            <DialogDescription>
+              Modifiez les informations du contrat avant de générer le document Word.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Nom du client</label>
+              <Input
+                {...editForm.register('clientName')}
+                placeholder="Nom complet du client"
+                data-testid="input-client-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Société</label>
+              <Input
+                {...editForm.register('clientCompany')}
+                placeholder="Nom de l'entreprise"
+                data-testid="input-client-company"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Email</label>
+              <Input
+                {...editForm.register('clientEmail')}
+                type="email"
+                placeholder="email@example.com"
+                data-testid="input-client-email"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Montant HT (€)</label>
+              <Input
+                {...editForm.register('amount')}
+                type="number"
+                placeholder="1000"
+                data-testid="input-amount"
+              />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <label className="text-sm font-medium">Adresse</label>
+              <Textarea
+                {...editForm.register('clientAddress')}
+                placeholder="Adresse complète"
+                data-testid="input-client-address"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Date de début</label>
+              <Input
+                {...editForm.register('dateDebut')}
+                type="date"
+                data-testid="input-date-debut"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Date de fin</label>
+              <Input
+                {...editForm.register('dateFin')}
+                type="date"
+                data-testid="input-date-fin"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Lieu de signature</label>
+              <Input
+                {...editForm.register('lieu')}
+                placeholder="Paris"
+                data-testid="input-lieu"
+              />
+            </div>
+            {contract.type === 'prestation' && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Outil/Plateforme</label>
+                  <Input
+                    {...editForm.register('outilPlateforme')}
+                    placeholder="Make / n8n / Zapier"
+                    data-testid="input-outil"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Durée (semaines)</label>
+                  <Input
+                    {...editForm.register('nombreSemaines')}
+                    type="number"
+                    placeholder="4"
+                    data-testid="input-semaines"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Nom de la phase</label>
+                  <Input
+                    {...editForm.register('nomPhase')}
+                    placeholder="Phase de test"
+                    data-testid="input-phase"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          <DialogFooter className="flex-wrap gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setIsEditOpen(false)}
+            >
+              Annuler
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const values = editForm.getValues();
+                updateContractMutation.mutate({
+                  clientName: values.clientName,
+                  clientCompany: values.clientCompany,
+                  clientAddress: values.clientAddress,
+                  clientEmail: values.clientEmail,
+                  amount: values.amount,
+                  startDate: values.dateDebut ? new Date(values.dateDebut).toISOString() : null,
+                  endDate: values.dateFin ? new Date(values.dateFin).toISOString() : null,
+                });
+              }}
+              disabled={updateContractMutation.isPending}
+            >
+              {updateContractMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Enregistrer
+            </Button>
+            <Button
+              onClick={handleSaveAndGenerate}
+              disabled={updateContractMutation.isPending || generateDocxMutation.isPending}
+              data-testid="button-generate-drive"
+            >
+              {(updateContractMutation.isPending || generateDocxMutation.isPending) ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <CloudUpload className="mr-2 h-4 w-4" />
+              )}
+              Générer et sauvegarder sur Drive
             </Button>
           </DialogFooter>
         </DialogContent>

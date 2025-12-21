@@ -231,6 +231,93 @@ export async function deleteFile(fileId: string): Promise<void> {
   await drive.files.delete({ fileId });
 }
 
+// Get Drive connection status (alias for testDriveConnection)
+export async function getDriveStatus(): Promise<{ connected: boolean; email?: string; error?: string }> {
+  return testDriveConnection();
+}
+
+// Get or create a generic folder
+async function getOrCreateFolder(folderName: string): Promise<string> {
+  const drive = await getUncachableGoogleDriveClient();
+
+  const searchResponse = await drive.files.list({
+    q: `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+    fields: 'files(id, name)',
+    spaces: 'drive'
+  });
+
+  if (searchResponse.data.files && searchResponse.data.files.length > 0) {
+    return searchResponse.data.files[0].id!;
+  }
+
+  const folderMetadata = {
+    name: folderName,
+    mimeType: 'application/vnd.google-apps.folder'
+  };
+
+  const folder = await drive.files.create({
+    requestBody: folderMetadata,
+    fields: 'id'
+  });
+
+  return folder.data.id!;
+}
+
+// Upload any file to Drive (generic version)
+export async function uploadFileToDrive(
+  fileBuffer: Buffer,
+  filename: string,
+  mimeType: string,
+  folderName: string = 'IA Infinity - Devis'
+): Promise<DriveFile> {
+  const drive = await getUncachableGoogleDriveClient();
+  const folderId = await getOrCreateFolder(folderName);
+
+  const stream = new Readable();
+  stream.push(fileBuffer);
+  stream.push(null);
+
+  const fileMetadata = {
+    name: filename,
+    parents: [folderId],
+    description: `Généré par IA Infinity`
+  };
+
+  const media = {
+    mimeType: mimeType,
+    body: stream
+  };
+
+  const file = await drive.files.create({
+    requestBody: fileMetadata,
+    media: media,
+    fields: 'id, name, mimeType, webViewLink, webContentLink, createdTime, modifiedTime'
+  });
+
+  await drive.permissions.create({
+    fileId: file.data.id!,
+    requestBody: {
+      role: 'reader',
+      type: 'anyone'
+    }
+  });
+
+  const updatedFile = await drive.files.get({
+    fileId: file.data.id!,
+    fields: 'id, name, mimeType, webViewLink, webContentLink, createdTime, modifiedTime'
+  });
+
+  return {
+    id: updatedFile.data.id!,
+    name: updatedFile.data.name!,
+    mimeType: updatedFile.data.mimeType!,
+    webViewLink: updatedFile.data.webViewLink || undefined,
+    webContentLink: updatedFile.data.webContentLink || undefined,
+    createdTime: updatedFile.data.createdTime || undefined,
+    modifiedTime: updatedFile.data.modifiedTime || undefined
+  };
+}
+
 // Convert PDF to Google Doc for editing
 export async function convertToGoogleDoc(fileId: string): Promise<DriveFile> {
   const drive = await getUncachableGoogleDriveClient();

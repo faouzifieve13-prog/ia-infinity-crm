@@ -878,10 +878,43 @@ export default function DealDetail() {
                 <p>Montant: {parseFloat(deal?.amount || '0').toLocaleString('fr-FR')}€</p>
               </div>
             </div>
+            <div className="rounded-lg border p-4 bg-blue-50 dark:bg-blue-950">
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                <strong>Conseil:</strong> Utilisez "Créer brouillon" pour personnaliser le contrat avant l'envoi. 
+                Le contrat sera disponible dans la section Contrats.
+              </p>
+            </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-wrap gap-2">
             <Button variant="outline" onClick={() => setContractDialogOpen(false)}>
               Annuler
+            </Button>
+            <Button 
+              variant="outline"
+              onClick={async () => {
+                try {
+                  await apiRequest('POST', '/api/contracts/create-from-deal', {
+                    dealId: dealId,
+                    type: selectedContractType,
+                  });
+                  queryClient.invalidateQueries({ queryKey: ['/api/contracts'] });
+                  toast({ 
+                    title: 'Brouillon créé', 
+                    description: 'Rendez-vous dans la section Contrats pour le personnaliser' 
+                  });
+                  setContractDialogOpen(false);
+                } catch (error: any) {
+                  toast({ 
+                    title: 'Erreur', 
+                    description: error.message || 'Échec de la création du brouillon', 
+                    variant: 'destructive' 
+                  });
+                }
+              }}
+              data-testid="button-create-draft"
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              Créer brouillon
             </Button>
             <Button 
               onClick={() => generateAndSendContractMutation.mutate(selectedContractType)}

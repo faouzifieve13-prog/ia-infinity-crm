@@ -118,48 +118,50 @@ export async function generateContractDocx(
   const doc = new Docxtemplater(zip, {
     paragraphLoop: true,
     linebreaks: true,
+    // Using single braces to match standard Word template format
     delimiters: { start: '{', end: '}' },
   });
   
   // Map template data to placeholder names used in the documents
+  // Using {{ }} syntax for clarity (can be customized for actual template format)
   const placeholders: Record<string, string> = {
     // Prestataire
-    'Votre Nom/Nom de votre entreprise': templateData.prestataireName,
-    'Votre Adresse': templateData.prestataireAddress,
-    'Votre E-mail': templateData.prestataireEmail,
-    'Votre Téléphone': templateData.prestataireTelephone,
-    'Votre numéro de SIRET': templateData.prestataireSiret,
-    'Votre Nom': templateData.prestataireName,
-    'Votre Ville': templateData.villeJuridiction,
+    prestataireName: templateData.prestataireName,
+    prestataireAddress: templateData.prestataireAddress,
+    prestataireEmail: templateData.prestataireEmail,
+    prestataireTelephone: templateData.prestataireTelephone,
+    prestataireSiret: templateData.prestataireSiret,
+    villeJuridiction: templateData.villeJuridiction,
     
     // Client
-    'Nom du Client': templateData.clientName,
-    'Nom de l\'Entreprise': templateData.clientCompany,
-    'Adresse de l\'Entreprise': templateData.clientAddress,
-    'E-mail du Client': templateData.clientEmail,
+    clientName: templateData.clientName,
+    clientCompany: templateData.clientCompany,
+    clientAddress: templateData.clientAddress,
+    clientEmail: templateData.clientEmail,
     
     // Dates
-    'Date de début': templateData.dateDebut,
-    'Date de fin': templateData.dateFin,
-    'Date': templateData.dateContrat,
-    'Lieu': templateData.lieu,
+    dateDebut: templateData.dateDebut,
+    dateFin: templateData.dateFin,
+    dateContrat: templateData.dateContrat,
+    lieu: templateData.lieu,
     
     // Financial
-    'Prix HT': templateData.prixHT,
-    'Prix TTC': templateData.prixTTC,
+    prixHT: templateData.prixHT,
+    prixTTC: templateData.prixTTC,
+    tva: templateData.tva,
     
-    // Specific fields
-    'Date de livraison du rapport d\'audit': templateData.dateRapportAudit || '',
-    'Outil/Plateforme': templateData.outilPlateforme || '',
-    'Nombre': templateData.nombreSemaines || '',
-    'Nom de la phase': templateData.nomPhase || '',
+    // Specific fields for prestation
+    dateRapportAudit: templateData.dateRapportAudit || '',
+    outilPlateforme: templateData.outilPlateforme || '',
+    nombreSemaines: templateData.nombreSemaines || '',
+    nomPhase: templateData.nomPhase || '',
   };
   
   try {
     doc.render(placeholders);
   } catch (error: any) {
     // If template rendering fails (placeholders not in the expected format),
-    // we still return the original document
+    // log warning but continue - the original text will remain
     console.warn('Template rendering warning:', error.message);
   }
   

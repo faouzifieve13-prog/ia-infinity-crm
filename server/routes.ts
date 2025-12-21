@@ -1058,6 +1058,215 @@ export async function registerRoutes(
   });
 
   // ============================================
+  // Contract Template Routes (DOCX Generation)
+  // ============================================
+  
+  app.get("/api/contracts/templates/:type", async (req: Request, res: Response) => {
+    try {
+      const contractType = req.params.type as 'audit' | 'prestation';
+      if (!['audit', 'prestation'].includes(contractType)) {
+        return res.status(400).json({ error: "Invalid contract type. Must be 'audit' or 'prestation'" });
+      }
+      
+      const { getContractTemplateInfo } = await import("./docx-generator");
+      const templateInfo = await getContractTemplateInfo(contractType);
+      res.json(templateInfo);
+    } catch (error) {
+      console.error("Get contract template info error:", error);
+      res.status(500).json({ error: "Failed to get template info" });
+    }
+  });
+  
+  app.get("/api/contracts/:id/docx", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const contract = await storage.getContract(req.params.id, orgId);
+      
+      if (!contract) {
+        return res.status(404).json({ error: "Contract not found" });
+      }
+      
+      const { generateContractDocx, prepareContractData } = await import("./docx-generator");
+      const contractType = (contract.type === 'audit' ? 'audit' : 'prestation') as 'audit' | 'prestation';
+      
+      const templateData = prepareContractData(contractType, {
+        clientName: contract.clientName,
+        clientCompany: contract.clientCompany || '',
+        clientAddress: contract.clientAddress || '',
+        clientEmail: contract.clientEmail,
+        amount: contract.amount,
+        dateDebut: contract.startDate?.toISOString() || '',
+        dateFin: contract.endDate?.toISOString() || '',
+      });
+      
+      const docxBuffer = await generateContractDocx(contractType, templateData);
+      
+      const sanitizedFilename = contract.contractNumber.replace(/[^a-zA-Z0-9-_]/g, '_');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFilename}.docx"`);
+      res.send(docxBuffer);
+    } catch (error) {
+      console.error("Generate contract DOCX error:", error);
+      res.status(500).json({ error: "Failed to generate DOCX" });
+    }
+  });
+  
+  const contractPersonalizationSchema = z.object({
+    clientName: z.string().optional(),
+    clientCompany: z.string().optional(),
+    clientAddress: z.string().optional(),
+    clientEmail: z.string().optional(),
+    amount: z.union([z.string(), z.number()]).optional(),
+    dateDebut: z.string().optional(),
+    dateFin: z.string().optional(),
+    dateRapportAudit: z.string().optional(),
+    outilPlateforme: z.string().optional(),
+    nombreSemaines: z.string().optional(),
+    nomPhase: z.string().optional(),
+    lieu: z.string().optional(),
+  });
+  
+  app.post("/api/contracts/:id/generate-docx-drive", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const contract = await storage.getContract(req.params.id, orgId);
+      
+      if (!contract) {
+        return res.status(404).json({ error: "Contrat introuvable" });
+      }
+      
+      // Validate request body
+      const parsed = contractPersonalizationSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Données de personnalisation invalides", details: parsed.error.errors });
+      }
+      const customData = parsed.data;
+      
+      // Check Drive connection before proceeding
+      const { uploadFileToDrive, getDriveStatus } = await import("./drive");
+      let driveStatus;
+      try {
+        driveStatus = await getDriveStatus();
+      } catch (driveError) {
+        console.error("Drive connection check failed:", driveError);
+        return res.status(503).json({ error: "Impossible de vérifier la connexion Google Drive. Veuillez reconnecter votre compte." });
+      }
+      
+      if (!driveStatus.connected) {
+        return res.status(400).json({ error: "Google Drive n'est pas connecté. Veuillez le connecter dans les paramètres." });
+      }
+      
+      const { generateContractDocx, prepareContractData } = await import("./docx-generator");
+      
+      const contractType = (contract.type === 'audit' ? 'audit' : 'prestation') as 'audit' | 'prestation';
+      
+      const templateData = prepareContractData(contractType, {
+        clientName: customData.clientName || contract.clientName,
+        clientCompany: customData.clientCompany || contract.clientCompany || '',
+        clientAddress: customData.clientAddress || contract.clientAddress || '',
+        clientEmail: customData.clientEmail || contract.clientEmail,
+        amount: customData.amount || contract.amount,
+        dateDebut: customData.dateDebut || contract.startDate?.toISOString() || '',
+        dateFin: customData.dateFin || contract.endDate?.toISOString() || '',
+        dateRapportAudit: customData.dateRapportAudit,
+        outilPlateforme: customData.outilPlateforme,
+        nombreSemaines: customData.nombreSemaines,
+        nomPhase: customData.nomPhase,
+        lieu: customData.lieu,
+      });
+      
+      const docxBuffer = await generateContractDocx(contractType, templateData);
+      
+      const filename = `${contract.contractNumber}_${contract.clientName.replace(/[^a-zA-Z0-9]/g, '_')}.docx`;
+      const driveResult = await uploadFileToDrive(
+        docxBuffer,
+        filename,
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'IA Infinity - Contrats'
+      );
+      
+      // Update contract with Drive file info
+      const updatedContract = await storage.updateContract(req.params.id, orgId, {
+        driveFileId: driveResult.id,
+        driveWebViewLink: driveResult.webViewLink,
+        driveWebContentLink: driveResult.webContentLink,
+        templateType: contractType,
+      });
+      
+      res.json({
+        success: true,
+        contract: updatedContract,
+        driveFile: driveResult,
+      });
+    } catch (error: any) {
+      console.error("Generate and upload contract DOCX error:", error);
+      const errorMessage = error.message?.includes('Drive') || error.message?.includes('Google')
+        ? "Erreur de connexion à Google Drive. Veuillez vérifier votre connexion."
+        : "Échec de la génération du document. Veuillez réessayer.";
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+  
+  app.post("/api/contracts/create-from-deal", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const createFromDealSchema = z.object({
+        dealId: z.string(),
+        type: z.enum(['audit', 'prestation']),
+        customData: contractPersonalizationSchema.optional(),
+      });
+      
+      const parsed = createFromDealSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      
+      const { dealId, type, customData } = parsed.data;
+      const deal = await storage.getDeal(dealId, orgId);
+      
+      if (!deal) {
+        return res.status(404).json({ error: "Deal not found" });
+      }
+      
+      const account = deal.accountId ? await storage.getAccount(deal.accountId, orgId) : null;
+      const contact = deal.contactId ? await storage.getContact(deal.contactId, orgId) : null;
+      
+      // Generate contract number
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+      const contractNumber = `CTR-${year}${month}-${random}`;
+      
+      // Create contract in draft status
+      const contractData = {
+        orgId,
+        dealId,
+        accountId: deal.accountId || undefined,
+        contractNumber,
+        title: `${type === 'audit' ? 'Audit Général' : 'Prestation d\'Automatisation'} - ${account?.name || deal.name}`,
+        type: type as ContractType,
+        status: 'draft' as ContractStatus,
+        clientName: customData?.clientName || contact?.name || account?.contactName || '',
+        clientEmail: customData?.clientEmail || contact?.email || account?.contactEmail || '',
+        clientCompany: customData?.clientCompany || account?.name || '',
+        clientAddress: customData?.clientAddress || '',
+        amount: customData?.amount?.toString() || deal.amount || '0',
+        startDate: customData?.dateDebut ? new Date(customData.dateDebut) : null,
+        endDate: customData?.dateFin ? new Date(customData.dateFin) : null,
+        templateType: type,
+      };
+      
+      const contract = await storage.createContract(contractData);
+      
+      res.status(201).json(contract);
+    } catch (error) {
+      console.error("Create contract from deal error:", error);
+      res.status(500).json({ error: "Failed to create contract from deal" });
+    }
+  });
+
+  // ============================================
   // Notion Integration Routes
   // ============================================
 
