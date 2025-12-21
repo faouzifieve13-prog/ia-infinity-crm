@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useParams } from 'wouter';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { format } from 'date-fns';
@@ -23,18 +23,24 @@ export default function ContractSign() {
   const { toast } = useToast();
   const signaturePadRef = useRef<SignatureCanvas>(null);
   const [isSigning, setIsSigning] = useState(false);
+  
+  // Get token from URL query params
+  const token = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('token') || '';
+  }, []);
 
   const { data: contract, isLoading, error, refetch } = useQuery<any>({
-    queryKey: ['/api/contracts/public', id],
+    queryKey: ['/api/contracts/public', id, token],
     queryFn: async () => {
-      const response = await fetch(`/api/contracts/public/${id}`);
+      const response = await fetch(`/api/contracts/public/${id}?token=${encodeURIComponent(token)}`);
       if (!response.ok) {
         const err = await response.json();
         throw new Error(err.error || 'Contrat non trouvé');
       }
       return response.json();
     },
-    enabled: !!id,
+    enabled: !!id && !!token,
   });
 
   const signMutation = useMutation({
@@ -42,7 +48,7 @@ export default function ContractSign() {
       const response = await fetch(`/api/contracts/public/${id}/sign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signatureData }),
+        body: JSON.stringify({ signatureData, token }),
       });
       if (!response.ok) {
         const err = await response.json();
@@ -71,6 +77,22 @@ export default function ContractSign() {
   const clearSignature = () => {
     signaturePadRef.current?.clear();
   };
+
+  // Check for missing token
+  if (!token) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="max-w-md w-full">
+          <CardHeader>
+            <CardTitle className="text-destructive">Lien invalide</CardTitle>
+            <CardDescription>
+              Ce lien de signature est invalide. Veuillez utiliser le lien complet reçu par email.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

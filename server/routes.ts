@@ -957,12 +957,24 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Client email is required to send contract" });
       }
       
+      // Generate secure token for signing
+      const crypto = await import("crypto");
+      const token = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+      
+      // Update contract with token hash
+      await storage.updateContract(req.params.id, orgId, {
+        signatureTokenHash: tokenHash,
+        signatureTokenExpiresAt: expiresAt,
+      });
+      
       const { sendContractEmail } = await import("./gmail");
       
       const baseUrl = req.headers.host?.includes('localhost') 
         ? `http://${req.headers.host}`
         : `https://${req.headers.host}`;
-      const signatureLink = `${baseUrl}/contracts/${contract.id}/sign`;
+      const signatureLink = `${baseUrl}/contracts/${contract.id}/sign?token=${token}`;
       
       const org = await storage.getOrganization(orgId);
       
@@ -995,16 +1007,54 @@ export async function registerRoutes(
     }
   });
 
-  // Public endpoint to get contract details for signing (no auth required)
+  // Helper function to validate signature token
+  async function validateSignatureToken(contractId: string, token: string): Promise<{ valid: boolean; contract?: any; error?: string }> {
+    const crypto = await import("crypto");
+    
+    // Fetch single contract by ID (no org scoping for public access)
+    const contract = await storage.getContractByIdOnly(contractId);
+    
+    if (!contract) {
+      return { valid: false, error: "Contrat non trouvé" };
+    }
+    
+    // Check if token hash exists
+    const storedHash = (contract as any).signatureTokenHash;
+    if (!storedHash) {
+      return { valid: false, error: "Lien de signature invalide ou expiré" };
+    }
+    
+    // Validate token
+    const providedHash = crypto.createHash('sha256').update(token).digest('hex');
+    if (providedHash !== storedHash) {
+      return { valid: false, error: "Lien de signature invalide" };
+    }
+    
+    // Check expiration
+    const expiresAt = (contract as any).signatureTokenExpiresAt;
+    if (expiresAt && new Date(expiresAt) < new Date()) {
+      return { valid: false, error: "Ce lien de signature a expiré" };
+    }
+    
+    return { valid: true, contract };
+  }
+
+  // Public endpoint to get contract details for signing (token required)
   app.get("/api/contracts/public/:id", async (req: Request, res: Response) => {
     try {
-      // Find the contract across all organizations (public access)
-      const allContracts = await storage.getContracts(DEFAULT_ORG_ID);
-      const contract = allContracts.find(c => c.id === req.params.id);
+      const token = req.query.token as string;
       
-      if (!contract) {
-        return res.status(404).json({ error: "Contrat non trouvé" });
+      if (!token) {
+        return res.status(401).json({ error: "Token de signature manquant" });
       }
+      
+      const validation = await validateSignatureToken(req.params.id, token);
+      
+      if (!validation.valid) {
+        return res.status(403).json({ error: validation.error });
+      }
+      
+      const contract = validation.contract;
       
       // Only allow access to contracts that have been sent or are awaiting signature
       if (contract.status === 'draft' || contract.status === 'cancelled') {
@@ -1036,34 +1086,40 @@ export async function registerRoutes(
     }
   });
 
-  // Public endpoint to sign a contract (no auth required)
+  // Public endpoint to sign a contract (token required)
   app.post("/api/contracts/public/:id/sign", async (req: Request, res: Response) => {
     try {
-      const { signatureData } = req.body;
+      const { signatureData, token } = req.body;
+      
+      if (!token) {
+        return res.status(401).json({ error: "Token de signature manquant" });
+      }
       
       if (!signatureData) {
         return res.status(400).json({ error: "Signature requise" });
       }
       
-      // Find the contract
-      const allContracts = await storage.getContracts(DEFAULT_ORG_ID);
-      const contract = allContracts.find(c => c.id === req.params.id);
+      const validation = await validateSignatureToken(req.params.id, token);
       
-      if (!contract) {
-        return res.status(404).json({ error: "Contrat non trouvé" });
+      if (!validation.valid) {
+        return res.status(403).json({ error: validation.error });
       }
+      
+      const contract = validation.contract;
       
       // Only allow signing contracts that are in 'sent' status
       if (contract.status !== 'sent') {
         return res.status(403).json({ error: "Ce contrat ne peut plus être signé" });
       }
       
-      // Update the contract with signature
-      const updatedContract = await storage.updateContract(req.params.id, DEFAULT_ORG_ID, {
+      // Update the contract with signature and clear the token (single use)
+      const updatedContract = await storage.updateContractByIdOnly(req.params.id, {
         clientSignatureData: signatureData,
         signedByClient: contract.clientName,
         signedAt: new Date(),
         status: 'signed',
+        signatureTokenHash: null,
+        signatureTokenExpiresAt: null,
       });
       
       res.json({ success: true, contract: updatedContract });

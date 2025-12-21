@@ -115,8 +115,10 @@ export interface IStorage {
   
   getContracts(orgId: string, type?: ContractType, status?: ContractStatus): Promise<Contract[]>;
   getContract(id: string, orgId: string): Promise<Contract | undefined>;
+  getContractByIdOnly(id: string): Promise<Contract | undefined>; // For public token-validated access
   createContract(contract: InsertContract): Promise<Contract>;
   updateContract(id: string, orgId: string, data: Partial<InsertContract>): Promise<Contract | undefined>;
+  updateContractByIdOnly(id: string, data: Partial<InsertContract>): Promise<Contract | undefined>; // For public token-validated updates
   deleteContract(id: string, orgId: string): Promise<boolean>;
   getContractsByDeal(dealId: string, orgId: string): Promise<Contract[]>;
   getContractsByAccount(accountId: string, orgId: string): Promise<Contract[]>;
@@ -707,6 +709,12 @@ export class DatabaseStorage implements IStorage {
     return contract;
   }
 
+  async getContractByIdOnly(id: string): Promise<Contract | undefined> {
+    const [contract] = await db.select().from(contracts)
+      .where(eq(contracts.id, id));
+    return contract;
+  }
+
   async createContract(contract: InsertContract): Promise<Contract> {
     const [created] = await db.insert(contracts).values(contract).returning();
     return created;
@@ -715,6 +723,12 @@ export class DatabaseStorage implements IStorage {
   async updateContract(id: string, orgId: string, data: Partial<InsertContract>): Promise<Contract | undefined> {
     const [updated] = await db.update(contracts).set({ ...data, updatedAt: new Date() })
       .where(and(eq(contracts.id, id), eq(contracts.orgId, orgId))).returning();
+    return updated;
+  }
+
+  async updateContractByIdOnly(id: string, data: Partial<InsertContract>): Promise<Contract | undefined> {
+    const [updated] = await db.update(contracts).set({ ...data, updatedAt: new Date() })
+      .where(eq(contracts.id, id)).returning();
     return updated;
   }
 

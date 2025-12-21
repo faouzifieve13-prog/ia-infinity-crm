@@ -361,6 +361,9 @@ export const contracts = pgTable("contracts", {
   nomPhase: text("nom_phase"),
   dateRapportAudit: timestamp("date_rapport_audit"),
   lieu: text("lieu").default('Paris'),
+  // Security token for public signing
+  signatureTokenHash: text("signature_token_hash"),
+  signatureTokenExpiresAt: timestamp("signature_token_expires_at"),
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
