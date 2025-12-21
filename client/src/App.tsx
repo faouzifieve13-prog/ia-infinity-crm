@@ -36,6 +36,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/pipeline" component={Pipeline} />
+      <Route path="/deals" component={Pipeline} />
       <Route path="/deals/:id" component={DealDetail} />
       <Route path="/projects" component={Projects} />
       <Route path="/projects/:id" component={ProjectDetail} />
