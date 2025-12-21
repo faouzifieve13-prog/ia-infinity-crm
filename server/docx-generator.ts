@@ -17,6 +17,8 @@ export interface ContractTemplateData {
   clientCompany: string;
   clientAddress: string;
   clientEmail: string;
+  clientPhone?: string;
+  clientSiret?: string;
   
   // Dates
   dateDebut: string;
@@ -82,6 +84,8 @@ export function prepareContractData(
     clientCompany: data.clientCompany || '[Nom de l\'Entreprise]',
     clientAddress: data.clientAddress || '[Adresse de l\'Entreprise]',
     clientEmail: data.clientEmail || '[E-mail du Client]',
+    clientPhone: data.clientPhone || '[Téléphone du Client]',
+    clientSiret: data.clientSiret || '[SIRET du Client]',
     dateDebut: formatDate(startDate),
     dateFin: formatDate(endDate),
     dateContrat: formatDate(today),
@@ -138,6 +142,8 @@ export async function generateContractDocx(
     clientCompany: templateData.clientCompany,
     clientAddress: templateData.clientAddress,
     clientEmail: templateData.clientEmail,
+    clientPhone: templateData.clientPhone || '',
+    clientSiret: templateData.clientSiret || '',
     
     // Dates
     dateDebut: templateData.dateDebut,
@@ -179,10 +185,12 @@ export async function getContractTemplateInfo(contractType: ContractType): Promi
   editableFields: Array<{ key: string; label: string; type: 'text' | 'date' | 'number' | 'textarea' }>;
 }> {
   const commonFields = [
-    { key: 'clientName', label: 'Nom du client', type: 'text' as const },
-    { key: 'clientCompany', label: 'Société', type: 'text' as const },
+    { key: 'clientName', label: 'Nom du client (Prénom Nom)', type: 'text' as const },
+    { key: 'clientCompany', label: 'Nom de l\'entreprise', type: 'text' as const },
     { key: 'clientAddress', label: 'Adresse', type: 'textarea' as const },
     { key: 'clientEmail', label: 'Email', type: 'text' as const },
+    { key: 'clientPhone', label: 'Téléphone', type: 'text' as const },
+    { key: 'clientSiret', label: 'SIREN / SIRET', type: 'text' as const },
     { key: 'dateDebut', label: 'Date de début', type: 'date' as const },
     { key: 'dateFin', label: 'Date de fin', type: 'date' as const },
     { key: 'amount', label: 'Montant HT (€)', type: 'number' as const },

@@ -103,13 +103,18 @@ export async function generateContractPDF(params: ContractPDFParams): Promise<Bu
     doc.text(`Email: ${contract.clientEmail}`, 50, yPos);
     yPos += 15;
     
+    if (contract.clientPhone) {
+      doc.text(`Téléphone: ${contract.clientPhone}`, 50, yPos);
+      yPos += 15;
+    }
+    
     if (contract.clientAddress) {
       doc.text(`Adresse: ${contract.clientAddress}`, 50, yPos);
       yPos += 15;
     }
     
     if (contract.clientSiret) {
-      doc.text(`SIRET: ${contract.clientSiret}`, 50, yPos);
+      doc.text(`SIREN/SIRET: ${contract.clientSiret}`, 50, yPos);
       yPos += 15;
     }
     

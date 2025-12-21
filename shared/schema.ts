@@ -335,6 +335,7 @@ export const contracts = pgTable("contracts", {
   clientEmail: text("client_email").notNull(),
   clientCompany: text("client_company"),
   clientAddress: text("client_address"),
+  clientPhone: text("client_phone"),
   clientSiret: text("client_siret"),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull().default("0"),
   currency: text("currency").notNull().default('EUR'),
