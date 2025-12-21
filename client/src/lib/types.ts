@@ -66,6 +66,7 @@ export interface Deal {
   amount: string;
   probability: number;
   stage: DealStage;
+  missionTypes?: string[] | null;
   nextAction?: string | null;
   nextActionDate?: string | null;
   daysInStage: number;

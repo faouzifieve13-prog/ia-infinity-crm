@@ -58,8 +58,8 @@ const accountFormSchema = z.object({
 type AccountFormValues = z.infer<typeof accountFormSchema>;
 
 const planConfig = {
-  audit: { label: 'Audit', variant: 'secondary' as const },
-  automatisation: { label: 'Automatisation', variant: 'default' as const },
+  audit: { label: 'Audit', variant: 'secondary' as const, className: 'bg-violet-500/20 text-violet-600 dark:text-violet-400 border-0' },
+  automatisation: { label: 'Automatisation', variant: 'secondary' as const, className: 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-0' },
 };
 
 const statusConfig = {
@@ -442,7 +442,7 @@ export default function Accounts() {
                       <span className={`w-1.5 h-1.5 rounded-full ${status.color} mr-1.5`} />
                       {status.label}
                     </Badge>
-                    <Badge variant={plan.variant} className="text-xs">
+                    <Badge variant={plan.variant} className={`text-xs ${plan.className}`}>
                       {plan.label}
                     </Badge>
                   </div>

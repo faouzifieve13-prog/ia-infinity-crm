@@ -24,6 +24,7 @@ interface DealCardDeal {
   nextAction?: string | null;
   daysInStage: number;
   owner: DealOwner;
+  missionTypes?: string[] | null;
 }
 
 interface DealCardProps {
@@ -113,9 +114,32 @@ export function DealCard({ deal }: DealCardProps) {
                   {amountNum.toLocaleString('fr-FR')}€
                 </Badge>
               </div>
-              <p className="text-xs text-muted-foreground truncate mb-2">
+              <p className="text-xs text-muted-foreground truncate mb-1">
                 {deal.contactName}
               </p>
+              
+              {deal.missionTypes && deal.missionTypes.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {deal.missionTypes.includes('audit') && (
+                    <Badge 
+                      variant="secondary" 
+                      className="text-[10px] px-1.5 py-0 h-4 bg-violet-500/20 text-violet-600 dark:text-violet-400 border-0"
+                      data-testid={`badge-mission-audit-${deal.id}`}
+                    >
+                      Audit
+                    </Badge>
+                  )}
+                  {deal.missionTypes.includes('automatisation') && (
+                    <Badge 
+                      variant="secondary" 
+                      className="text-[10px] px-1.5 py-0 h-4 bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-0"
+                      data-testid={`badge-mission-auto-${deal.id}`}
+                    >
+                      Automatisation
+                    </Badge>
+                  )}
+                </div>
+              )}
               
               {deal.nextAction && (
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3 bg-muted/50 rounded-md px-2 py-1">

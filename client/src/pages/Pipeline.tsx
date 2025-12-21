@@ -7,6 +7,8 @@ import { Plus, Filter, Download, Loader2, Building2, User, DollarSign, Phone, Vi
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -45,6 +47,7 @@ const prospectFormSchema = z.object({
   amount: z.string().optional(),
   probability: z.string().optional(),
   nextAction: z.string().optional(),
+  missionTypes: z.array(z.string()).default([]),
 });
 
 type ProspectFormValues = z.infer<typeof prospectFormSchema>;
@@ -69,6 +72,7 @@ export default function Pipeline() {
       amount: '',
       probability: '10',
       nextAction: '',
+      missionTypes: [],
     },
   });
 
@@ -108,6 +112,7 @@ export default function Pipeline() {
         amount: data.amount || '0',
         probability: data.probability ? parseInt(data.probability) : 10,
         stage: 'prospect',
+        missionTypes: data.missionTypes || [],
         nextAction: data.nextAction || null,
         contactPhone: data.contactPhone || null,
       });
@@ -144,12 +149,18 @@ export default function Pipeline() {
     },
   });
 
-  const dealsWithRelations: DealWithRelations[] = deals.map(deal => ({
-    ...deal,
+  const dealsWithRelations = deals.map(deal => ({
+    id: deal.id,
     accountName: deal.accountName || 'Unknown Account',
     contactName: deal.contactName || 'Unknown Contact',
+    amount: deal.amount,
+    probability: deal.probability,
+    stage: deal.stage,
+    nextAction: deal.nextAction,
+    daysInStage: deal.daysInStage,
+    missionTypes: deal.missionTypes,
     owner: { 
-      id: deal.ownerId, 
+      id: deal.ownerId || '', 
       name: deal.ownerName || 'Unknown', 
       email: deal.ownerEmail || '', 
       avatar: null 
@@ -158,7 +169,7 @@ export default function Pipeline() {
 
   const filteredDeals = ownerFilter === 'all'
     ? dealsWithRelations
-    : dealsWithRelations.filter((deal) => deal.ownerId === ownerFilter);
+    : dealsWithRelations.filter((deal) => deal.owner.id === ownerFilter);
 
   const handleDealMove = (dealId: string, newStage: DealStage) => {
     console.log(`Deal ${dealId} moved to stage ${newStage}`);
@@ -342,6 +353,56 @@ export default function Pipeline() {
                         <FormControl>
                           <Textarea placeholder="Ex: Appeler pour présenter l'offre d'audit" {...field} data-testid="input-prospect-action" />
                         </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="missionTypes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Type de mission</FormLabel>
+                        <div className="flex gap-4">
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="mission-audit"
+                              checked={field.value?.includes('audit')}
+                              onCheckedChange={(checked) => {
+                                const current = field.value || [];
+                                if (checked) {
+                                  field.onChange([...current, 'audit']);
+                                } else {
+                                  field.onChange(current.filter((v: string) => v !== 'audit'));
+                                }
+                              }}
+                              data-testid="checkbox-mission-audit"
+                            />
+                            <Label htmlFor="mission-audit" className="text-sm font-normal flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-violet-500" />
+                              Audit
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="mission-automatisation"
+                              checked={field.value?.includes('automatisation')}
+                              onCheckedChange={(checked) => {
+                                const current = field.value || [];
+                                if (checked) {
+                                  field.onChange([...current, 'automatisation']);
+                                } else {
+                                  field.onChange(current.filter((v: string) => v !== 'automatisation'));
+                                }
+                              }}
+                              data-testid="checkbox-mission-auto"
+                            />
+                            <Label htmlFor="mission-automatisation" className="text-sm font-normal flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                              Automatisation
+                            </Label>
+                          </div>
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}

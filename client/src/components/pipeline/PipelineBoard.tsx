@@ -30,6 +30,7 @@ interface PipelineDeal {
   nextAction?: string | null;
   daysInStage: number;
   owner: DealOwner;
+  missionTypes?: string[] | null;
 }
 
 interface PipelineBoardProps {
