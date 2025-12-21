@@ -378,14 +378,16 @@ export default function DealDetail() {
       
       return response.json();
     },
-    onSuccess: (result: { id: string; number: string; quote_url?: string }) => {
+    onSuccess: (result: { quote: { id: string; number: string; quote_url?: string } }) => {
+      const quote = result.quote;
       toast({
         title: 'Devis Qonto créé',
-        description: `Le devis ${result.number} a été créé avec succès.`,
+        description: `Le devis ${quote.number} a été créé. Cliquez pour le modifier sur Qonto.`,
       });
       setQontoQuoteDialogOpen(false);
-      if (result.quote_url) {
-        window.open(result.quote_url, '_blank');
+      // Open directly in Qonto for editing
+      if (quote.quote_url) {
+        window.open(quote.quote_url, '_blank');
       }
     },
     onError: (error: Error) => {
