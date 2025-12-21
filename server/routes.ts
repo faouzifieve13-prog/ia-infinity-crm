@@ -3192,5 +3192,56 @@ export async function registerRoutes(
     }
   });
 
+  // Send Qonto quote email to client
+  const sendQontoQuoteEmailSchema = z.object({
+    clientEmail: z.string().email(),
+    clientName: z.string(),
+    quoteNumber: z.string(),
+    quoteUrl: z.string().url(),
+    companyName: z.string(),
+  });
+
+  app.post("/api/qonto/quotes/send-email", async (req: Request, res: Response) => {
+    try {
+      const parsed = sendQontoQuoteEmailSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+
+      const { clientEmail, clientName, quoteNumber, quoteUrl, companyName } = parsed.data;
+      
+      const { sendGenericEmail } = await import("./gmail");
+      
+      const subject = `Devis ${quoteNumber} - Capsule IA`;
+      const htmlContent = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Bonjour ${clientName},</h2>
+          <p>Nous avons le plaisir de vous transmettre notre devis <strong>${quoteNumber}</strong> pour ${companyName}.</p>
+          <p>Vous pouvez consulter et télécharger votre devis en cliquant sur le bouton ci-dessous :</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${quoteUrl}" 
+               style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+              Voir le devis
+            </a>
+          </div>
+          <p>N'hésitez pas à nous contacter si vous avez des questions.</p>
+          <p>Cordialement,<br>L'équipe Capsule IA</p>
+        </div>
+      `;
+      
+      await sendGenericEmail({
+        to: clientEmail,
+        subject,
+        htmlBody: htmlContent,
+      });
+      
+      console.log(`Qonto quote email sent to ${clientEmail} for quote ${quoteNumber}`);
+      res.json({ success: true, message: `Email envoyé à ${clientEmail}` });
+    } catch (error: any) {
+      console.error("Send Qonto quote email error:", error);
+      res.status(500).json({ error: error.message || "Failed to send email" });
+    }
+  });
+
   return httpServer;
 }

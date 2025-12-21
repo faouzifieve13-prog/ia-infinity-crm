@@ -376,15 +376,51 @@ export default function DealDetail() {
       
       return response.json();
     },
-    onSuccess: (result: { quote: { id: string; number: string; quote_url?: string } }) => {
+    onSuccess: async (result: { quote: { id: string; number: string; quote_url?: string } }) => {
       const quote = result.quote;
+      const account = accounts.find(a => a.id === deal?.accountId);
       setQontoQuoteDialogOpen(false);
+      
+      // 1. Save quote PDF to Google Drive automatically
+      try {
+        await apiRequest('POST', '/api/drive/quotes', { dealId });
+        toast({
+          title: 'Devis sauvegardé',
+          description: 'Le devis a été enregistré sur Google Drive.',
+        });
+      } catch {
+        console.error('Erreur sauvegarde Drive');
+      }
+      
+      // 2. Send email to client with quote link
+      if (account?.contactEmail && quote.quote_url) {
+        try {
+          await apiRequest('POST', '/api/qonto/quotes/send-email', {
+            clientEmail: account.contactEmail,
+            clientName: account.contactName || account.name,
+            quoteNumber: quote.number,
+            quoteUrl: quote.quote_url,
+            companyName: account.name,
+          });
+          toast({
+            title: 'Email envoyé',
+            description: `Le devis a été envoyé à ${account.contactEmail}.`,
+          });
+        } catch {
+          console.error('Erreur envoi email');
+        }
+      }
+      
       if (quote.quote_url) {
         setQontoQuoteUrl(quote.quote_url);
       }
+      
+      // Refresh Drive quotes list
+      queryClient.invalidateQueries({ queryKey: ['/api/drive/quotes'] });
+      
       toast({
         title: 'Devis Qonto créé',
-        description: `Le devis ${quote.number} a été créé avec succès.`,
+        description: `Le devis ${quote.number} a été créé, sauvegardé et envoyé au client.`,
       });
     },
     onError: (error: Error) => {
