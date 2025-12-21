@@ -341,6 +341,7 @@ export const contracts = pgTable("contracts", {
   currency: text("currency").notNull().default('EUR'),
   description: text("description"),
   scope: text("scope"),
+  objectScope: text("object_scope"),
   deliverables: text("deliverables").array().default(sql`ARRAY[]::text[]`),
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),

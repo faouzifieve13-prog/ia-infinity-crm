@@ -1118,6 +1118,7 @@ export async function registerRoutes(
     clientEmail: z.string().optional(),
     clientPhone: z.string().optional(),
     clientSiret: z.string().optional(),
+    objectScope: z.string().optional(),
     amount: z.union([z.string(), z.number()]).optional(),
     dateDebut: z.string().optional(),
     dateFin: z.string().optional(),
@@ -1169,6 +1170,7 @@ export async function registerRoutes(
         clientEmail: customData.clientEmail || contract.clientEmail,
         clientPhone: customData.clientPhone || contract.clientPhone || '',
         clientSiret: customData.clientSiret || contract.clientSiret || '',
+        objectScope: customData.objectScope || contract.objectScope || '',
         amount: customData.amount || contract.amount,
         dateDebut: customData.dateDebut || contract.startDate?.toISOString() || '',
         dateFin: customData.dateFin || contract.endDate?.toISOString() || '',
@@ -1202,6 +1204,7 @@ export async function registerRoutes(
         clientEmail: customData.clientEmail || contract.clientEmail,
         clientPhone: customData.clientPhone || contract.clientPhone,
         clientSiret: customData.clientSiret || contract.clientSiret,
+        objectScope: customData.objectScope || contract.objectScope,
         amount: customData.amount?.toString() || contract.amount,
         startDate: customData.dateDebut ? new Date(customData.dateDebut) : contract.startDate,
         endDate: customData.dateFin ? new Date(customData.dateFin) : contract.endDate,
@@ -1223,6 +1226,83 @@ export async function registerRoutes(
         ? "Erreur de connexion à Google Drive. Veuillez vérifier votre connexion."
         : "Échec de la génération du document. Veuillez réessayer.";
       res.status(500).json({ error: errorMessage });
+    }
+  });
+  
+  // Convert DOCX from Drive to PDF and upload
+  app.post("/api/contracts/:id/convert-to-pdf", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const contract = await storage.getContract(req.params.id, orgId);
+      
+      if (!contract) {
+        return res.status(404).json({ error: "Contrat introuvable" });
+      }
+      
+      if (!contract.driveFileId) {
+        return res.status(400).json({ error: "Aucun fichier Word sauvegardé sur Drive pour ce contrat" });
+      }
+      
+      const { downloadFileFromDrive, uploadFileToDrive } = await import("./drive");
+      const { convertDocxToPdf } = await import("./docx-to-pdf");
+      
+      // Download DOCX from Drive
+      const docxBuffer = await downloadFileFromDrive(contract.driveFileId);
+      
+      // Convert to PDF
+      const pdfBuffer = await convertDocxToPdf(docxBuffer);
+      
+      // Upload PDF to Drive
+      const pdfFilename = `${contract.contractNumber}_${contract.clientName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+      const pdfResult = await uploadFileToDrive(
+        pdfBuffer,
+        pdfFilename,
+        'application/pdf',
+        'IA Infinity - Contrats'
+      );
+      
+      res.json({
+        success: true,
+        pdfFile: pdfResult,
+        message: 'Contrat converti en PDF et sauvegardé sur Drive'
+      });
+    } catch (error: any) {
+      console.error("Convert to PDF error:", error);
+      res.status(500).json({ error: error.message || "Échec de la conversion en PDF" });
+    }
+  });
+  
+  // Download PDF directly
+  app.get("/api/contracts/:id/download-pdf", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const contract = await storage.getContract(req.params.id, orgId);
+      
+      if (!contract) {
+        return res.status(404).json({ error: "Contrat introuvable" });
+      }
+      
+      if (!contract.driveFileId) {
+        return res.status(400).json({ error: "Aucun fichier Word sauvegardé sur Drive pour ce contrat" });
+      }
+      
+      const { downloadFileFromDrive } = await import("./drive");
+      const { convertDocxToPdf } = await import("./docx-to-pdf");
+      
+      // Download DOCX from Drive
+      const docxBuffer = await downloadFileFromDrive(contract.driveFileId);
+      
+      // Convert to PDF
+      const pdfBuffer = await convertDocxToPdf(docxBuffer);
+      
+      const filename = `${contract.contractNumber}_${contract.clientName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+      
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      console.error("Download PDF error:", error);
+      res.status(500).json({ error: error.message || "Échec du téléchargement PDF" });
     }
   });
   

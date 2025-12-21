@@ -19,6 +19,10 @@ export interface ContractTemplateData {
   clientEmail: string;
   clientPhone?: string;
   clientSiret?: string;
+  clientLogo?: string;
+  
+  // Contract scope/object
+  objectScope?: string;
   
   // Dates
   dateDebut: string;
@@ -86,6 +90,7 @@ export function prepareContractData(
     clientEmail: data.clientEmail || '[E-mail du Client]',
     clientPhone: data.clientPhone || '[Téléphone du Client]',
     clientSiret: data.clientSiret || '[SIRET du Client]',
+    objectScope: data.objectScope || '[Objet du contrat à définir]',
     dateDebut: formatDate(startDate),
     dateFin: formatDate(endDate),
     dateContrat: formatDate(today),
@@ -144,6 +149,7 @@ export async function generateContractDocx(
     clientEmail: templateData.clientEmail,
     clientPhone: templateData.clientPhone || '',
     clientSiret: templateData.clientSiret || '',
+    objectScope: templateData.objectScope || '',
     
     // Dates
     dateDebut: templateData.dateDebut,
@@ -191,6 +197,7 @@ export async function getContractTemplateInfo(contractType: ContractType): Promi
     { key: 'clientEmail', label: 'Email', type: 'text' as const },
     { key: 'clientPhone', label: 'Téléphone', type: 'text' as const },
     { key: 'clientSiret', label: 'SIREN / SIRET', type: 'text' as const },
+    { key: 'objectScope', label: 'Objet du contrat (personnalisable)', type: 'textarea' as const },
     { key: 'dateDebut', label: 'Date de début', type: 'date' as const },
     { key: 'dateFin', label: 'Date de fin', type: 'date' as const },
     { key: 'amount', label: 'Montant HT (€)', type: 'number' as const },

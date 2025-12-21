@@ -225,6 +225,9 @@ export async function downloadFile(fileId: string): Promise<Buffer> {
   return Buffer.from(response.data as ArrayBuffer);
 }
 
+// Alias for downloadFile (used by contracts)
+export const downloadFileFromDrive = downloadFile;
+
 // Delete a file from Drive
 export async function deleteFile(fileId: string): Promise<void> {
   const drive = await getUncachableGoogleDriveClient();

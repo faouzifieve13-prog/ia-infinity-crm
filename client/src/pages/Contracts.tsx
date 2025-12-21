@@ -106,13 +106,16 @@ function ContractCard({ contract }: { contract: Contract }) {
       clientCompany: contract.clientCompany || '',
       clientAddress: contract.clientAddress || '',
       clientEmail: contract.clientEmail || '',
+      clientPhone: (contract as any).clientPhone || '',
+      clientSiret: (contract as any).clientSiret || '',
+      objectScope: (contract as any).objectScope || '',
       amount: contract.amount || '',
       dateDebut: contract.startDate ? new Date(contract.startDate).toISOString().split('T')[0] : '',
       dateFin: contract.endDate ? new Date(contract.endDate).toISOString().split('T')[0] : '',
-      outilPlateforme: '',
-      nombreSemaines: '',
-      nomPhase: '',
-      lieu: 'Paris',
+      outilPlateforme: (contract as any).outilPlateforme || '',
+      nombreSemaines: (contract as any).nombreSemaines || '',
+      nomPhase: (contract as any).nomPhase || '',
+      lieu: (contract as any).lieu || 'Paris',
     },
   });
 
@@ -154,6 +157,9 @@ function ContractCard({ contract }: { contract: Contract }) {
       clientCompany: values.clientCompany,
       clientAddress: values.clientAddress,
       clientEmail: values.clientEmail,
+      clientPhone: values.clientPhone,
+      clientSiret: values.clientSiret,
+      objectScope: values.objectScope,
       amount: values.amount,
       startDate: values.dateDebut ? new Date(values.dateDebut).toISOString() : null,
       endDate: values.dateFin ? new Date(values.dateFin).toISOString() : null,
@@ -413,14 +419,24 @@ function ContractCard({ contract }: { contract: Contract }) {
               </Button>
             )}
             {(contract as any).driveWebViewLink && (
-              <Button
-                variant="outline"
-                onClick={() => window.open((contract as any).driveWebViewLink, '_blank')}
-                data-testid="button-view-drive"
-              >
-                <ExternalLink className="mr-2 h-4 w-4" />
-                Drive
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => window.open((contract as any).driveWebViewLink, '_blank')}
+                  data-testid="button-view-drive"
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Drive
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => window.open(`/api/contracts/${contract.id}/download-pdf`, '_blank')}
+                  data-testid="button-download-pdf"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  PDF
+                </Button>
+              </>
             )}
           </DialogFooter>
         </DialogContent>
@@ -465,6 +481,23 @@ function ContractCard({ contract }: { contract: Contract }) {
               />
             </div>
             <div className="space-y-2">
+              <label className="text-sm font-medium">Téléphone</label>
+              <Input
+                {...editForm.register('clientPhone')}
+                type="tel"
+                placeholder="06 12 34 56 78"
+                data-testid="input-client-phone"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">SIREN / SIRET</label>
+              <Input
+                {...editForm.register('clientSiret')}
+                placeholder="123 456 789 00012"
+                data-testid="input-client-siret"
+              />
+            </div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Montant HT (€)</label>
               <Input
                 {...editForm.register('amount')}
@@ -479,6 +512,15 @@ function ContractCard({ contract }: { contract: Contract }) {
                 {...editForm.register('clientAddress')}
                 placeholder="Adresse complète"
                 data-testid="input-client-address"
+              />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <label className="text-sm font-medium">Objet du contrat</label>
+              <Textarea
+                {...editForm.register('objectScope')}
+                placeholder="Décrivez l'objet et le périmètre du contrat..."
+                rows={4}
+                data-testid="input-object-scope"
               />
             </div>
             <div className="space-y-2">
@@ -552,6 +594,9 @@ function ContractCard({ contract }: { contract: Contract }) {
                   clientCompany: values.clientCompany,
                   clientAddress: values.clientAddress,
                   clientEmail: values.clientEmail,
+                  clientPhone: values.clientPhone,
+                  clientSiret: values.clientSiret,
+                  objectScope: values.objectScope,
                   amount: values.amount,
                   startDate: values.dateDebut ? new Date(values.dateDebut).toISOString() : null,
                   endDate: values.dateFin ? new Date(values.dateFin).toISOString() : null,
