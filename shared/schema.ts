@@ -23,6 +23,8 @@ export const expenseStatusEnum = pgEnum('expense_status', ['pending', 'paid', 'c
 export const expenseCategoryEnum = pgEnum('expense_category', ['tools', 'software', 'services', 'travel', 'marketing', 'office', 'salaries', 'taxes', 'other']);
 export const invitationStatusEnum = pgEnum('invitation_status', ['pending', 'accepted', 'expired', 'revoked']);
 export const contactTypeEnum = pgEnum('contact_type', ['client', 'vendor', 'partner', 'prospect']);
+export const missionTypeEnum = pgEnum('mission_type', ['audit', 'automatisation']);
+export const emailDirectionEnum = pgEnum('email_direction', ['inbound', 'outbound']);
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -105,6 +107,7 @@ export const deals = pgTable("deals", {
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull().default("0"),
   probability: integer("probability").notNull().default(0),
   stage: dealStageEnum("stage").notNull().default('prospect'),
+  missionTypes: text("mission_types").array().default(sql`ARRAY[]::text[]`),
   nextAction: text("next_action"),
   nextActionDate: timestamp("next_action_date"),
   daysInStage: integer("days_in_stage").notNull().default(0),
@@ -408,6 +411,34 @@ export const invitations = pgTable("invitations", {
   index("invitations_status_idx").on(table.status),
 ]);
 
+export const emails = pgTable("emails", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  accountId: varchar("account_id").references(() => accounts.id),
+  dealId: varchar("deal_id").references(() => deals.id),
+  contactId: varchar("contact_id").references(() => contacts.id),
+  gmailMessageId: text("gmail_message_id").notNull().unique(),
+  gmailThreadId: text("gmail_thread_id"),
+  subject: text("subject"),
+  snippet: text("snippet"),
+  fromEmail: text("from_email").notNull(),
+  fromName: text("from_name"),
+  toEmails: text("to_emails").array().default(sql`ARRAY[]::text[]`),
+  direction: emailDirectionEnum("direction").notNull(),
+  receivedAt: timestamp("received_at").notNull(),
+  isRead: boolean("is_read").default(false),
+  hasAttachment: boolean("has_attachment").default(false),
+  labels: text("labels").array().default(sql`ARRAY[]::text[]`),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("emails_org_idx").on(table.orgId),
+  index("emails_account_idx").on(table.accountId),
+  index("emails_deal_idx").on(table.dealId),
+  index("emails_contact_idx").on(table.contactId),
+  index("emails_gmail_id_idx").on(table.gmailMessageId),
+  index("emails_thread_idx").on(table.gmailThreadId),
+]);
+
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   memberships: many(memberships),
   accounts: many(accounts),
@@ -582,6 +613,25 @@ export const expensesRelations = relations(expenses, ({ one }) => ({
   }),
 }));
 
+export const emailsRelations = relations(emails, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [emails.orgId],
+    references: [organizations.id],
+  }),
+  account: one(accounts, {
+    fields: [emails.accountId],
+    references: [accounts.id],
+  }),
+  deal: one(deals, {
+    fields: [emails.dealId],
+    references: [deals.id],
+  }),
+  contact: one(contacts, {
+    fields: [emails.contactId],
+    references: [contacts.id],
+  }),
+}));
+
 export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertMembershipSchema = createInsertSchema(memberships).omit({ id: true, createdAt: true });
@@ -610,6 +660,9 @@ export const insertExpenseSchema = createInsertSchema(expenses).omit({ id: true,
 export const insertInvitationSchema = createInsertSchema(invitations).omit({ id: true, createdAt: true }).extend({
   expiresAt: z.coerce.date(),
 });
+export const insertEmailSchema = createInsertSchema(emails).omit({ id: true, createdAt: true }).extend({
+  receivedAt: z.coerce.date(),
+});
 
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -630,6 +683,7 @@ export type InsertImportJob = z.infer<typeof insertImportJobSchema>;
 export type InsertContract = z.infer<typeof insertContractSchema>;
 export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 export type InsertInvitation = z.infer<typeof insertInvitationSchema>;
+export type InsertEmail = z.infer<typeof insertEmailSchema>;
 
 export type Organization = typeof organizations.$inferSelect;
 export type User = typeof users.$inferSelect;
@@ -650,8 +704,11 @@ export type ImportJob = typeof importJobs.$inferSelect;
 export type Contract = typeof contracts.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
+export type Email = typeof emails.$inferSelect;
 
 export type UserRole = 'admin' | 'sales' | 'delivery' | 'finance' | 'client_admin' | 'client_member' | 'vendor';
+export type MissionType = 'audit' | 'automatisation';
+export type EmailDirection = 'inbound' | 'outbound';
 export type Space = 'internal' | 'client' | 'vendor';
 export type DealStage = 'prospect' | 'meeting' | 'proposal' | 'audit' | 'negotiation' | 'won' | 'lost';
 export type ProjectStatus = 'active' | 'on_hold' | 'completed' | 'cancelled';
