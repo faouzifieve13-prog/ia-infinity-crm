@@ -34,6 +34,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import {
   Form,
@@ -122,6 +123,14 @@ export default function DealDetail() {
   const [driveQuotesDialogOpen, setDriveQuotesDialogOpen] = useState(false);
   const [qontoQuoteDialogOpen, setQontoQuoteDialogOpen] = useState(false);
   const [selectedQontoQuoteType, setSelectedQontoQuoteType] = useState<'audit' | 'automatisation'>('audit');
+  const [qontoQuoteUrl, setQontoQuoteUrl] = useState<string | null>(null);
+  const [qontoFormData, setQontoFormData] = useState({
+    title: '',
+    description: '',
+    quantity: 1,
+    unitPrice: 0,
+    vatRate: 20,
+  });
 
   const { data: deal, isLoading: dealLoading } = useQuery<Deal>({
     queryKey: ['/api/deals', dealId],
@@ -338,33 +347,22 @@ export default function DealDetail() {
 
   // Qonto quote mutation
   const createQontoQuoteMutation = useMutation({
-    mutationFn: async (quoteType: 'audit' | 'automatisation') => {
+    mutationFn: async (formData: { title: string; description: string; quantity: number; unitPrice: number; vatRate: number }) => {
       const account = accounts.find(a => a.id === deal?.accountId);
       const today = new Date();
       const expiryDate = new Date(today);
       expiryDate.setMonth(expiryDate.getMonth() + 1);
       
-      const quoteItems = quoteType === 'audit' 
-        ? [
-            {
-              title: "Audit IA - Analyse des processus",
-              description: "Étude complète des processus métiers et identification des opportunités d'automatisation",
-              quantity: 1,
-              unit: "forfait",
-              unitPrice: parseFloat(deal?.amount || '1500'),
-              vatRate: 20
-            }
-          ]
-        : [
-            {
-              title: "Prestation d'automatisation IA",
-              description: "Développement et mise en place de solutions d'automatisation personnalisées",
-              quantity: 1,
-              unit: "forfait",
-              unitPrice: parseFloat(deal?.amount || '3000'),
-              vatRate: 20
-            }
-          ];
+      const quoteItems = [
+        {
+          title: formData.title,
+          description: formData.description,
+          quantity: formData.quantity,
+          unit: "forfait",
+          unitPrice: formData.unitPrice,
+          vatRate: formData.vatRate
+        }
+      ];
       
       const response = await apiRequest('POST', '/api/qonto/quotes', {
         clientName: account?.name || 'Client',
@@ -372,7 +370,7 @@ export default function DealDetail() {
         issueDate: today.toISOString().split('T')[0],
         expiryDate: expiryDate.toISOString().split('T')[0],
         items: quoteItems,
-        header: `Devis ${quoteType === 'audit' ? 'Audit IA' : 'Automatisation IA'} pour ${account?.name || 'Client'}`,
+        header: `Devis pour ${account?.name || 'Client'}`,
         footer: "Merci pour votre confiance. Ce devis est valable 30 jours."
       });
       
@@ -380,15 +378,14 @@ export default function DealDetail() {
     },
     onSuccess: (result: { quote: { id: string; number: string; quote_url?: string } }) => {
       const quote = result.quote;
+      setQontoQuoteDialogOpen(false);
+      if (quote.quote_url) {
+        setQontoQuoteUrl(quote.quote_url);
+      }
       toast({
         title: 'Devis Qonto créé',
-        description: `Le devis ${quote.number} a été créé. Cliquez pour le modifier sur Qonto.`,
+        description: `Le devis ${quote.number} a été créé avec succès.`,
       });
-      setQontoQuoteDialogOpen(false);
-      // Open directly in Qonto for editing
-      if (quote.quote_url) {
-        window.open(quote.quote_url, '_blank');
-      }
     },
     onError: (error: Error) => {
       toast({
@@ -497,27 +494,39 @@ export default function DealDetail() {
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem 
-                onClick={() => createQontoQuoteMutation.mutate('audit')}
-                disabled={!qontoStatus?.connected || createQontoQuoteMutation.isPending}
+                onClick={() => {
+                  setSelectedQontoQuoteType('audit');
+                  setQontoFormData({
+                    title: "Audit IA - Analyse des processus",
+                    description: "Étude complète des processus métiers et identification des opportunités d'automatisation",
+                    quantity: 1,
+                    unitPrice: parseFloat(deal?.amount || '1500'),
+                    vatRate: 20,
+                  });
+                  setQontoQuoteDialogOpen(true);
+                }}
+                disabled={!qontoStatus?.connected}
                 data-testid="menu-qonto-audit"
               >
-                {createQontoQuoteMutation.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <FileText className="mr-2 h-4 w-4" />
-                )}
+                <FileText className="mr-2 h-4 w-4" />
                 Devis Audit (Qonto)
               </DropdownMenuItem>
               <DropdownMenuItem 
-                onClick={() => createQontoQuoteMutation.mutate('automatisation')}
-                disabled={!qontoStatus?.connected || createQontoQuoteMutation.isPending}
+                onClick={() => {
+                  setSelectedQontoQuoteType('automatisation');
+                  setQontoFormData({
+                    title: "Prestation d'automatisation IA",
+                    description: "Développement et mise en place de solutions d'automatisation personnalisées",
+                    quantity: 1,
+                    unitPrice: parseFloat(deal?.amount || '3000'),
+                    vatRate: 20,
+                  });
+                  setQontoQuoteDialogOpen(true);
+                }}
+                disabled={!qontoStatus?.connected}
                 data-testid="menu-qonto-automatisation"
               >
-                {createQontoQuoteMutation.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <FileText className="mr-2 h-4 w-4" />
-                )}
+                <FileText className="mr-2 h-4 w-4" />
                 Devis Automatisation (Qonto)
               </DropdownMenuItem>
               {!qontoStatus?.connected && (
@@ -1121,6 +1130,136 @@ export default function DealDetail() {
                 <HardDrive className="mr-2 h-4 w-4" />
               )}
               Nouveau devis
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={qontoQuoteDialogOpen} onOpenChange={setQontoQuoteDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Personnaliser le devis Qonto</DialogTitle>
+            <DialogDescription>
+              Modifiez les détails du devis avant de l'envoyer à Qonto
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="qonto-title">Titre de la prestation</Label>
+              <Input
+                id="qonto-title"
+                value={qontoFormData.title}
+                onChange={(e) => setQontoFormData(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Ex: Audit IA - Analyse des processus"
+                data-testid="input-qonto-title"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="qonto-description">Description</Label>
+              <Textarea
+                id="qonto-description"
+                value={qontoFormData.description}
+                onChange={(e) => setQontoFormData(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Description de la prestation..."
+                rows={3}
+                data-testid="input-qonto-description"
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="qonto-quantity">Quantité</Label>
+                <Input
+                  id="qonto-quantity"
+                  type="number"
+                  min={1}
+                  value={qontoFormData.quantity}
+                  onChange={(e) => setQontoFormData(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
+                  data-testid="input-qonto-quantity"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="qonto-price">Prix unitaire (€)</Label>
+                <Input
+                  id="qonto-price"
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={qontoFormData.unitPrice}
+                  onChange={(e) => setQontoFormData(prev => ({ ...prev, unitPrice: parseFloat(e.target.value) || 0 }))}
+                  data-testid="input-qonto-price"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="qonto-vat">TVA (%)</Label>
+                <Input
+                  id="qonto-vat"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={qontoFormData.vatRate}
+                  onChange={(e) => setQontoFormData(prev => ({ ...prev, vatRate: parseFloat(e.target.value) || 0 }))}
+                  data-testid="input-qonto-vat"
+                />
+              </div>
+            </div>
+            <div className="p-3 bg-muted rounded-lg">
+              <div className="flex justify-between text-sm">
+                <span>Sous-total HT:</span>
+                <span className="font-medium">{(qontoFormData.quantity * qontoFormData.unitPrice).toLocaleString('fr-FR')} €</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>TVA ({qontoFormData.vatRate}%):</span>
+                <span className="font-medium">{(qontoFormData.quantity * qontoFormData.unitPrice * qontoFormData.vatRate / 100).toLocaleString('fr-FR')} €</span>
+              </div>
+              <div className="flex justify-between font-bold mt-2 pt-2 border-t">
+                <span>Total TTC:</span>
+                <span>{(qontoFormData.quantity * qontoFormData.unitPrice * (1 + qontoFormData.vatRate / 100)).toLocaleString('fr-FR')} €</span>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQontoQuoteDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button 
+              onClick={() => createQontoQuoteMutation.mutate(qontoFormData)}
+              disabled={createQontoQuoteMutation.isPending || !qontoFormData.title}
+              data-testid="button-create-qonto-quote"
+            >
+              {createQontoQuoteMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FileText className="mr-2 h-4 w-4" />
+              )}
+              Créer le devis
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!qontoQuoteUrl} onOpenChange={(open) => !open && setQontoQuoteUrl(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Devis Qonto créé</DialogTitle>
+            <DialogDescription>
+              Votre devis a été créé avec succès. Vous pouvez maintenant le modifier et l'envoyer depuis Qonto.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Button 
+              className="w-full" 
+              onClick={() => {
+                if (qontoQuoteUrl) window.open(qontoQuoteUrl, '_blank');
+              }}
+              data-testid="button-open-qonto"
+            >
+              <ExternalLink className="mr-2 h-4 w-4" />
+              Ouvrir et modifier sur Qonto
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQontoQuoteUrl(null)}>
+              Fermer
             </Button>
           </DialogFooter>
         </DialogContent>
