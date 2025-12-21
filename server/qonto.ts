@@ -73,17 +73,16 @@ interface QontoClientRequest {
 }
 
 function getQontoHeaders(): HeadersInit {
-  // Try access token first, then fall back to API key
-  const accessToken = process.env.QONTO_ACCESS_TOKEN;
-  const apiKey = process.env.QONTO_API_KEY;
-  const token = accessToken || apiKey;
+  // Qonto uses login:secret-key format for API authentication
+  const login = process.env.QONTO_LOGIN;
+  const secretKey = process.env.QONTO_ACCESS_TOKEN || process.env.QONTO_API_KEY;
   
-  if (!token) {
-    throw new Error('QONTO_ACCESS_TOKEN ou QONTO_API_KEY non configuré');
+  if (!login || !secretKey) {
+    throw new Error('QONTO_LOGIN et QONTO_ACCESS_TOKEN doivent être configurés');
   }
   
   return {
-    'Authorization': `Bearer ${token}`,
+    'Authorization': `${login}:${secretKey}`,
     'Content-Type': 'application/json',
     'Accept': 'application/json'
   };
@@ -91,10 +90,10 @@ function getQontoHeaders(): HeadersInit {
 
 export async function testQontoConnection(): Promise<{ connected: boolean; error?: string; organization?: string }> {
   try {
-    const accessToken = process.env.QONTO_ACCESS_TOKEN;
-    const apiKey = process.env.QONTO_API_KEY;
-    if (!accessToken && !apiKey) {
-      return { connected: false, error: 'Token Qonto non configuré' };
+    const login = process.env.QONTO_LOGIN;
+    const secretKey = process.env.QONTO_ACCESS_TOKEN || process.env.QONTO_API_KEY;
+    if (!login || !secretKey) {
+      return { connected: false, error: 'QONTO_LOGIN et clé secrète non configurés' };
     }
 
     // Test connection by fetching organization info
