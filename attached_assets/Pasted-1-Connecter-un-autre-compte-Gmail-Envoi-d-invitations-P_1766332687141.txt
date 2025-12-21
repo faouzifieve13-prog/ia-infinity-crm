@@ -1,0 +1,92 @@
+1. Connecter un autre compte Gmail (Envoi d'invitations)
+
+Pour que ton application puisse envoyer des emails "au nom de" tes utilisateurs (ou d'un autre compte que le tien), tu ne peux pas utiliser un simple SMTP avec mot de passe. Il faut utiliser OAuth2 avec l'API Gmail.
+
+La marche à suivre technique :
+
+Google Cloud Console :
+
+Crée un projet et active l'API Gmail.
+
+Configure l'écran de consentement OAuth (le nom de ton appli qui s'affichera lors de la connexion).
+
+Crée des identifiants (Client ID et Client Secret) avec l'URL de redirection de ton Replit (ex: https://ton-app.replit.app/api/auth/callback/google).
+
+Scopes nécessaires : https://www.googleapis.com/auth/gmail.send et https://www.googleapis.com/auth/gmail.compose.
+
+Dans ton code (Backend) :
+
+Utilise une librairie comme passport-google-oauth20 ou next-auth si tu es sur Next.js.
+
+Lorsqu'un utilisateur connecte son compte, tu reçois un access_token et un refresh_token. Stocke ce refresh_token de manière sécurisée (chiffrée) dans ta base de données liée à l'utilisateur.
+
+Pour envoyer l'invitation, utilise ce token pour appeler l'endpoint users.messages.send de l'API Gmail.
+
+2. Bouton "Envoyer Devis/Contrat" Personnalisé
+
+J'ai analysé tes documents, notamment le projet "Automatisation Académias" et le "Contrat de Prestation - Sous-traitance". Voici comment structurer la génération automatique.
+
+
+A. Création des Templates (Modèles)
+
+Tu dois transformer tes documents Word/Texte en modèles dynamiques.
+
+Pour le Devis (Basé sur "Automatisation Académias" ) : Le système doit injecter ces variables :
+
+
+{{client_name}}
+
+{{mission_context}} (ex: "Industrialiser la production de modules...")
+
+{{workflow_steps}} (Liste : Input, Production, Diffusion)
+
+{{budget}} (ex: "150 €")
+
+{{deadline}} (ex: "13/12/2025")
+
+Pour le Contrat (Basé sur ton modèle "CONTRAT DE PRESTATION" ) : Bien que ton document soit un contrat de sous-traitance, la logique pour un contrat client est identique. Tu dois remplacer les champs statiques par des variables :
+
+
+Article 1 (Objet) : Insérer dynamiquement le type de mission (Audit ou Automatisation).
+
+
+Article 5 (Prix) : Insérer le tableau tarifaire selon la complexité choisie (Simple 150€ / Intermédiaire 250€ / Expert 350€).
+
+
+Signatures : Pré-remplir "Fait à [Ville Client], le [Date du jour]".
+
+
+B. Le Workflow du Bouton
+
+Dans ton interface Pipeline (le lien Replit que tu as partagé), voici l'action à coder sur le bouton :
+
+Clic sur "Envoyer Devis" :
+
+Ouvre une modale de prévisualisation.
+
+Récupère les données du prospect depuis ta base de données (Nom, Email, Type de projet).
+
+Génération PDF :
+
+Le backend remplit le template HTML/React avec les données.
+
+Il convertit le HTML en PDF (librairie puppeteer ou react-pdf).
+
+Envoi via Gmail :
+
+Le backend utilise le refresh_token Gmail (voir étape 1).
+
+Il crée un email avec le PDF en pièce jointe.
+
+Corps du mail suggéré : "Bonjour {{nom}}, voici le devis pour le projet {{projet}}..."
+
+3. Résumé des actions pour "Ajouter ça"
+
+Pour implémenter "ça" dans ton code actuel :
+
+Base de données : Ajoute une table OAuthCredentials pour stocker les tokens Gmail des comptes connectés.
+
+Backend : Crée une route API /api/send-quote qui accepte un clientId, génère le PDF basé sur tes docs, et l'envoie.
+
+
+Frontend : Dans ta carte client (Vue Pipeline), ajoute le bouton qui appelle cette API.
