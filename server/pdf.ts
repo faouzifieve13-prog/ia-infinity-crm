@@ -191,6 +191,47 @@ export async function generateContractPDF(params: ContractPDFParams): Promise<Bu
       yPos += 15;
     }
     
+    // Prestation-specific fields
+    if (contract.type === 'prestation') {
+      yPos += 20;
+      
+      doc
+        .fontSize(14)
+        .fillColor(primaryColor)
+        .text('DÉTAILS DE LA PRESTATION', 50, yPos);
+      
+      yPos += 25;
+      
+      doc.fontSize(10).fillColor(textColor);
+      
+      if (contract.outilPlateforme) {
+        doc.text(`Outil/Plateforme: ${contract.outilPlateforme}`, 50, yPos);
+        yPos += 15;
+      }
+      
+      if (contract.nombreSemaines) {
+        doc.text(`Durée estimée: ${contract.nombreSemaines} semaines`, 50, yPos);
+        yPos += 15;
+      }
+      
+      if (contract.nomPhase) {
+        doc.text(`Phase intermédiaire: ${contract.nomPhase}`, 50, yPos);
+        yPos += 15;
+      }
+      
+      if (contract.dateRapportAudit) {
+        doc.text(`Date du rapport d'audit: ${formatDate(contract.dateRapportAudit)}`, 50, yPos);
+        yPos += 15;
+      }
+    }
+    
+    // Lieu de signature
+    if (contract.lieu) {
+      yPos += 10;
+      doc.text(`Fait à: ${contract.lieu}`, 50, yPos);
+      yPos += 15;
+    }
+    
     yPos = doc.page.height - 150;
     
     doc

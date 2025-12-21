@@ -1185,12 +1185,25 @@ export async function registerRoutes(
         'IA Infinity - Contrats'
       );
       
-      // Update contract with Drive file info
+      // Update contract with Drive file info and personalization data
       const updatedContract = await storage.updateContract(req.params.id, orgId, {
         driveFileId: driveResult.id,
         driveWebViewLink: driveResult.webViewLink,
         driveWebContentLink: driveResult.webContentLink,
         templateType: contractType,
+        // Save personalization data
+        clientName: customData.clientName || contract.clientName,
+        clientCompany: customData.clientCompany || contract.clientCompany,
+        clientAddress: customData.clientAddress || contract.clientAddress,
+        clientEmail: customData.clientEmail || contract.clientEmail,
+        amount: customData.amount || contract.amount,
+        startDate: customData.dateDebut ? new Date(customData.dateDebut) : contract.startDate,
+        endDate: customData.dateFin ? new Date(customData.dateFin) : contract.endDate,
+        lieu: customData.lieu || contract.lieu,
+        outilPlateforme: customData.outilPlateforme || contract.outilPlateforme,
+        nombreSemaines: customData.nombreSemaines || contract.nombreSemaines,
+        nomPhase: customData.nomPhase || contract.nomPhase,
+        dateRapportAudit: customData.dateRapportAudit ? new Date(customData.dateRapportAudit) : contract.dateRapportAudit,
       });
       
       res.json({

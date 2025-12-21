@@ -353,6 +353,12 @@ export const contracts = pgTable("contracts", {
   driveWebViewLink: text("drive_web_view_link"),
   driveWebContentLink: text("drive_web_content_link"),
   templateType: text("template_type"),
+  // Prestation-specific fields
+  outilPlateforme: text("outil_plateforme"),
+  nombreSemaines: text("nombre_semaines"),
+  nomPhase: text("nom_phase"),
+  dateRapportAudit: timestamp("date_rapport_audit"),
+  lieu: text("lieu").default('Paris'),
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -656,6 +662,7 @@ export const insertContractSchema = createInsertSchema(contracts).omit({ id: tru
   startDate: z.coerce.date().optional().nullable(),
   endDate: z.coerce.date().optional().nullable(),
   signedAt: z.coerce.date().optional().nullable(),
+  dateRapportAudit: z.coerce.date().optional().nullable(),
 });
 export const insertExpenseSchema = createInsertSchema(expenses).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   date: z.coerce.date(),
