@@ -227,7 +227,8 @@ export async function createQontoQuote(quoteData: {
         value: item.unitPrice.toFixed(2),
         currency: 'EUR'
       },
-      vat_rate: item.vatRate.toString()
+      // Qonto API expects vat_rate as decimal (0.20 for 20%), input is percentage (20)
+      vat_rate: (item.vatRate / 100).toFixed(2)
     }))
   };
 
