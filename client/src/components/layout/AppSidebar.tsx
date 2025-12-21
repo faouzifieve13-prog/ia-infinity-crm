@@ -158,7 +158,6 @@ const navCategories: NavCategory[] = [
 ];
 
 const secondaryItems: NavItem[] = [
-  { title: 'Sync Notion', url: '/notion-sync', icon: RefreshCw, spaces: ['internal'] },
   { title: 'Invitations', url: '/invitations', icon: UserPlus, spaces: ['internal'] },
   { title: 'Paramètres', url: '/settings', icon: Settings, spaces: ['internal', 'client', 'vendor'] },
   { title: 'Aide', url: '/help', icon: HelpCircle, spaces: ['internal', 'client', 'vendor'] },
