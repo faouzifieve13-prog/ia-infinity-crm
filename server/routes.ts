@@ -933,6 +933,10 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Le client n'a pas d'email de contact" });
       }
 
+      if (!quote.quoteUrl) {
+        return res.status(400).json({ error: "Le devis n'a pas de lien Qonto valide" });
+      }
+
       // Send the email
       const { sendGenericEmail } = await import("./gmail");
       const subject = `Devis ${quote.number} - Capsule IA`;

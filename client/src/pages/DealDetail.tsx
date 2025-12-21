@@ -139,6 +139,7 @@ export default function DealDetail() {
   const [selectedContractType, setSelectedContractType] = useState<'audit' | 'prestation'>('audit');
   const [driveQuotesDialogOpen, setDriveQuotesDialogOpen] = useState(false);
   const [qontoQuoteDialogOpen, setQontoQuoteDialogOpen] = useState(false);
+  const [sendingQuoteId, setSendingQuoteId] = useState<string | null>(null);
   const [selectedQontoQuoteType, setSelectedQontoQuoteType] = useState<'audit' | 'automatisation'>('audit');
   const [qontoFormData, setQontoFormData] = useState({
     title: '',
@@ -436,9 +437,11 @@ export default function DealDetail() {
   // Send quote to client mutation
   const sendQuoteMutation = useMutation({
     mutationFn: async (quoteId: string) => {
+      setSendingQuoteId(quoteId);
       return apiRequest('POST', `/api/quotes/${quoteId}/send`);
     },
     onSuccess: () => {
+      setSendingQuoteId(null);
       queryClient.invalidateQueries({ queryKey: ['/api/deals', dealId, 'quotes'] });
       toast({
         title: 'Devis envoyé',
@@ -446,6 +449,7 @@ export default function DealDetail() {
       });
     },
     onError: (error: Error) => {
+      setSendingQuoteId(null);
       toast({
         title: 'Erreur',
         description: error.message || 'Impossible d\'envoyer le devis.',
@@ -689,14 +693,14 @@ export default function DealDetail() {
                         Voir
                       </Button>
                     )}
-                    {quote.status === 'draft' && (
+                    {quote.status === 'draft' && quote.quoteUrl && (
                       <Button 
                         size="sm"
                         onClick={() => sendQuoteMutation.mutate(quote.id)}
-                        disabled={sendQuoteMutation.isPending}
+                        disabled={sendingQuoteId !== null}
                         data-testid={`button-send-quote-${quote.id}`}
                       >
-                        {sendQuoteMutation.isPending ? (
+                        {sendingQuoteId === quote.id ? (
                           <Loader2 className="h-4 w-4 mr-1 animate-spin" />
                         ) : (
                           <Send className="h-4 w-4 mr-1" />
