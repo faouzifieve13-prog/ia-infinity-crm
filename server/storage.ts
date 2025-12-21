@@ -308,6 +308,7 @@ export class DatabaseStorage implements IStorage {
       amount: deals.amount,
       probability: deals.probability,
       stage: deals.stage,
+      missionTypes: deals.missionTypes,
       nextAction: deals.nextAction,
       nextActionDate: deals.nextActionDate,
       daysInStage: deals.daysInStage,
