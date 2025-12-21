@@ -120,6 +120,8 @@ export default function DealDetail() {
   const [contractDialogOpen, setContractDialogOpen] = useState(false);
   const [selectedContractType, setSelectedContractType] = useState<'audit' | 'prestation'>('audit');
   const [driveQuotesDialogOpen, setDriveQuotesDialogOpen] = useState(false);
+  const [qontoQuoteDialogOpen, setQontoQuoteDialogOpen] = useState(false);
+  const [selectedQontoQuoteType, setSelectedQontoQuoteType] = useState<'audit' | 'automatisation'>('audit');
 
   const { data: deal, isLoading: dealLoading } = useQuery<Deal>({
     queryKey: ['/api/deals', dealId],
@@ -272,6 +274,11 @@ export default function DealDetail() {
     queryKey: ['/api/drive/status'],
   });
 
+  // Qonto integration
+  const { data: qontoStatus } = useQuery<{ connected: boolean; organization?: string; error?: string }>({
+    queryKey: ['/api/qonto/status'],
+  });
+
   const { data: driveQuotes = [], refetch: refetchDriveQuotes } = useQuery<DriveFile[]>({
     queryKey: ['/api/drive/quotes'],
     enabled: driveQuotesDialogOpen,
@@ -324,6 +331,67 @@ export default function DealDetail() {
       toast({
         title: 'Erreur',
         description: error.message || 'Impossible de supprimer le devis.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Qonto quote mutation
+  const createQontoQuoteMutation = useMutation({
+    mutationFn: async (quoteType: 'audit' | 'automatisation') => {
+      const account = accounts.find(a => a.id === deal?.accountId);
+      const today = new Date();
+      const expiryDate = new Date(today);
+      expiryDate.setMonth(expiryDate.getMonth() + 1);
+      
+      const quoteItems = quoteType === 'audit' 
+        ? [
+            {
+              title: "Audit IA - Analyse des processus",
+              description: "Étude complète des processus métiers et identification des opportunités d'automatisation",
+              quantity: 1,
+              unit: "forfait",
+              unitPrice: parseFloat(deal?.amount || '1500'),
+              vatRate: 20
+            }
+          ]
+        : [
+            {
+              title: "Prestation d'automatisation IA",
+              description: "Développement et mise en place de solutions d'automatisation personnalisées",
+              quantity: 1,
+              unit: "forfait",
+              unitPrice: parseFloat(deal?.amount || '3000'),
+              vatRate: 20
+            }
+          ];
+      
+      const response = await apiRequest('POST', '/api/qonto/quotes', {
+        clientName: account?.name || 'Client',
+        clientEmail: account?.contactEmail || undefined,
+        issueDate: today.toISOString().split('T')[0],
+        expiryDate: expiryDate.toISOString().split('T')[0],
+        items: quoteItems,
+        header: `Devis ${quoteType === 'audit' ? 'Audit IA' : 'Automatisation IA'} pour ${account?.name || 'Client'}`,
+        footer: "Merci pour votre confiance. Ce devis est valable 30 jours."
+      });
+      
+      return response.json();
+    },
+    onSuccess: (result: { id: string; number: string; quote_url?: string }) => {
+      toast({
+        title: 'Devis Qonto créé',
+        description: `Le devis ${result.number} a été créé avec succès.`,
+      });
+      setQontoQuoteDialogOpen(false);
+      if (result.quote_url) {
+        window.open(result.quote_url, '_blank');
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur Qonto',
+        description: error.message || 'Impossible de créer le devis sur Qonto.',
         variant: 'destructive',
       });
     },
@@ -425,6 +493,36 @@ export default function DealDetail() {
                 <ExternalLink className="mr-2 h-4 w-4" />
                 Voir les devis sur Drive
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                onClick={() => createQontoQuoteMutation.mutate('audit')}
+                disabled={!qontoStatus?.connected || createQontoQuoteMutation.isPending}
+                data-testid="menu-qonto-audit"
+              >
+                {createQontoQuoteMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <FileText className="mr-2 h-4 w-4" />
+                )}
+                Devis Audit (Qonto)
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => createQontoQuoteMutation.mutate('automatisation')}
+                disabled={!qontoStatus?.connected || createQontoQuoteMutation.isPending}
+                data-testid="menu-qonto-automatisation"
+              >
+                {createQontoQuoteMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <FileText className="mr-2 h-4 w-4" />
+                )}
+                Devis Automatisation (Qonto)
+              </DropdownMenuItem>
+              {!qontoStatus?.connected && (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  Qonto non connecté
+                </div>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
           <Button 
