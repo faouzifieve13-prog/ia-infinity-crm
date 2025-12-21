@@ -1,0 +1,37 @@
+Je souhaite ajouter des fonctionnalités avancées de CRM et de gestion documentaire à mon projet SaaS existant ("IA Infinity"). Voici le cahier des charges fonctionnel détaillé. Je ne veux pas de code partiel, guide-moi étape par étape ou implémente les fonctionnalités suivantes :
+
+### 1. Distinction Visuelle et Données (Audit vs Automatisation)
+- Modifie la base de données (Schema) pour qu'un Prospect ou Client ait un "Type de Mission" : soit AUDIT, soit AUTOMATISATION (ou les deux).
+- Dans la vue "Base Clients" et dans le "Pipeline", ajoute des badges visuels distincts sur les cartes :
+  - Badge VIOLET pour "Audit".
+  - Badge VERT pour "Automatisation".
+
+### 2. Intégration Gmail Avancée (CRM)
+Je veux connecter un compte Gmail externe (via OAuth) pour gérer les communications directement depuis le SaaS.
+- **Connexion :** Ajoute un bouton dans les paramètres pour "Connecter un compte Google".
+- **Envoi :** Utilise ce compte pour envoyer les invitations et les documents.
+- **Synchronisation (Boîte de réception) :** Dans la fiche détaillée d'un Client ou Prospect, ajoute un onglet "Emails".
+  - Cet onglet doit récupérer et afficher l'historique des emails échangés avec ce client spécifique (filtrer les emails reçus/envoyés correspondant à l'adresse email du client).
+
+### 3. Génération et Envoi de Documents "En 1 Clic"
+Dans la vue Pipeline, ajoute un bouton "Générer & Envoyer Devis/Contrat" sur chaque carte prospect.
+- **Logique conditionnelle :**
+  - Si le tag est "AUDIT" -> Utilise le modèle de "Contrat d'Audit".
+  - Si le tag est "AUTOMATISATION" -> Utilise le modèle de "Contrat de Prestation".
+- **Templates dynamiques :** Crée des modèles PDF qui se remplissent automatiquement avec les infos du prospect.
+  - Variables à injecter : Nom du client, Entreprise, Date du jour, Prix (à saisir dans une modale avant l'envoi), et Date de début/fin.
+  - *Texte pour l'Audit* : Prévoir les champs [Prix HT], [Prix TTC].
+  - *Texte pour l'Auto* : Prévoir un préambule qui cite la "Date du rapport d'audit précédent".
+
+### 4. Workflow de Conversion et Archivage
+C'est le point critique. Lorsqu'un Prospect est converti en Client (passage à l'état "Gagné" ou bouton "Convertir") :
+- Le système doit créer la fiche Client.
+- **MIGRATION DOCUMENTAIRE :** Tous les devis et contrats générés précédemment pour ce Prospect doivent être automatiquement déplacés/liés à la nouvelle fiche Client.
+- Dans l'Espace Client (Dashboard), crée une section "Documents / Archives" où l'on retrouve ces fichiers (le devis validé, le contrat signé).
+
+### Instructions Techniques
+- Utilise une librairie de génération PDF robuste côté serveur ou client.
+- Pour Gmail, utilise l'API Gmail officielle (scopes : send, readonly).
+- Gère le stockage des fichiers (Blob storage ou base de données selon le setup actuel).
+
+Commence par me proposer les modifications nécessaires au schéma de base de données (Prisma/SQL) pour supporter ces relations (Documents liés aux Users, Tokens Gmail).
