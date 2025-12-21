@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Plus, FileSignature, Search, Filter, Loader2, Eye, Download, Send, Check, X, Building2, Mail, Phone, MapPin, FileText, Edit, CloudUpload, ExternalLink, FileDown, Sparkles, Building } from 'lucide-react';
+import { Plus, FileSignature, Search, Filter, Loader2, Eye, Download, Send, Check, X, Building2, Mail, Phone, MapPin, FileText, Edit, CloudUpload, ExternalLink, FileDown, Sparkles, Building, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -277,6 +277,24 @@ function ContractCard({ contract }: { contract: Contract }) {
     },
   });
 
+  const deleteContractMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest('DELETE', `/api/contracts/${contract.id}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/contracts'] });
+      toast({ title: 'Contrat supprimé' });
+      setIsViewOpen(false);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: 'Erreur', 
+        description: error.message || 'Échec de la suppression', 
+        variant: 'destructive' 
+      });
+    },
+  });
+
   return (
     <>
       <Card className="hover-elevate cursor-pointer" onClick={() => setIsViewOpen(true)} data-testid={`card-contract-${contract.id}`}>
@@ -502,6 +520,23 @@ function ContractCard({ contract }: { contract: Contract }) {
                 </Button>
               </>
             )}
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (confirm('Êtes-vous sûr de vouloir supprimer ce contrat ?')) {
+                  deleteContractMutation.mutate();
+                }
+              }}
+              disabled={deleteContractMutation.isPending}
+              data-testid="button-delete-contract"
+            >
+              {deleteContractMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+              Supprimer
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
