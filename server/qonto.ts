@@ -74,11 +74,17 @@ interface QontoClientRequest {
 
 function getQontoHeaders(): HeadersInit {
   // Qonto uses login:secret-key format for API authentication
-  const login = process.env.QONTO_LOGIN;
+  // Format: slug:secret-key (e.g., capsule-ia-6029:fea9eb16bcb5312a18fbfdf23bc84145)
+  let login = process.env.QONTO_LOGIN;
   const secretKey = process.env.QONTO_ACCESS_TOKEN || process.env.QONTO_API_KEY;
   
   if (!login || !secretKey) {
     throw new Error('QONTO_LOGIN et QONTO_ACCESS_TOKEN doivent être configurés');
+  }
+  
+  // If QONTO_LOGIN contains the secret key instead of the slug, use fallback
+  if (login === secretKey || login.length > 30) {
+    login = 'capsule-ia-6029';
   }
   
   return {
@@ -90,10 +96,15 @@ function getQontoHeaders(): HeadersInit {
 
 export async function testQontoConnection(): Promise<{ connected: boolean; error?: string; organization?: string }> {
   try {
-    const login = process.env.QONTO_LOGIN;
+    let login = process.env.QONTO_LOGIN;
     const secretKey = process.env.QONTO_ACCESS_TOKEN || process.env.QONTO_API_KEY;
     if (!login || !secretKey) {
       return { connected: false, error: 'QONTO_LOGIN et clé secrète non configurés' };
+    }
+    
+    // Apply same fallback logic as getQontoHeaders
+    if (login === secretKey || login.length > 30) {
+      login = 'capsule-ia-6029';
     }
 
     // Test connection by fetching organization info
