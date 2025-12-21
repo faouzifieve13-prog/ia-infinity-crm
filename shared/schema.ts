@@ -25,6 +25,7 @@ export const invitationStatusEnum = pgEnum('invitation_status', ['pending', 'acc
 export const contactTypeEnum = pgEnum('contact_type', ['client', 'vendor', 'partner', 'prospect']);
 export const missionTypeEnum = pgEnum('mission_type', ['audit', 'automatisation']);
 export const emailDirectionEnum = pgEnum('email_direction', ['inbound', 'outbound']);
+export const quoteStatusEnum = pgEnum('quote_status', ['draft', 'sent', 'signed', 'rejected', 'expired']);
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -124,6 +125,26 @@ export const deals = pgTable("deals", {
   index("deals_stage_idx").on(table.orgId, table.stage),
   index("deals_owner_idx").on(table.orgId, table.ownerId),
   index("deals_notion_idx").on(table.notionPageId),
+]);
+
+export const quotes = pgTable("quotes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  dealId: varchar("deal_id").notNull().references(() => deals.id),
+  qontoQuoteId: varchar("qonto_quote_id"),
+  number: text("number").notNull(),
+  title: text("title").notNull(),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  quoteUrl: text("quote_url"),
+  status: quoteStatusEnum("status").notNull().default('draft'),
+  driveFileId: text("drive_file_id"),
+  driveFileUrl: text("drive_file_url"),
+  sentAt: timestamp("sent_at"),
+  signedAt: timestamp("signed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("quotes_org_idx").on(table.orgId),
+  index("quotes_deal_idx").on(table.dealId),
 ]);
 
 export const activities = pgTable("activities", {
@@ -653,6 +674,7 @@ export const insertMembershipSchema = createInsertSchema(memberships).omit({ id:
 export const insertAccountSchema = createInsertSchema(accounts).omit({ id: true, createdAt: true });
 export const insertContactSchema = createInsertSchema(contacts).omit({ id: true, createdAt: true });
 export const insertDealSchema = createInsertSchema(deals).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertQuoteSchema = createInsertSchema(quotes).omit({ id: true, createdAt: true });
 export const insertActivitySchema = createInsertSchema(activities).omit({ id: true, createdAt: true });
 export const insertProjectSchema = createInsertSchema(projects).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true, updatedAt: true });
@@ -686,6 +708,7 @@ export type InsertMembership = z.infer<typeof insertMembershipSchema>;
 export type InsertAccount = z.infer<typeof insertAccountSchema>;
 export type InsertContact = z.infer<typeof insertContactSchema>;
 export type InsertDeal = z.infer<typeof insertDealSchema>;
+export type InsertQuote = z.infer<typeof insertQuoteSchema>;
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
 export type InsertProject = z.infer<typeof insertProjectSchema>;
 export type InsertTask = z.infer<typeof insertTaskSchema>;
@@ -707,6 +730,7 @@ export type Membership = typeof memberships.$inferSelect;
 export type Account = typeof accounts.$inferSelect;
 export type Contact = typeof contacts.$inferSelect;
 export type Deal = typeof deals.$inferSelect;
+export type Quote = typeof quotes.$inferSelect;
 export type Activity = typeof activities.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
