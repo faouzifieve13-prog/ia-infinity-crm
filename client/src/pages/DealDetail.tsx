@@ -21,7 +21,9 @@ import {
   ExternalLink,
   CheckCircle2,
   UserCheck,
-  Download
+  Download,
+  FileSignature,
+  Send
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -94,6 +96,8 @@ export default function DealDetail() {
   const dealId = params?.id;
   const { toast } = useToast();
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
+  const [contractDialogOpen, setContractDialogOpen] = useState(false);
+  const [selectedContractType, setSelectedContractType] = useState<'audit' | 'prestation'>('audit');
 
   const { data: deal, isLoading: dealLoading } = useQuery<Deal>({
     queryKey: ['/api/deals', dealId],
@@ -204,6 +208,43 @@ export default function DealDetail() {
     },
   });
 
+  const generateAndSendContractMutation = useMutation({
+    mutationFn: async (contractType: 'audit' | 'prestation') => {
+      const account = accounts.find(a => a.id === deal?.accountId);
+      
+      const contractResponse = await apiRequest('POST', '/api/contracts/generate', {
+        type: contractType,
+        dealId: dealId,
+        accountId: deal?.accountId,
+        clientName: account?.contactName || 'Client',
+        clientEmail: account?.contactEmail || '',
+        clientCompany: account?.name || '',
+        amount: deal?.amount || '0',
+      });
+      
+      const contract = await contractResponse.json();
+      
+      await apiRequest('POST', `/api/contracts/${contract.id}/send`);
+      
+      return contract;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/contracts'] });
+      setContractDialogOpen(false);
+      toast({
+        title: 'Contrat généré et envoyé',
+        description: 'Le contrat a été créé et envoyé par email au client.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de générer ou envoyer le contrat.',
+        variant: 'destructive',
+      });
+    },
+  });
+
   const onSubmit = (data: DealFormValues) => {
     updateDealMutation.mutate(data);
   };
@@ -263,6 +304,14 @@ export default function DealDetail() {
           >
             <Download className="mr-2 h-4 w-4" />
             Devis PDF
+          </Button>
+          <Button 
+            variant="outline"
+            onClick={() => setContractDialogOpen(true)}
+            data-testid="button-generate-contract"
+          >
+            <FileSignature className="mr-2 h-4 w-4" />
+            Générer contrat
           </Button>
           {!isWonOrLost && (
             <Button 
@@ -670,6 +719,59 @@ export default function DealDetail() {
                 <CheckCircle2 className="mr-2 h-4 w-4" />
               )}
               Confirmer la conversion
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={contractDialogOpen} onOpenChange={setContractDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Générer et envoyer un contrat</DialogTitle>
+            <DialogDescription>
+              Sélectionnez le type de contrat à générer pour {account?.name || 'ce client'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Type de contrat</label>
+              <Select 
+                value={selectedContractType} 
+                onValueChange={(value: 'audit' | 'prestation') => setSelectedContractType(value)}
+              >
+                <SelectTrigger data-testid="select-contract-type">
+                  <SelectValue placeholder="Sélectionner le type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="audit">Contrat d'Audit</SelectItem>
+                  <SelectItem value="prestation">Contrat de Prestation</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="rounded-lg border p-4 bg-muted/50">
+              <h4 className="font-medium mb-2">Informations du contrat</h4>
+              <div className="space-y-1 text-sm text-muted-foreground">
+                <p>Client: {account?.contactName || 'Non défini'}</p>
+                <p>Email: {account?.contactEmail || 'Non défini'}</p>
+                <p>Montant: {parseFloat(deal?.amount || '0').toLocaleString('fr-FR')}€</p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setContractDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button 
+              onClick={() => generateAndSendContractMutation.mutate(selectedContractType)}
+              disabled={generateAndSendContractMutation.isPending || !account?.contactEmail}
+              data-testid="button-confirm-generate-send"
+            >
+              {generateAndSendContractMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}
+              Générer et envoyer
             </Button>
           </DialogFooter>
         </DialogContent>
