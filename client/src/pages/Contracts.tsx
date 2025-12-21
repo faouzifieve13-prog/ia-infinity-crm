@@ -502,24 +502,14 @@ function ContractCard({ contract }: { contract: Contract }) {
               </Button>
             )}
             {(contract as any).driveWebViewLink && (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => window.open((contract as any).driveWebViewLink, '_blank')}
-                  data-testid="button-view-drive"
-                >
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Drive
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => window.open(`/api/contracts/${contract.id}/download-pdf`, '_blank')}
-                  data-testid="button-download-pdf"
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  PDF
-                </Button>
-              </>
+              <Button
+                variant="outline"
+                onClick={() => window.open((contract as any).driveWebViewLink, '_blank')}
+                data-testid="button-view-drive"
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Drive
+              </Button>
             )}
             <Button
               variant="destructive"

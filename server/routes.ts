@@ -995,6 +995,84 @@ export async function registerRoutes(
     }
   });
 
+  // Public endpoint to get contract details for signing (no auth required)
+  app.get("/api/contracts/public/:id", async (req: Request, res: Response) => {
+    try {
+      // Find the contract across all organizations (public access)
+      const allContracts = await storage.getContracts(DEFAULT_ORG_ID);
+      const contract = allContracts.find(c => c.id === req.params.id);
+      
+      if (!contract) {
+        return res.status(404).json({ error: "Contrat non trouvé" });
+      }
+      
+      // Only allow access to contracts that have been sent or are awaiting signature
+      if (contract.status === 'draft' || contract.status === 'cancelled') {
+        return res.status(403).json({ error: "Ce contrat n'est pas disponible pour signature" });
+      }
+      
+      // Return only necessary fields for signing (not sensitive data)
+      res.json({
+        id: contract.id,
+        title: contract.title,
+        contractNumber: contract.contractNumber,
+        type: contract.type,
+        status: contract.status,
+        clientName: contract.clientName,
+        clientCompany: contract.clientCompany,
+        amount: contract.amount,
+        currency: contract.currency,
+        scope: contract.scope,
+        startDate: contract.startDate,
+        endDate: contract.endDate,
+        clientSignatureData: contract.clientSignatureData,
+        signedAt: contract.signedAt,
+        signedByClient: contract.signedByClient,
+        driveWebViewLink: (contract as any).driveWebViewLink,
+      });
+    } catch (error) {
+      console.error("Get public contract error:", error);
+      res.status(500).json({ error: "Erreur serveur" });
+    }
+  });
+
+  // Public endpoint to sign a contract (no auth required)
+  app.post("/api/contracts/public/:id/sign", async (req: Request, res: Response) => {
+    try {
+      const { signatureData } = req.body;
+      
+      if (!signatureData) {
+        return res.status(400).json({ error: "Signature requise" });
+      }
+      
+      // Find the contract
+      const allContracts = await storage.getContracts(DEFAULT_ORG_ID);
+      const contract = allContracts.find(c => c.id === req.params.id);
+      
+      if (!contract) {
+        return res.status(404).json({ error: "Contrat non trouvé" });
+      }
+      
+      // Only allow signing contracts that are in 'sent' status
+      if (contract.status !== 'sent') {
+        return res.status(403).json({ error: "Ce contrat ne peut plus être signé" });
+      }
+      
+      // Update the contract with signature
+      const updatedContract = await storage.updateContract(req.params.id, DEFAULT_ORG_ID, {
+        clientSignatureData: signatureData,
+        signedByClient: contract.clientName,
+        signedAt: new Date(),
+        status: 'signed',
+      });
+      
+      res.json({ success: true, contract: updatedContract });
+    } catch (error) {
+      console.error("Sign contract error:", error);
+      res.status(500).json({ error: "Erreur lors de la signature" });
+    }
+  });
+
   app.get("/api/contracts/:id/pdf", async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);

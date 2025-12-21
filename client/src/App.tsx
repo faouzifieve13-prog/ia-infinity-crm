@@ -27,6 +27,7 @@ import Calendar from "@/pages/Calendar";
 import NotionSync from "@/pages/NotionSync";
 import Invitations from "@/pages/Invitations";
 import AcceptInvite from "@/pages/AcceptInvite";
+import ContractSign from "@/pages/ContractSign";
 import Settings from "@/pages/Settings";
 import { LandingPage } from "@/pages/LandingPage";
 import NotFound from "@/pages/not-found";
@@ -83,6 +84,11 @@ function AppContent() {
         <Route component={NotFound} />
       </Switch>
     );
+  }
+  
+  // Public contract signing page
+  if (location.startsWith("/contracts/") && location.includes("/sign")) {
+    return <ContractSign />;
   }
   
   return (
