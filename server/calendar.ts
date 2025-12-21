@@ -1,7 +1,7 @@
 // Google Calendar integration using Replit connection
 import { google, calendar_v3 } from 'googleapis';
 
-async function getAccessToken() {
+async function getConnectionSettings() {
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY 
     ? 'repl ' + process.env.REPL_IDENTITY 
@@ -23,11 +23,29 @@ async function getAccessToken() {
     }
   ).then(res => res.json()).then(data => data.items?.[0]);
 
+  return connectionSettings;
+}
+
+async function getAccessToken() {
+  const connectionSettings = await getConnectionSettings();
+  
+  // Check if connection has an error status (e.g., token revoked)
+  if (connectionSettings?.status === 'error') {
+    throw new Error('Token has been revoked - please reconnect Google Calendar in Replit integrations panel');
+  }
+
   const accessToken = connectionSettings?.settings?.access_token || connectionSettings?.settings?.oauth?.credentials?.access_token;
 
   if (!connectionSettings || !accessToken) {
     throw new Error('Google Calendar not connected');
   }
+  
+  // Check if token is expired
+  const expiresAt = connectionSettings?.settings?.oauth?.credentials?.expires_at;
+  if (expiresAt && new Date(expiresAt) < new Date()) {
+    throw new Error('Token expired - please reconnect Google Calendar');
+  }
+  
   return accessToken;
 }
 
