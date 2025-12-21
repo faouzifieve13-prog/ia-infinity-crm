@@ -211,7 +211,32 @@ Preferred communication style: Simple, everyday language.
 **Third-Party Services**
 - **Neon Database**: Serverless PostgreSQL hosting
 - **Notion API**: Data synchronization (@notionhq/client) with Replit connection for secure token management
+- **Gmail API**: Email sending for invitations and contract delivery via Replit Gmail connector
+- **Google Drive API**: Quote storage, modification and download via Replit Drive connector
+- **Google Calendar API**: Calendar synchronization via Replit Calendar connector  
 - **n8n**: Workflow automation platform (referenced in schema, webhook integration)
+
+### Google Drive Integration
+
+**Overview**
+- Store quotes/devis as PDF files in Google Drive folder "IA Infinity - Devis"
+- View, download, and delete quotes directly from the CRM
+- Automatic file sharing with download links
+
+**API Endpoints**
+- `GET /api/drive/status` - Check Drive connection status
+- `GET /api/drive/quotes` - List all quotes in Drive folder
+- `POST /api/drive/quotes` - Generate and upload quote PDF to Drive
+- `GET /api/drive/quotes/:id/download` - Download quote file
+- `DELETE /api/drive/quotes/:id` - Delete quote from Drive
+
+**Frontend Integration**
+- DealDetail page has "Devis" dropdown menu with:
+  - Preview PDF (opens in new tab)
+  - Download PDF
+  - Save to Google Drive
+  - View saved quotes on Drive
+- Dialog to view/manage all Drive quotes with view, download, delete actions
 
 **Development Tools**
 - **Replit**: Development environment with cartographer plugin for code navigation

@@ -23,7 +23,11 @@ import {
   UserCheck,
   Download,
   FileSignature,
-  Send
+  Send,
+  HardDrive,
+  Eye,
+  Trash2,
+  ChevronDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -54,6 +58,13 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import type { Deal, Account, Document } from '@/lib/types';
@@ -90,6 +101,16 @@ function formatDate(dateStr: string | null | undefined): string {
   });
 }
 
+interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  webViewLink?: string;
+  webContentLink?: string;
+  createdTime?: string;
+  modifiedTime?: string;
+}
+
 export default function DealDetail() {
   const [, params] = useRoute('/deals/:id');
   const [, navigate] = useLocation();
@@ -98,6 +119,7 @@ export default function DealDetail() {
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   const [contractDialogOpen, setContractDialogOpen] = useState(false);
   const [selectedContractType, setSelectedContractType] = useState<'audit' | 'prestation'>('audit');
+  const [driveQuotesDialogOpen, setDriveQuotesDialogOpen] = useState(false);
 
   const { data: deal, isLoading: dealLoading } = useQuery<Deal>({
     queryKey: ['/api/deals', dealId],
@@ -245,6 +267,68 @@ export default function DealDetail() {
     },
   });
 
+  // Drive integration
+  const { data: driveStatus } = useQuery<{ connected: boolean; email?: string; error?: string }>({
+    queryKey: ['/api/drive/status'],
+  });
+
+  const { data: driveQuotes = [], refetch: refetchDriveQuotes } = useQuery<DriveFile[]>({
+    queryKey: ['/api/drive/quotes'],
+    enabled: driveQuotesDialogOpen,
+  });
+
+  const saveQuoteToDriveMutation = useMutation({
+    mutationFn: async () => {
+      const account = accounts.find(a => a.id === deal?.accountId);
+      
+      const response = await apiRequest('POST', '/api/drive/quotes', {
+        dealName: deal?.name || 'Nouveau devis',
+        accountName: account?.name || 'Client',
+        contactEmail: account?.contactEmail || '',
+        amount: deal?.amount || '0',
+        probability: deal?.probability || 0,
+        missionTypes: ['automatisation'],
+        nextAction: deal?.nextAction || null
+      });
+      
+      return response.json();
+    },
+    onSuccess: (driveFile: DriveFile) => {
+      toast({
+        title: 'Devis enregistré sur Drive',
+        description: `Le fichier "${driveFile.name}" a été créé dans Google Drive.`,
+      });
+      refetchDriveQuotes();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible d\'enregistrer le devis sur Drive.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const deleteQuoteFromDriveMutation = useMutation({
+    mutationFn: async (fileId: string) => {
+      await apiRequest('DELETE', `/api/drive/quotes/${fileId}`);
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Devis supprimé',
+        description: 'Le fichier a été supprimé de Google Drive.',
+      });
+      refetchDriveQuotes();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de supprimer le devis.',
+        variant: 'destructive',
+      });
+    },
+  });
+
   const onSubmit = (data: DealFormValues) => {
     updateDealMutation.mutate(data);
   };
@@ -297,14 +381,52 @@ export default function DealDetail() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button 
-            variant="outline"
-            onClick={() => window.open(`/api/deals/${dealId}/quote-pdf`, '_blank')}
-            data-testid="button-download-quote"
-          >
-            <Download className="mr-2 h-4 w-4" />
-            Devis PDF
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" data-testid="button-quote-menu">
+                <FileText className="mr-2 h-4 w-4" />
+                Devis
+                <ChevronDown className="ml-2 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem 
+                onClick={() => window.open(`/api/deals/${dealId}/quote-pdf`, '_blank')}
+                data-testid="menu-preview-quote"
+              >
+                <Eye className="mr-2 h-4 w-4" />
+                Aperçu PDF
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => window.open(`/api/deals/${dealId}/quote-pdf?download=true`, '_blank')}
+                data-testid="menu-download-quote"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Télécharger PDF
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                onClick={() => saveQuoteToDriveMutation.mutate()}
+                disabled={!driveStatus?.connected || saveQuoteToDriveMutation.isPending}
+                data-testid="menu-save-to-drive"
+              >
+                {saveQuoteToDriveMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <HardDrive className="mr-2 h-4 w-4" />
+                )}
+                Enregistrer sur Drive
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={() => setDriveQuotesDialogOpen(true)}
+                disabled={!driveStatus?.connected}
+                data-testid="menu-view-drive-quotes"
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Voir les devis sur Drive
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button 
             variant="outline"
             onClick={() => setContractDialogOpen(true)}
@@ -772,6 +894,100 @@ export default function DealDetail() {
                 <Send className="mr-2 h-4 w-4" />
               )}
               Générer et envoyer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={driveQuotesDialogOpen} onOpenChange={setDriveQuotesDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <HardDrive className="h-5 w-5" />
+              Devis sur Google Drive
+            </DialogTitle>
+            <DialogDescription>
+              {driveStatus?.connected 
+                ? `Connecté à ${driveStatus.email}` 
+                : 'Non connecté à Google Drive'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-96 overflow-y-auto space-y-2">
+            {driveQuotes.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <HardDrive className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Aucun devis enregistré sur Drive</p>
+                <p className="text-sm mt-2">
+                  Utilisez "Enregistrer sur Drive" pour sauvegarder un devis
+                </p>
+              </div>
+            ) : (
+              driveQuotes.map((file) => (
+                <div 
+                  key={file.id}
+                  className="flex items-center justify-between p-3 border rounded-lg hover-elevate"
+                  data-testid={`drive-file-${file.id}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <FileText className="h-8 w-8 text-red-500" />
+                    <div>
+                      <p className="font-medium">{file.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {file.modifiedTime 
+                          ? new Date(file.modifiedTime).toLocaleString('fr-FR')
+                          : 'Date inconnue'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    {file.webViewLink && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => window.open(file.webViewLink, '_blank')}
+                        data-testid={`button-view-${file.id}`}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {file.webContentLink && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => window.open(file.webContentLink, '_blank')}
+                        data-testid={`button-download-${file.id}`}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => deleteQuoteFromDriveMutation.mutate(file.id)}
+                      disabled={deleteQuoteFromDriveMutation.isPending}
+                      data-testid={`button-delete-${file.id}`}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDriveQuotesDialogOpen(false)}>
+              Fermer
+            </Button>
+            <Button 
+              onClick={() => saveQuoteToDriveMutation.mutate()}
+              disabled={saveQuoteToDriveMutation.isPending}
+            >
+              {saveQuoteToDriveMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <HardDrive className="mr-2 h-4 w-4" />
+              )}
+              Nouveau devis
             </Button>
           </DialogFooter>
         </DialogContent>

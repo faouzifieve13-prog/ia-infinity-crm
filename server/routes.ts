@@ -2492,5 +2492,88 @@ export async function registerRoutes(
     }
   });
 
+  // ============================================
+  // Google Drive Routes
+  // ============================================
+
+  app.get("/api/drive/status", async (req: Request, res: Response) => {
+    try {
+      const { testDriveConnection } = await import("./drive");
+      const status = await testDriveConnection();
+      res.json(status);
+    } catch (error) {
+      console.error("Drive status error:", error);
+      res.status(500).json({ connected: false, error: "Failed to check Drive status" });
+    }
+  });
+
+  app.get("/api/drive/quotes", async (req: Request, res: Response) => {
+    try {
+      const { listQuotes } = await import("./drive");
+      const quotes = await listQuotes();
+      res.json(quotes);
+    } catch (error) {
+      console.error("List quotes error:", error);
+      res.status(500).json({ error: "Failed to list quotes" });
+    }
+  });
+
+  app.post("/api/drive/quotes", async (req: Request, res: Response) => {
+    try {
+      const { uploadQuoteToDrive } = await import("./drive");
+      const { generateQuotePDF } = await import("./pdf");
+      
+      const { dealName, accountName, contactEmail, amount, probability, missionTypes, nextAction } = req.body;
+      
+      // Generate PDF
+      const pdfBuffer = await generateQuotePDF({
+        dealName: dealName || 'Nouveau devis',
+        accountName: accountName || 'Client',
+        contactEmail: contactEmail || '',
+        amount: amount || '0',
+        probability: probability || 0,
+        missionTypes: missionTypes || ['automatisation'],
+        nextAction: nextAction || null
+      });
+      
+      // Sanitize filename
+      const sanitizedName = (accountName || 'Client').replace(/[^a-zA-Z0-9àâäéèêëïîôùûüçÀÂÄÉÈÊËÏÎÔÙÛÜÇ\s-]/g, '').trim();
+      const filename = `Devis_${sanitizedName}_${new Date().toISOString().split('T')[0]}.pdf`;
+      
+      // Upload to Drive
+      const driveFile = await uploadQuoteToDrive(pdfBuffer, filename, accountName);
+      
+      res.status(201).json(driveFile);
+    } catch (error) {
+      console.error("Upload quote to Drive error:", error);
+      res.status(500).json({ error: "Failed to upload quote to Drive" });
+    }
+  });
+
+  app.get("/api/drive/quotes/:id/download", async (req: Request, res: Response) => {
+    try {
+      const { downloadFile } = await import("./drive");
+      const buffer = await downloadFile(req.params.id);
+      
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'attachment');
+      res.send(buffer);
+    } catch (error) {
+      console.error("Download quote error:", error);
+      res.status(500).json({ error: "Failed to download quote" });
+    }
+  });
+
+  app.delete("/api/drive/quotes/:id", async (req: Request, res: Response) => {
+    try {
+      const { deleteFile } = await import("./drive");
+      await deleteFile(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete quote error:", error);
+      res.status(500).json({ error: "Failed to delete quote" });
+    }
+  });
+
   return httpServer;
 }
