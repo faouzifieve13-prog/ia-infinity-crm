@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Plus, FileSignature, Search, Filter, Loader2, Eye, Download, Send, Check, X, Building2, Mail, Phone, MapPin, FileText, Edit, CloudUpload, ExternalLink, FileDown } from 'lucide-react';
+import { Plus, FileSignature, Search, Filter, Loader2, Eye, Download, Send, Check, X, Building2, Mail, Phone, MapPin, FileText, Edit, CloudUpload, ExternalLink, FileDown, Sparkles, Building } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -147,6 +147,70 @@ function ContractCard({ contract }: { contract: Contract }) {
     },
     onError: (error: any) => {
       toast({ title: 'Erreur', description: error.message || 'Échec de la génération', variant: 'destructive' });
+    },
+  });
+
+  const generateScopeMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/contracts/generate-scope', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dealId: contract.dealId,
+          contractType: contract.type,
+          clientName: editForm.getValues('clientName') || contract.clientName,
+          clientCompany: editForm.getValues('clientCompany') || contract.clientCompany,
+        }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Échec de la génération');
+      }
+      return response.json() as Promise<{ objectScope: string; summary: string; keyPoints: string[] }>;
+    },
+    onSuccess: (result) => {
+      editForm.setValue('objectScope', result.objectScope);
+      toast({ 
+        title: 'Scope généré par IA', 
+        description: 'L\'objet du contrat a été généré à partir des notes de réunion' 
+      });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: 'Erreur', 
+        description: error.message || 'Impossible de générer le scope. Assurez-vous d\'avoir des notes de réunion.', 
+        variant: 'destructive' 
+      });
+    },
+  });
+
+  const sirenLookupMutation = useMutation({
+    mutationFn: async (siren: string) => {
+      const response = await fetch(`/api/siren/lookup/${siren}`);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Entreprise non trouvée');
+      }
+      return response.json();
+    },
+    onSuccess: (result: any) => {
+      if (result.name) editForm.setValue('clientCompany', result.name);
+      if (result.siret) editForm.setValue('clientSiret', result.siret);
+      if (result.address) {
+        const fullAddress = [result.address, result.postalCode, result.city].filter(Boolean).join(' ');
+        editForm.setValue('clientAddress', fullAddress);
+      }
+      toast({ 
+        title: 'Informations récupérées', 
+        description: `Entreprise: ${result.name}` 
+      });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: 'Erreur SIREN', 
+        description: error.message || 'Impossible de trouver l\'entreprise', 
+        variant: 'destructive' 
+      });
     },
   });
 
@@ -491,11 +555,36 @@ function ContractCard({ contract }: { contract: Contract }) {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">SIREN / SIRET</label>
-              <Input
-                {...editForm.register('clientSiret')}
-                placeholder="123 456 789 00012"
-                data-testid="input-client-siret"
-              />
+              <div className="flex gap-2">
+                <Input
+                  {...editForm.register('clientSiret')}
+                  placeholder="123 456 789 00012"
+                  data-testid="input-client-siret"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => {
+                    const siren = editForm.getValues('clientSiret');
+                    if (siren && siren.length >= 9) {
+                      sirenLookupMutation.mutate(siren);
+                    } else {
+                      toast({ title: 'SIREN invalide', description: 'Entrez un numéro SIREN valide (9 chiffres)', variant: 'destructive' });
+                    }
+                  }}
+                  disabled={sirenLookupMutation.isPending}
+                  title="Rechercher les informations de l'entreprise"
+                  data-testid="button-siren-lookup"
+                >
+                  {sirenLookupMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Building className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Entrez le SIREN et cliquez sur l'icône pour récupérer les infos</p>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Montant HT (€)</label>
@@ -515,13 +604,33 @@ function ContractCard({ contract }: { contract: Contract }) {
               />
             </div>
             <div className="col-span-2 space-y-2">
-              <label className="text-sm font-medium">Objet du contrat</label>
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Objet du contrat</label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => generateScopeMutation.mutate()}
+                  disabled={generateScopeMutation.isPending}
+                  data-testid="button-generate-scope"
+                >
+                  {generateScopeMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-2 h-4 w-4" />
+                  )}
+                  Générer avec l'IA
+                </Button>
+              </div>
               <Textarea
                 {...editForm.register('objectScope')}
-                placeholder="Décrivez l'objet et le périmètre du contrat..."
+                placeholder="Décrivez l'objet et le périmètre du contrat... ou cliquez sur 'Générer avec l'IA' pour synthétiser les notes de réunion"
                 rows={4}
                 data-testid="input-object-scope"
               />
+              <p className="text-xs text-muted-foreground">
+                L'IA analyse les notes de réunion du deal pour générer l'objet du contrat
+              </p>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Date de début</label>

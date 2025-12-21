@@ -1366,6 +1366,98 @@ export async function registerRoutes(
   });
 
   // ============================================
+  // SIREN Lookup Routes
+  // ============================================
+
+  app.get("/api/siren/lookup/:siren", async (req: Request, res: Response) => {
+    try {
+      const { lookupBySiren } = await import("./siren-lookup");
+      const companyInfo = await lookupBySiren(req.params.siren);
+      
+      if (!companyInfo) {
+        return res.status(404).json({ error: "Entreprise non trouvée pour ce SIREN" });
+      }
+      
+      res.json(companyInfo);
+    } catch (error: any) {
+      console.error("SIREN lookup error:", error);
+      res.status(400).json({ error: error.message || "Erreur lors de la recherche SIREN" });
+    }
+  });
+
+  app.get("/api/siren/search", async (req: Request, res: Response) => {
+    try {
+      const query = req.query.q as string;
+      if (!query || query.length < 2) {
+        return res.status(400).json({ error: "Requête trop courte" });
+      }
+      
+      const { searchCompanies } = await import("./siren-lookup");
+      const companies = await searchCompanies(query);
+      res.json(companies);
+    } catch (error: any) {
+      console.error("Company search error:", error);
+      res.status(500).json({ error: error.message || "Erreur lors de la recherche" });
+    }
+  });
+
+  // ============================================
+  // AI Contract Scope Generation Routes
+  // ============================================
+
+  app.post("/api/contracts/generate-scope", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const generateScopeSchema = z.object({
+        dealId: z.string().optional(),
+        accountId: z.string().optional(),
+        contractType: z.enum(['audit', 'prestation', 'formation', 'suivi', 'sous_traitance']),
+        clientName: z.string(),
+        clientCompany: z.string().optional(),
+      });
+      
+      const parsed = generateScopeSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      
+      const { dealId, accountId, contractType, clientName, clientCompany } = parsed.data;
+      
+      // Get activities (meeting notes) for the deal or account
+      const activities = await storage.getActivities(orgId);
+      
+      // Filter activities for this deal or account
+      let relevantActivities = activities;
+      if (dealId) {
+        relevantActivities = activities.filter(a => a.dealId === dealId);
+      }
+      
+      if (relevantActivities.length === 0) {
+        return res.status(400).json({ 
+          error: "Aucune note de réunion trouvée. Veuillez d'abord ajouter des activités au deal." 
+        });
+      }
+      
+      const { generateContractScope } = await import("./ai-scope-generator");
+      const result = await generateContractScope(
+        relevantActivities.map(a => ({
+          type: a.type,
+          description: a.description,
+          createdAt: a.createdAt,
+        })),
+        contractType,
+        clientName,
+        clientCompany
+      );
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("Generate scope error:", error);
+      res.status(500).json({ error: error.message || "Erreur lors de la génération du scope" });
+    }
+  });
+
+  // ============================================
   // Notion Integration Routes
   // ============================================
 
