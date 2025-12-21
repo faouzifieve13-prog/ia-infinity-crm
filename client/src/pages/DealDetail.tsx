@@ -70,6 +70,23 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import type { Deal, Account, Document } from '@/lib/types';
 
+interface Quote {
+  id: string;
+  orgId: string;
+  dealId: string;
+  qontoQuoteId: string | null;
+  number: string;
+  title: string;
+  amount: string;
+  quoteUrl: string | null;
+  status: 'draft' | 'sent' | 'signed' | 'rejected' | 'expired';
+  driveFileId: string | null;
+  driveFileUrl: string | null;
+  sentAt: string | null;
+  signedAt: string | null;
+  createdAt: string;
+}
+
 const stageConfig = {
   prospect: { label: 'Prospect', color: 'bg-slate-500' },
   meeting: { label: 'RDV', color: 'bg-blue-500' },
@@ -142,6 +159,12 @@ export default function DealDetail() {
 
   const { data: allDocuments = [] } = useQuery<Document[]>({
     queryKey: ['/api/documents'],
+  });
+
+  // Fetch quotes for this deal
+  const { data: dealQuotes = [], refetch: refetchQuotes } = useQuery<Quote[]>({
+    queryKey: ['/api/deals', dealId, 'quotes'],
+    enabled: !!dealId,
   });
 
   const form = useForm<DealFormValues>({
@@ -377,47 +400,55 @@ export default function DealDetail() {
     },
     onSuccess: async (result: { quote: { id: string; number: string; quote_url?: string } }) => {
       const quote = result.quote;
-      const account = accounts.find(a => a.id === deal?.accountId);
       setQontoQuoteDialogOpen(false);
       
-      let actions: string[] = ['Devis créé sur Qonto'];
-      
-      // 1. Save quote PDF to Google Drive automatically
+      // Save quote to database for tracking
       try {
-        await apiRequest('POST', '/api/drive/quotes', { dealId });
-        actions.push('sauvegardé sur Drive');
-      } catch {
-        console.error('Erreur sauvegarde Drive');
+        await apiRequest('POST', `/api/deals/${dealId}/quotes`, {
+          qontoQuoteId: quote.id,
+          number: quote.number,
+          title: qontoFormData.title,
+          amount: (qontoFormData.quantity * qontoFormData.unitPrice).toString(),
+          quoteUrl: quote.quote_url,
+          status: 'draft',
+        });
+      } catch (err) {
+        console.error('Erreur sauvegarde devis en base:', err);
       }
       
-      // 2. Send email to client with quote link
-      if (account?.contactEmail && quote.quote_url) {
-        try {
-          await apiRequest('POST', '/api/qonto/quotes/send-email', {
-            clientEmail: account.contactEmail,
-            clientName: account.contactName || account.name,
-            quoteNumber: quote.number,
-            quoteUrl: quote.quote_url,
-            companyName: account.name,
-          });
-          actions.push(`envoyé à ${account.contactEmail}`);
-        } catch {
-          console.error('Erreur envoi email');
-        }
-      }
-      
-      // Refresh Drive quotes list
-      queryClient.invalidateQueries({ queryKey: ['/api/drive/quotes'] });
+      // Refresh quotes list
+      queryClient.invalidateQueries({ queryKey: ['/api/deals', dealId, 'quotes'] });
       
       toast({
         title: `Devis ${quote.number} créé`,
-        description: actions.join(', ') + '.',
+        description: 'Vous pouvez maintenant le voir et l\'envoyer au client.',
       });
     },
     onError: (error: Error) => {
       toast({
         title: 'Erreur Qonto',
         description: error.message || 'Impossible de créer le devis sur Qonto.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Send quote to client mutation
+  const sendQuoteMutation = useMutation({
+    mutationFn: async (quoteId: string) => {
+      return apiRequest('POST', `/api/quotes/${quoteId}/send`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/deals', dealId, 'quotes'] });
+      toast({
+        title: 'Devis envoyé',
+        description: 'Le devis a été envoyé au client par email.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible d\'envoyer le devis.',
         variant: 'destructive',
       });
     },
@@ -612,6 +643,74 @@ export default function DealDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Quotes Section */}
+      {dealQuotes.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Devis ({dealQuotes.length})
+            </CardTitle>
+            <CardDescription>Devis créés pour ce prospect</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {dealQuotes.map((quote) => (
+                <div key={quote.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{quote.number}</span>
+                      <Badge variant={
+                        quote.status === 'signed' ? 'default' :
+                        quote.status === 'sent' ? 'secondary' :
+                        quote.status === 'rejected' ? 'destructive' :
+                        'outline'
+                      }>
+                        {quote.status === 'draft' ? 'Brouillon' :
+                         quote.status === 'sent' ? 'Envoyé' :
+                         quote.status === 'signed' ? 'Signé' :
+                         quote.status === 'rejected' ? 'Refusé' :
+                         'Expiré'}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">{quote.title}</p>
+                    <p className="text-sm font-medium mt-1">{parseFloat(quote.amount).toLocaleString('fr-FR')} € HT</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {quote.quoteUrl && (
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => window.open(quote.quoteUrl!, '_blank')}
+                        data-testid={`button-view-quote-${quote.id}`}
+                      >
+                        <Eye className="h-4 w-4 mr-1" />
+                        Voir
+                      </Button>
+                    )}
+                    {quote.status === 'draft' && (
+                      <Button 
+                        size="sm"
+                        onClick={() => sendQuoteMutation.mutate(quote.id)}
+                        disabled={sendQuoteMutation.isPending}
+                        data-testid={`button-send-quote-${quote.id}`}
+                      >
+                        {sendQuoteMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                        ) : (
+                          <Send className="h-4 w-4 mr-1" />
+                        )}
+                        Envoyer
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">

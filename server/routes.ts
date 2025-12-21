@@ -876,6 +876,103 @@ export async function registerRoutes(
     }
   });
 
+  // Quotes API - get quotes for a deal
+  app.get("/api/deals/:dealId/quotes", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const quotes = await storage.getQuotesByDeal(req.params.dealId, orgId);
+      res.json(quotes);
+    } catch (error) {
+      console.error("Get quotes by deal error:", error);
+      res.status(500).json({ error: "Failed to get quotes" });
+    }
+  });
+
+  // Create a quote record (after Qonto creation)
+  app.post("/api/deals/:dealId/quotes", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const { qontoQuoteId, number, title, amount, quoteUrl, status } = req.body;
+      
+      const quote = await storage.createQuote({
+        orgId,
+        dealId: req.params.dealId,
+        qontoQuoteId,
+        number,
+        title,
+        amount,
+        quoteUrl,
+        status: status || 'draft',
+      });
+      
+      res.status(201).json(quote);
+    } catch (error) {
+      console.error("Create quote error:", error);
+      res.status(500).json({ error: "Failed to create quote" });
+    }
+  });
+
+  // Send a quote to the client
+  app.post("/api/quotes/:id/send", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const quote = await storage.getQuote(req.params.id, orgId);
+      if (!quote) {
+        return res.status(404).json({ error: "Quote not found" });
+      }
+
+      // Get the deal and account info
+      const deal = await storage.getDeal(quote.dealId, orgId);
+      if (!deal) {
+        return res.status(404).json({ error: "Deal not found" });
+      }
+
+      const accounts = await storage.getAccounts(orgId);
+      const account = accounts.find(a => a.id === deal.accountId);
+      if (!account?.contactEmail) {
+        return res.status(400).json({ error: "Le client n'a pas d'email de contact" });
+      }
+
+      // Send the email
+      const { sendGenericEmail } = await import("./gmail");
+      const subject = `Devis ${quote.number} - Capsule IA`;
+      const htmlContent = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Bonjour ${account.contactName || account.name},</h2>
+          <p>Nous avons le plaisir de vous transmettre notre devis <strong>${quote.number}</strong>.</p>
+          <p><strong>${quote.title}</strong></p>
+          <p>Montant: <strong>${parseFloat(quote.amount).toLocaleString('fr-FR')} € HT</strong></p>
+          <p>Vous pouvez consulter et signer votre devis en cliquant sur le bouton ci-dessous :</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${quote.quoteUrl}" 
+               style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+              Voir et signer le devis
+            </a>
+          </div>
+          <p>N'hésitez pas à nous contacter si vous avez des questions.</p>
+          <p>Cordialement,<br>L'équipe Capsule IA</p>
+        </div>
+      `;
+
+      await sendGenericEmail({
+        to: account.contactEmail,
+        subject,
+        htmlBody: htmlContent,
+      });
+
+      // Update quote status to sent
+      await storage.updateQuote(quote.id, orgId, { 
+        status: 'sent',
+        sentAt: new Date()
+      });
+
+      res.json({ success: true, message: `Email envoyé à ${account.contactEmail}` });
+    } catch (error: any) {
+      console.error("Send quote error:", error);
+      res.status(500).json({ error: error.message || "Failed to send quote" });
+    }
+  });
+
   app.post("/api/contracts/generate", async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);

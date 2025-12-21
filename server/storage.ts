@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { eq, and, desc, asc, sql, isNotNull } from "drizzle-orm";
 import {
-  organizations, users, memberships, accounts, contacts, deals, activities,
+  organizations, users, memberships, accounts, contacts, deals, quotes, activities,
   projects, tasks, invoices, invoiceLineItems, vendors, missions, documents,
   workflowRuns, importJobs, contracts, expenses, invitations, emails,
   type Organization, type InsertOrganization,
@@ -24,6 +24,7 @@ import {
   type Expense, type InsertExpense,
   type Invitation, type InsertInvitation,
   type Email, type InsertEmail,
+  type Quote, type InsertQuote,
   type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
   type ExpenseStatus, type ExpenseCategory, type InvitationStatus
 } from "@shared/schema";
@@ -60,6 +61,11 @@ export interface IStorage {
   updateDeal(id: string, orgId: string, data: Partial<InsertDeal>): Promise<Deal | undefined>;
   deleteDeal(id: string, orgId: string): Promise<boolean>;
   updateDealStage(id: string, orgId: string, stage: DealStage, position: number): Promise<Deal | undefined>;
+  
+  getQuotesByDeal(dealId: string, orgId: string): Promise<Quote[]>;
+  getQuote(id: string, orgId: string): Promise<Quote | undefined>;
+  createQuote(quote: InsertQuote): Promise<Quote>;
+  updateQuote(id: string, orgId: string, data: Partial<InsertQuote>): Promise<Quote | undefined>;
   
   getActivities(orgId: string, dealId?: string, projectId?: string): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
@@ -370,6 +376,30 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db.update(deals)
       .set({ stage, position, daysInStage: 0, updatedAt: new Date() })
       .where(and(eq(deals.id, id), eq(deals.orgId, orgId))).returning();
+    return updated;
+  }
+
+  async getQuotesByDeal(dealId: string, orgId: string): Promise<Quote[]> {
+    return db.select().from(quotes)
+      .where(and(eq(quotes.dealId, dealId), eq(quotes.orgId, orgId)))
+      .orderBy(desc(quotes.createdAt));
+  }
+
+  async getQuote(id: string, orgId: string): Promise<Quote | undefined> {
+    const [quote] = await db.select().from(quotes)
+      .where(and(eq(quotes.id, id), eq(quotes.orgId, orgId)));
+    return quote;
+  }
+
+  async createQuote(quote: InsertQuote): Promise<Quote> {
+    const [created] = await db.insert(quotes).values(quote).returning();
+    return created;
+  }
+
+  async updateQuote(id: string, orgId: string, data: Partial<InsertQuote>): Promise<Quote | undefined> {
+    const [updated] = await db.update(quotes)
+      .set(data)
+      .where(and(eq(quotes.id, id), eq(quotes.orgId, orgId))).returning();
     return updated;
   }
 
