@@ -123,7 +123,6 @@ export default function DealDetail() {
   const [driveQuotesDialogOpen, setDriveQuotesDialogOpen] = useState(false);
   const [qontoQuoteDialogOpen, setQontoQuoteDialogOpen] = useState(false);
   const [selectedQontoQuoteType, setSelectedQontoQuoteType] = useState<'audit' | 'automatisation'>('audit');
-  const [qontoQuoteUrl, setQontoQuoteUrl] = useState<string | null>(null);
   const [qontoFormData, setQontoFormData] = useState({
     title: '',
     description: '',
@@ -381,13 +380,12 @@ export default function DealDetail() {
       const account = accounts.find(a => a.id === deal?.accountId);
       setQontoQuoteDialogOpen(false);
       
+      let actions: string[] = ['Devis créé sur Qonto'];
+      
       // 1. Save quote PDF to Google Drive automatically
       try {
         await apiRequest('POST', '/api/drive/quotes', { dealId });
-        toast({
-          title: 'Devis sauvegardé',
-          description: 'Le devis a été enregistré sur Google Drive.',
-        });
+        actions.push('sauvegardé sur Drive');
       } catch {
         console.error('Erreur sauvegarde Drive');
       }
@@ -402,25 +400,18 @@ export default function DealDetail() {
             quoteUrl: quote.quote_url,
             companyName: account.name,
           });
-          toast({
-            title: 'Email envoyé',
-            description: `Le devis a été envoyé à ${account.contactEmail}.`,
-          });
+          actions.push(`envoyé à ${account.contactEmail}`);
         } catch {
           console.error('Erreur envoi email');
         }
-      }
-      
-      if (quote.quote_url) {
-        setQontoQuoteUrl(quote.quote_url);
       }
       
       // Refresh Drive quotes list
       queryClient.invalidateQueries({ queryKey: ['/api/drive/quotes'] });
       
       toast({
-        title: 'Devis Qonto créé',
-        description: `Le devis ${quote.number} a été créé, sauvegardé et envoyé au client.`,
+        title: `Devis ${quote.number} créé`,
+        description: actions.join(', ') + '.',
       });
     },
     onError: (error: Error) => {
@@ -494,42 +485,6 @@ export default function DealDetail() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem 
-                onClick={() => window.open(`/api/deals/${dealId}/quote-pdf`, '_blank')}
-                data-testid="menu-preview-quote"
-              >
-                <Eye className="mr-2 h-4 w-4" />
-                Aperçu PDF
-              </DropdownMenuItem>
-              <DropdownMenuItem 
-                onClick={() => window.open(`/api/deals/${dealId}/quote-pdf?download=true`, '_blank')}
-                data-testid="menu-download-quote"
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Télécharger PDF
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem 
-                onClick={() => saveQuoteToDriveMutation.mutate()}
-                disabled={!driveStatus?.connected || saveQuoteToDriveMutation.isPending}
-                data-testid="menu-save-to-drive"
-              >
-                {saveQuoteToDriveMutation.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <HardDrive className="mr-2 h-4 w-4" />
-                )}
-                Enregistrer sur Drive
-              </DropdownMenuItem>
-              <DropdownMenuItem 
-                onClick={() => setDriveQuotesDialogOpen(true)}
-                disabled={!driveStatus?.connected}
-                data-testid="menu-view-drive-quotes"
-              >
-                <ExternalLink className="mr-2 h-4 w-4" />
-                Voir les devis sur Drive
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem 
                 onClick={() => {
                   setSelectedQontoQuoteType('audit');
                   setQontoFormData({
@@ -545,7 +500,7 @@ export default function DealDetail() {
                 data-testid="menu-qonto-audit"
               >
                 <FileText className="mr-2 h-4 w-4" />
-                Devis Audit (Qonto)
+                Devis Audit
               </DropdownMenuItem>
               <DropdownMenuItem 
                 onClick={() => {
@@ -563,7 +518,7 @@ export default function DealDetail() {
                 data-testid="menu-qonto-automatisation"
               >
                 <FileText className="mr-2 h-4 w-4" />
-                Devis Automatisation (Qonto)
+                Devis Automatisation
               </DropdownMenuItem>
               {!qontoStatus?.connected && (
                 <div className="px-2 py-1.5 text-xs text-muted-foreground">
@@ -1273,33 +1228,6 @@ export default function DealDetail() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!qontoQuoteUrl} onOpenChange={(open) => !open && setQontoQuoteUrl(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Devis Qonto créé</DialogTitle>
-            <DialogDescription>
-              Votre devis a été créé avec succès. Vous pouvez maintenant le modifier et l'envoyer depuis Qonto.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <Button 
-              className="w-full" 
-              onClick={() => {
-                if (qontoQuoteUrl) window.open(qontoQuoteUrl, '_blank');
-              }}
-              data-testid="button-open-qonto"
-            >
-              <ExternalLink className="mr-2 h-4 w-4" />
-              Ouvrir et modifier sur Qonto
-            </Button>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setQontoQuoteUrl(null)}>
-              Fermer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
