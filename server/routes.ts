@@ -3105,5 +3105,92 @@ export async function registerRoutes(
     }
   });
 
+  // ============================================
+  // Qonto API Routes (Quote Generation)
+  // ============================================
+
+  app.get("/api/qonto/status", async (req: Request, res: Response) => {
+    try {
+      const { testQontoConnection } = await import("./qonto");
+      const status = await testQontoConnection();
+      res.json(status);
+    } catch (error) {
+      console.error("Qonto status error:", error);
+      res.status(500).json({ connected: false, error: "Failed to check Qonto status" });
+    }
+  });
+
+  app.get("/api/qonto/clients", async (req: Request, res: Response) => {
+    try {
+      const { getQontoClients } = await import("./qonto");
+      const clients = await getQontoClients();
+      res.json(clients);
+    } catch (error) {
+      console.error("Get Qonto clients error:", error);
+      res.status(500).json({ error: "Failed to get Qonto clients" });
+    }
+  });
+
+  app.get("/api/qonto/quotes", async (req: Request, res: Response) => {
+    try {
+      const { getQontoQuotes } = await import("./qonto");
+      const quotes = await getQontoQuotes();
+      res.json(quotes);
+    } catch (error) {
+      console.error("Get Qonto quotes error:", error);
+      res.status(500).json({ error: "Failed to get Qonto quotes" });
+    }
+  });
+
+  const createQontoQuoteSchema = z.object({
+    clientName: z.string().min(1, "Le nom du client est requis"),
+    clientEmail: z.string().email().optional(),
+    issueDate: z.string().min(1, "La date d'émission est requise"),
+    expiryDate: z.string().min(1, "La date d'expiration est requise"),
+    quoteNumber: z.string().optional(),
+    items: z.array(z.object({
+      title: z.string().min(1, "Le titre est requis"),
+      description: z.string().optional(),
+      quantity: z.number().positive("La quantité doit être positive"),
+      unit: z.string().optional(),
+      unitPrice: z.number().min(0, "Le prix doit être positif"),
+      vatRate: z.number().min(0).max(100, "Le taux de TVA doit être entre 0 et 100")
+    })).min(1, "Au moins un élément est requis"),
+    discount: z.object({
+      type: z.enum(['percentage', 'absolute']),
+      value: z.number().min(0)
+    }).optional(),
+    header: z.string().optional(),
+    footer: z.string().optional(),
+    termsAndConditions: z.string().optional()
+  });
+
+  app.post("/api/qonto/quotes", async (req: Request, res: Response) => {
+    try {
+      const parsed = createQontoQuoteSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+
+      const { createQontoQuote } = await import("./qonto");
+      const quote = await createQontoQuote(parsed.data);
+      res.status(201).json(quote);
+    } catch (error: any) {
+      console.error("Create Qonto quote error:", error);
+      res.status(500).json({ error: error.message || "Failed to create Qonto quote" });
+    }
+  });
+
+  app.get("/api/qonto/quotes/:id", async (req: Request, res: Response) => {
+    try {
+      const { getQontoQuoteById } = await import("./qonto");
+      const quote = await getQontoQuoteById(req.params.id);
+      res.json(quote);
+    } catch (error) {
+      console.error("Get Qonto quote error:", error);
+      res.status(500).json({ error: "Failed to get Qonto quote" });
+    }
+  });
+
   return httpServer;
 }
