@@ -32,16 +32,9 @@ export async function generateContractScope(
   activities: Activity[],
   contractType: 'audit' | 'prestation' | 'formation' | 'suivi' | 'sous_traitance',
   clientName: string,
-  clientCompany?: string
+  clientCompany?: string,
+  existingScope?: string
 ): Promise<ScopeGenerationResult> {
-  if (!activities || activities.length === 0) {
-    throw new Error('Aucune activité trouvée pour générer le scope du contrat');
-  }
-
-  const activitiesText = activities
-    .map(a => `[${a.type}] ${a.description}`)
-    .join('\n\n');
-
   const contractTypeLabels: Record<string, string> = {
     audit: "Contrat d'Audit IA",
     prestation: "Contrat de Prestation IA",
@@ -50,7 +43,15 @@ export async function generateContractScope(
     sous_traitance: "Contrat de Sous-Traitance",
   };
 
-  const prompt = `Tu es un expert en rédaction de contrats commerciaux B2B pour une agence spécialisée en IA (Intelligence Artificielle).
+  const hasActivities = activities && activities.length > 0;
+  const activitiesText = hasActivities 
+    ? activities.map(a => `[${a.type}] ${a.description}`).join('\n\n')
+    : '';
+
+  let prompt: string;
+  
+  if (hasActivities) {
+    prompt = `Tu es un expert en rédaction de contrats commerciaux B2B pour une agence spécialisée en IA (Intelligence Artificielle).
 
 Analyse les notes de réunion et compte-rendus suivants concernant le client "${clientCompany || clientName}" :
 
@@ -73,6 +74,31 @@ Réponds uniquement au format JSON suivant :
   "summary": "Résumé en une phrase du projet",
   "keyPoints": ["Point clé 1", "Point clé 2", "Point clé 3"]
 }`;
+  } else {
+    const contextInfo = existingScope 
+      ? `\n\nContexte existant: "${existingScope}"`
+      : '';
+    
+    prompt = `Tu es un expert en rédaction de contrats commerciaux B2B pour une agence spécialisée en IA (Intelligence Artificielle).
+
+Rédige un objet de contrat professionnel pour un ${contractTypeLabels[contractType] || 'contrat'} destiné au client "${clientCompany || clientName}".${contextInfo}
+
+Type de contrat : ${contractTypeLabels[contractType]}
+
+L'objet du contrat doit :
+- Être professionnel et précis
+- Décrire les prestations typiques pour ce type de contrat
+- Être rédigé à la troisième personne
+- Faire entre 3 et 6 phrases
+- Être personnalisé pour le client mentionné
+
+Réponds uniquement au format JSON suivant :
+{
+  "objectScope": "Description détaillée de l'objet du contrat...",
+  "summary": "Résumé en une phrase du projet",
+  "keyPoints": ["Point clé 1", "Point clé 2", "Point clé 3"]
+}`;
+  }
 
   try {
     const openai = getOpenAIClient();

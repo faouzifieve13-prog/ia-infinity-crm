@@ -160,6 +160,7 @@ function ContractCard({ contract }: { contract: Contract }) {
           contractType: contract.type,
           clientName: editForm.getValues('clientName') || contract.clientName,
           clientCompany: editForm.getValues('clientCompany') || contract.clientCompany,
+          existingScope: editForm.getValues('objectScope') || contract.scope,
         }),
       });
       if (!response.ok) {
@@ -172,13 +173,13 @@ function ContractCard({ contract }: { contract: Contract }) {
       editForm.setValue('objectScope', result.objectScope);
       toast({ 
         title: 'Scope généré par IA', 
-        description: 'L\'objet du contrat a été généré à partir des notes de réunion' 
+        description: 'L\'objet du contrat a été généré avec succès' 
       });
     },
     onError: (error: any) => {
       toast({ 
         title: 'Erreur', 
-        description: error.message || 'Impossible de générer le scope. Assurez-vous d\'avoir des notes de réunion.', 
+        description: error.message || 'Impossible de générer le scope.', 
         variant: 'destructive' 
       });
     },

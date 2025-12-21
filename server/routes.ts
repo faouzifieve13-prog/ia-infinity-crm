@@ -1414,6 +1414,7 @@ export async function registerRoutes(
         contractType: z.enum(['audit', 'prestation', 'formation', 'suivi', 'sous_traitance']),
         clientName: z.string(),
         clientCompany: z.string().optional(),
+        existingScope: z.string().optional(),
       });
       
       const parsed = generateScopeSchema.safeParse(req.body);
@@ -1421,7 +1422,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: parsed.error.errors });
       }
       
-      const { dealId, accountId, contractType, clientName, clientCompany } = parsed.data;
+      const { dealId, accountId, contractType, clientName, clientCompany, existingScope } = parsed.data;
       
       // Get activities (meeting notes) for the deal or account
       const activities = await storage.getActivities(orgId);
@@ -1430,12 +1431,6 @@ export async function registerRoutes(
       let relevantActivities = activities;
       if (dealId) {
         relevantActivities = activities.filter(a => a.dealId === dealId);
-      }
-      
-      if (relevantActivities.length === 0) {
-        return res.status(400).json({ 
-          error: "Aucune note de réunion trouvée. Veuillez d'abord ajouter des activités au deal." 
-        });
       }
       
       const { generateContractScope } = await import("./ai-scope-generator");
@@ -1447,7 +1442,8 @@ export async function registerRoutes(
         })),
         contractType,
         clientName,
-        clientCompany
+        clientCompany,
+        existingScope
       );
       
       res.json(result);
