@@ -21,7 +21,10 @@ import {
   ExternalLink,
   CheckCircle2,
   Circle,
-  StickyNote
+  StickyNote,
+  RefreshCw,
+  Send,
+  Inbox
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,7 +50,7 @@ import {
 } from '@/components/ui/select';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
-import type { Account, Deal, Project, Contact } from '@/lib/types';
+import type { Account, Deal, Project, Contact, Email } from '@/lib/types';
 
 const accountFormSchema = z.object({
   name: z.string().min(1, 'Le nom est requis'),
@@ -112,6 +115,31 @@ export default function AccountDetail() {
 
   const { data: allContacts = [] } = useQuery<Contact[]>({
     queryKey: ['/api/contacts'],
+  });
+
+  const { data: accountEmails = [], isLoading: emailsLoading } = useQuery<Email[]>({
+    queryKey: ['/api/emails', { accountId }],
+    enabled: !!accountId,
+  });
+
+  const syncEmailsMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest('POST', '/api/gmail/sync', { accountId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/emails', { accountId }] });
+      toast({
+        title: 'Emails synchronisés',
+        description: 'Les emails ont été synchronisés avec succès.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de synchroniser les emails.',
+        variant: 'destructive',
+      });
+    },
   });
 
   const form = useForm<AccountFormValues>({
@@ -626,6 +654,81 @@ export default function AccountDetail() {
               ) : (
                 <p className="text-sm text-muted-foreground">
                   Aucune note enregistrée. Cliquez sur "Modifier" pour ajouter des notes.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <Mail className="h-5 w-5 text-primary" />
+                Emails
+              </CardTitle>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => syncEmailsMutation.mutate()}
+                disabled={syncEmailsMutation.isPending}
+                data-testid="button-sync-emails"
+              >
+                {syncEmailsMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                Synchroniser
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {emailsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : accountEmails.length > 0 ? (
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {accountEmails.map((email) => (
+                    <div 
+                      key={email.id} 
+                      className="p-3 rounded-lg border hover-elevate"
+                      data-testid={`email-item-${email.id}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-full ${email.direction === 'inbound' ? 'bg-blue-100 dark:bg-blue-900' : 'bg-emerald-100 dark:bg-emerald-900'}`}>
+                          {email.direction === 'inbound' ? (
+                            <Inbox className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                          ) : (
+                            <Send className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-sm truncate">
+                              {email.direction === 'inbound' ? email.fromName || email.fromEmail : email.toEmails?.[0] || 'Destinataire'}
+                            </span>
+                            <Badge variant="secondary" className="text-xs">
+                              {email.direction === 'inbound' ? 'Reçu' : 'Envoyé'}
+                            </Badge>
+                          </div>
+                          <p className="text-sm font-medium truncate">{email.subject || '(Sans objet)'}</p>
+                          <p className="text-xs text-muted-foreground truncate mt-1">{email.snippet}</p>
+                          <p className="text-xs text-muted-foreground mt-2">
+                            {new Date(email.receivedAt).toLocaleDateString('fr-FR', { 
+                              day: 'numeric', 
+                              month: 'short', 
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  Aucun email synchronisé. Cliquez sur "Synchroniser" pour importer les emails depuis Gmail.
                 </p>
               )}
             </CardContent>

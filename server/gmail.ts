@@ -436,3 +436,138 @@ export async function sendContractEmail(params: ContractEmailParams): Promise<bo
     return false;
   }
 }
+
+export interface GenericEmailParams {
+  to: string;
+  subject: string;
+  htmlBody: string;
+}
+
+export interface SendEmailResult {
+  success: boolean;
+  messageId?: string;
+  threadId?: string;
+  fromEmail?: string;
+  error?: string;
+}
+
+export async function sendGenericEmail(params: GenericEmailParams): Promise<SendEmailResult> {
+  try {
+    const gmail = await getUncachableGmailClient();
+    
+    const encodedMessage = createEmailMessage(params.to, params.subject, params.htmlBody);
+    
+    const response = await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage
+      }
+    });
+    
+    const profile = await gmail.users.getProfile({ userId: 'me' });
+    
+    console.log(`Email sent successfully to ${params.to}`);
+    return {
+      success: true,
+      messageId: response.data.id || undefined,
+      threadId: response.data.threadId || undefined,
+      fromEmail: profile.data.emailAddress || undefined,
+    };
+  } catch (error: any) {
+    console.error('Failed to send email:', error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+}
+
+export interface SyncResult {
+  success: boolean;
+  synced: number;
+  errors: string[];
+}
+
+export async function syncGmailEmails(orgId: string, accountId?: string): Promise<SyncResult> {
+  const result: SyncResult = { success: true, synced: 0, errors: [] };
+  
+  try {
+    const gmail = await getUncachableGmailClient();
+    const { storage } = await import('./storage');
+    
+    const listResponse = await gmail.users.messages.list({
+      userId: 'me',
+      maxResults: 50,
+      q: 'in:inbox OR in:sent',
+    });
+    
+    const messages = listResponse.data.messages || [];
+    
+    for (const msg of messages) {
+      if (!msg.id) continue;
+      
+      try {
+        const existing = await storage.getEmailByGmailId(msg.id, orgId);
+        if (existing) continue;
+        
+        const fullMessage = await gmail.users.messages.get({
+          userId: 'me',
+          id: msg.id,
+          format: 'metadata',
+          metadataHeaders: ['Subject', 'From', 'To', 'Date'],
+        });
+        
+        const headers = fullMessage.data.payload?.headers || [];
+        const getHeader = (name: string) => headers.find(h => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
+        
+        const subject = getHeader('Subject');
+        const from = getHeader('From');
+        const to = getHeader('To');
+        const dateStr = getHeader('Date');
+        
+        const fromMatch = from.match(/<(.+)>/) || [null, from];
+        const fromEmail = fromMatch[1] || from;
+        const fromName = from.replace(/<.+>/, '').trim() || fromEmail;
+        
+        const toEmails = to.split(',').map(e => {
+          const match = e.match(/<(.+)>/);
+          return match ? match[1] : e.trim();
+        }).filter(Boolean);
+        
+        const labels = fullMessage.data.labelIds || [];
+        const direction = labels.includes('SENT') ? 'outbound' : 'inbound';
+        
+        await storage.createEmail({
+          orgId,
+          accountId: accountId || null,
+          dealId: null,
+          contactId: null,
+          gmailMessageId: msg.id,
+          gmailThreadId: fullMessage.data.threadId || null,
+          subject,
+          snippet: fullMessage.data.snippet || null,
+          fromEmail,
+          fromName,
+          toEmails,
+          direction,
+          receivedAt: dateStr ? new Date(dateStr) : new Date(),
+          isRead: !labels.includes('UNREAD'),
+          hasAttachment: (fullMessage.data.payload?.parts || []).some(p => p.filename && p.filename.length > 0),
+          labels,
+        });
+        
+        result.synced++;
+      } catch (msgError: any) {
+        result.errors.push(`Failed to sync message ${msg.id}: ${msgError.message}`);
+      }
+    }
+    
+    console.log(`Gmail sync completed: ${result.synced} emails synced`);
+  } catch (error: any) {
+    console.error('Gmail sync error:', error);
+    result.success = false;
+    result.errors.push(error.message);
+  }
+  
+  return result;
+}

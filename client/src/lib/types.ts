@@ -306,3 +306,26 @@ export interface Expense {
   createdAt?: string;
   updatedAt?: string;
 }
+
+export type EmailDirection = 'inbound' | 'outbound';
+
+export interface Email {
+  id: string;
+  orgId: string;
+  accountId?: string | null;
+  dealId?: string | null;
+  contactId?: string | null;
+  gmailMessageId: string;
+  gmailThreadId?: string | null;
+  subject?: string | null;
+  snippet?: string | null;
+  fromEmail: string;
+  fromName?: string | null;
+  toEmails?: string[] | null;
+  direction: EmailDirection;
+  receivedAt: string;
+  isRead?: boolean;
+  hasAttachment?: boolean;
+  labels?: string[] | null;
+  createdAt?: string;
+}

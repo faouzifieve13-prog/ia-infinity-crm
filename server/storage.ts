@@ -3,7 +3,7 @@ import { eq, and, desc, asc, sql, isNotNull } from "drizzle-orm";
 import {
   organizations, users, memberships, accounts, contacts, deals, activities,
   projects, tasks, invoices, invoiceLineItems, vendors, missions, documents,
-  workflowRuns, importJobs, contracts, expenses, invitations,
+  workflowRuns, importJobs, contracts, expenses, invitations, emails,
   type Organization, type InsertOrganization,
   type User, type InsertUser,
   type Membership, type InsertMembership,
@@ -23,6 +23,7 @@ import {
   type Contract, type InsertContract,
   type Expense, type InsertExpense,
   type Invitation, type InsertInvitation,
+  type Email, type InsertEmail,
   type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
   type ExpenseStatus, type ExpenseCategory, type InvitationStatus
 } from "@shared/schema";
@@ -170,6 +171,13 @@ export interface IStorage {
   deleteInvitation(id: string, orgId: string): Promise<boolean>;
   acceptInvitation(id: string): Promise<Invitation | undefined>;
   revokeInvitation(id: string, orgId: string): Promise<Invitation | undefined>;
+  
+  getEmails(orgId: string, accountId?: string, dealId?: string): Promise<Email[]>;
+  getEmail(id: string, orgId: string): Promise<Email | undefined>;
+  getEmailByGmailId(gmailMessageId: string, orgId: string): Promise<Email | undefined>;
+  createEmail(email: InsertEmail): Promise<Email>;
+  updateEmail(id: string, orgId: string, data: Partial<InsertEmail>): Promise<Email | undefined>;
+  deleteEmail(id: string, orgId: string): Promise<boolean>;
   
   getDashboardStats(orgId: string): Promise<{
     totalDeals: number;
@@ -1040,6 +1048,51 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(invitations.id, id), eq(invitations.orgId, orgId)))
       .returning();
     return updated;
+  }
+
+  async getEmails(orgId: string, accountId?: string, dealId?: string): Promise<Email[]> {
+    if (accountId) {
+      return db.select().from(emails)
+        .where(and(eq(emails.orgId, orgId), eq(emails.accountId, accountId)))
+        .orderBy(desc(emails.receivedAt));
+    }
+    if (dealId) {
+      return db.select().from(emails)
+        .where(and(eq(emails.orgId, orgId), eq(emails.dealId, dealId)))
+        .orderBy(desc(emails.receivedAt));
+    }
+    return db.select().from(emails)
+      .where(eq(emails.orgId, orgId))
+      .orderBy(desc(emails.receivedAt));
+  }
+
+  async getEmail(id: string, orgId: string): Promise<Email | undefined> {
+    const [email] = await db.select().from(emails)
+      .where(and(eq(emails.id, id), eq(emails.orgId, orgId)));
+    return email;
+  }
+
+  async getEmailByGmailId(gmailMessageId: string, orgId: string): Promise<Email | undefined> {
+    const [email] = await db.select().from(emails)
+      .where(and(eq(emails.gmailMessageId, gmailMessageId), eq(emails.orgId, orgId)));
+    return email;
+  }
+
+  async createEmail(email: InsertEmail): Promise<Email> {
+    const [created] = await db.insert(emails).values(email).returning();
+    return created;
+  }
+
+  async updateEmail(id: string, orgId: string, data: Partial<InsertEmail>): Promise<Email | undefined> {
+    const [updated] = await db.update(emails).set(data)
+      .where(and(eq(emails.id, id), eq(emails.orgId, orgId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteEmail(id: string, orgId: string): Promise<boolean> {
+    await db.delete(emails).where(and(eq(emails.id, id), eq(emails.orgId, orgId)));
+    return true;
   }
 }
 

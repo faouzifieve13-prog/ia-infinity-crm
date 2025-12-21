@@ -20,7 +20,8 @@ import {
   Mail,
   ExternalLink,
   CheckCircle2,
-  UserCheck
+  UserCheck,
+  Download
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -254,15 +255,25 @@ export default function DealDetail() {
             {account?.name || 'Aucun compte associé'}
           </p>
         </div>
-        {!isWonOrLost && (
+        <div className="flex gap-2">
           <Button 
-            onClick={() => setConvertDialogOpen(true)}
-            data-testid="button-convert-client"
+            variant="outline"
+            onClick={() => window.open(`/api/deals/${dealId}/quote-pdf`, '_blank')}
+            data-testid="button-download-quote"
           >
-            <UserCheck className="mr-2 h-4 w-4" />
-            Convertir en client
+            <Download className="mr-2 h-4 w-4" />
+            Devis PDF
           </Button>
-        )}
+          {!isWonOrLost && (
+            <Button 
+              onClick={() => setConvertDialogOpen(true)}
+              data-testid="button-convert-client"
+            >
+              <UserCheck className="mr-2 h-4 w-4" />
+              Convertir en client
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

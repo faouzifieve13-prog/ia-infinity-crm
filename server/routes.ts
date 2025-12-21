@@ -995,6 +995,68 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/contracts/:id/pdf", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const contract = await storage.getContract(req.params.id, orgId);
+      
+      if (!contract) {
+        return res.status(404).json({ error: "Contract not found" });
+      }
+      
+      const { generateContractPDF } = await import("./pdf");
+      const org = await storage.getOrganization(orgId);
+      
+      const pdfBuffer = await generateContractPDF({
+        contract,
+        organizationName: org?.name || 'IA Infinity',
+      });
+      
+      const sanitizedFilename = contract.contractNumber.replace(/[^a-zA-Z0-9-_]/g, '_');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFilename}.pdf"`);
+      res.send(pdfBuffer);
+    } catch (error) {
+      console.error("Generate contract PDF error:", error);
+      res.status(500).json({ error: "Failed to generate PDF" });
+    }
+  });
+
+  app.get("/api/deals/:id/quote-pdf", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const deal = await storage.getDeal(req.params.id, orgId);
+      
+      if (!deal) {
+        return res.status(404).json({ error: "Deal not found" });
+      }
+      
+      const account = deal.accountId ? await storage.getAccount(deal.accountId, orgId) : null;
+      
+      const { generateQuotePDF } = await import("./pdf");
+      const org = await storage.getOrganization(orgId);
+      
+      const pdfBuffer = await generateQuotePDF({
+        dealName: deal.name,
+        accountName: account?.name || 'Client',
+        contactEmail: account?.contactEmail || '',
+        amount: deal.amount,
+        probability: deal.probability,
+        missionTypes: deal.missionTypes || [],
+        nextAction: deal.nextAction,
+        organizationName: org?.name || 'IA Infinity',
+      });
+      
+      const sanitizedDealId = deal.id.substring(0, 8).replace(/[^a-zA-Z0-9-_]/g, '_');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="devis-${sanitizedDealId}.pdf"`);
+      res.send(pdfBuffer);
+    } catch (error) {
+      console.error("Generate quote PDF error:", error);
+      res.status(500).json({ error: "Failed to generate PDF" });
+    }
+  });
+
   // ============================================
   // Notion Integration Routes
   // ============================================
@@ -2243,6 +2305,102 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Gmail status error:", error);
       res.status(500).json({ connected: false, error: "Failed to check Gmail status" });
+    }
+  });
+
+  // ============================================
+  // Email Routes
+  // ============================================
+
+  app.get("/api/emails", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.query.accountId as string | undefined;
+      const dealId = req.query.dealId as string | undefined;
+      const emails = await storage.getEmails(orgId, accountId, dealId);
+      res.json(emails);
+    } catch (error) {
+      console.error("Get emails error:", error);
+      res.status(500).json({ error: "Failed to get emails" });
+    }
+  });
+
+  app.get("/api/emails/:id", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const email = await storage.getEmail(req.params.id, orgId);
+      if (!email) {
+        return res.status(404).json({ error: "Email not found" });
+      }
+      res.json(email);
+    } catch (error) {
+      console.error("Get email error:", error);
+      res.status(500).json({ error: "Failed to get email" });
+    }
+  });
+
+  const sendEmailSchema = z.object({
+    to: z.string().email(),
+    subject: z.string().min(1),
+    body: z.string().min(1),
+    accountId: z.string().optional(),
+    dealId: z.string().optional(),
+    contactId: z.string().optional(),
+  });
+
+  app.post("/api/gmail/send", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const parsed = sendEmailSchema.parse(req.body);
+      
+      const { sendGenericEmail } = await import("./gmail");
+      const result = await sendGenericEmail({
+        to: parsed.to,
+        subject: parsed.subject,
+        htmlBody: parsed.body,
+      });
+      
+      if (result.success && result.messageId) {
+        await storage.createEmail({
+          orgId,
+          accountId: parsed.accountId || null,
+          dealId: parsed.dealId || null,
+          contactId: parsed.contactId || null,
+          gmailMessageId: result.messageId,
+          gmailThreadId: result.threadId || null,
+          subject: parsed.subject,
+          snippet: parsed.body.substring(0, 200),
+          fromEmail: result.fromEmail || 'me',
+          fromName: 'IA Infinity',
+          toEmails: [parsed.to],
+          direction: 'outbound',
+          receivedAt: new Date(),
+          isRead: true,
+          hasAttachment: false,
+          labels: ['SENT'],
+        });
+      }
+      
+      res.json(result);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      console.error("Send email error:", error);
+      res.status(500).json({ error: "Failed to send email" });
+    }
+  });
+
+  app.post("/api/gmail/sync", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const { syncGmailEmails } = await import("./gmail");
+      const accountId = req.body.accountId as string | undefined;
+      const result = await syncGmailEmails(orgId, accountId);
+      res.json(result);
+    } catch (error) {
+      console.error("Gmail sync error:", error);
+      res.status(500).json({ error: "Failed to sync Gmail emails" });
     }
   });
 

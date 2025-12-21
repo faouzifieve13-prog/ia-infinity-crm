@@ -316,7 +316,11 @@ function ContractCard({ contract }: { contract: Contract }) {
                 Terminer le contrat
               </Button>
             )}
-            <Button variant="outline">
+            <Button 
+              variant="outline"
+              onClick={() => window.open(`/api/contracts/${contract.id}/pdf`, '_blank')}
+              data-testid="button-download-pdf"
+            >
               <Download className="mr-2 h-4 w-4" />
               Télécharger PDF
             </Button>
@@ -430,8 +434,8 @@ export default function Contracts() {
       form.setValue('dealId', dealId);
       form.setValue('accountId', deal.accountId);
       if (account) {
-        form.setValue('clientName', account.contactName);
-        form.setValue('clientEmail', account.contactEmail);
+        form.setValue('clientName', account.contactName || '');
+        form.setValue('clientEmail', account.contactEmail || '');
         form.setValue('clientCompany', account.name);
       }
       form.setValue('amount', deal.amount);
