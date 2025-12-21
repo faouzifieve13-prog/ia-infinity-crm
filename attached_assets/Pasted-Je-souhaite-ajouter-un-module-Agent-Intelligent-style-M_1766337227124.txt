@@ -1,0 +1,30 @@
+Je souhaite ajouter un module "Agent Intelligent" (style MCP Server) à mon SaaS pour automatiser la prospection et la gestion des rendez-vous. Voici les spécifications techniques détaillées à implémenter :
+
+### 1. Module de Prospection Automatisée (Google Maps & Apollo)
+Crée une nouvelle section "Prospection" dans le dashboard ou une API dédiée qui permet de :
+- **Recherche :** Ajouter un champ de recherche (Mot clé + Ville/Région).
+- **Sources de données :**
+  - Connecter l'API **Google Places (Maps)** pour trouver des entreprises locales (Nom, Adresse, Site web).
+  - Connecter l'API **Apollo.io** (ou une alternative comme Hunter.io) pour enrichir ces données avec des emails et des contacts décideurs.
+- **Action :** Un bouton "Importer dans le Pipeline" qui transforme ces résultats bruts en "Prospects" dans ma base de données existante (avec statut "Nouveau").
+
+### 2. Module de Rappels Intelligents (Twilio & Cron)
+Je veux réduire le "No-show" aux rendez-vous.
+- **Base de données :** Assure-toi que le modèle `Event` ou `Meeting` contient bien la date du RDV et le numéro de téléphone du prospect.
+- **Tâche Planifiée (Cron Job) :**
+  - Implémente un script (ex: via `node-cron` ou une API route Vercel Cron) qui s'exécute tous les jours.
+  - **Logique :** Il scanne tous les rendez-vous prévus pour "demain" (J-1).
+  - **Action :** Si un RDV est trouvé, il déclenche deux actions :
+    1. Envoi d'un **SMS via Twilio** : "Bonjour [Nom], rappel pour notre visio demain à [Heure]. Confirmez-vous ? - IA Infinity".
+    2. Envoi d'un **Email de rappel** (via la config Gmail existante).
+
+### 3. Gestion des Réponses (Webhook)
+- Si possible, configure un Webhook Twilio pour recevoir la réponse au SMS ("OUI" / "NON").
+- Si la réponse est "NON" ou "ANNULER", le statut du RDV dans le CRM passe automatiquement à "Annulé" et je reçois une notification.
+
+### Instructions Techniques & APIs
+- Crée un fichier de configuration pour les clés API nécessaires : `GOOGLE_PLACES_API_KEY`, `APOLLO_API_KEY`, `TWILIO_SID`, `TWILIO_TOKEN`.
+- Crée les routes API backend nécessaires (ex: `/api/prospecting/search`, `/api/cron/reminders`).
+- Modifie le schéma Prisma pour ajouter les champs téléphone et dates de RDV si manquants.
+
+Implémente d'abord la logique backend pour la recherc
