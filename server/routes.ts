@@ -12,7 +12,7 @@ import {
   type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
   type UserRole, type Space, type InvitationStatus
 } from "@shared/schema";
-import { sendInvitationEmail, testGmailConnection } from "./gmail";
+import { sendInvitationEmail, sendClientWelcomeEmail, testGmailConnection } from "./gmail";
 
 function generateToken(): string {
   return randomBytes(32).toString("hex");
@@ -82,6 +82,51 @@ export async function registerRoutes(
       const orgId = getOrgId(req);
       const data = insertAccountSchema.parse({ ...req.body, orgId });
       const account = await storage.createAccount(data);
+      
+      // Send welcome email with portal access if contact email is provided
+      if (data.contactEmail) {
+        try {
+          // Create an invitation for client portal access
+          const token = generateToken();
+          const tokenHash = hashToken(token);
+          const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+          
+          await storage.createInvitation({
+            orgId,
+            email: data.contactEmail,
+            role: 'client_admin' as UserRole,
+            space: 'client' as Space,
+            tokenHash,
+            expiresAt,
+            status: 'pending',
+            accountId: account.id,
+            vendorId: null,
+          });
+          
+          const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+            ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+            : 'http://localhost:5000';
+          const portalLink = `${baseUrl}/auth/accept-invite?token=${token}`;
+          
+          // Use contact name if available, otherwise extract from email
+          const clientName = data.contactName || data.contactEmail.split('@')[0].replace(/[._]/g, ' ');
+          
+          // Send welcome email asynchronously (don't block account creation)
+          sendClientWelcomeEmail({
+            to: data.contactEmail,
+            clientName: clientName.charAt(0).toUpperCase() + clientName.slice(1),
+            companyName: account.name,
+            portalLink,
+            organizationName: 'IA Infinity',
+          }).catch(err => {
+            console.error('Failed to send welcome email:', err);
+          });
+        } catch (emailError) {
+          // Log error but don't fail account creation
+          console.error('Failed to setup client portal access:', emailError);
+        }
+      }
+      
       res.status(201).json(account);
     } catch (error) {
       if (error instanceof z.ZodError) {
