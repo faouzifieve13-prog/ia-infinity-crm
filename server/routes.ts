@@ -1217,9 +1217,12 @@ Génère un contrat complet et professionnel adapté à ce client.`;
       
       const { sendContractEmail } = await import("./gmail");
       
-      const baseUrl = req.headers.host?.includes('localhost') 
-        ? `http://${req.headers.host}`
-        : `https://${req.headers.host}`;
+      // Use REPLIT_DEV_DOMAIN for consistent URLs across environments
+      const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+        : req.headers.host?.includes('localhost') 
+          ? `http://${req.headers.host}`
+          : `https://${req.headers.host}`;
       const signatureLink = `${baseUrl}/contracts/${contract.id}/sign?token=${token}`;
       
       const org = await storage.getOrganization(orgId);

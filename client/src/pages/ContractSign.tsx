@@ -4,27 +4,27 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import SignatureCanvas from 'react-signature-canvas';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Check, FileText, Building2, Calendar, Euro, RefreshCw, PenTool } from 'lucide-react';
+import { Loader2, Check, FileText, RefreshCw, PenTool, Download } from 'lucide-react';
+import logoIAInfinity from '@assets/logo_iA_Infinity_1766415032734.png';
 
 const typeLabels: Record<string, string> = {
-  audit: 'Audit',
-  prestation: 'Prestation',
-  formation: 'Formation',
-  suivi: 'Suivi',
-  sous_traitance: 'Sous-traitance',
+  audit: "Contrat d'Audit",
+  prestation: "Contrat de Prestation",
+  formation: "Contrat de Formation",
+  suivi: "Contrat de Suivi",
+  sous_traitance: "Contrat de Sous-Traitance",
 };
 
 export default function ContractSign() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const signaturePadRef = useRef<SignatureCanvas>(null);
-  const [isSigning, setIsSigning] = useState(false);
   
-  // Get token from URL query params
   const token = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('token') || '';
@@ -78,17 +78,14 @@ export default function ContractSign() {
     signaturePadRef.current?.clear();
   };
 
-  // Check for missing token
   if (!token) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="max-w-md w-full">
-          <CardHeader>
-            <CardTitle className="text-destructive">Lien invalide</CardTitle>
-            <CardDescription>
-              Ce lien de signature est invalide. Veuillez utiliser le lien complet reçu par email.
-            </CardDescription>
-          </CardHeader>
+      <div className="min-h-screen bg-muted/30 flex items-center justify-center p-4">
+        <Card className="max-w-md w-full p-6">
+          <h2 className="text-xl font-semibold text-destructive mb-2">Lien invalide</h2>
+          <p className="text-muted-foreground">
+            Ce lien de signature est invalide. Veuillez utiliser le lien complet reçu par email.
+          </p>
         </Card>
       </div>
     );
@@ -96,7 +93,7 @@ export default function ContractSign() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-muted/30 flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
@@ -104,14 +101,12 @@ export default function ContractSign() {
 
   if (error || !contract) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="max-w-md w-full">
-          <CardHeader>
-            <CardTitle className="text-destructive">Contrat non trouvé</CardTitle>
-            <CardDescription>
-              {(error as Error)?.message || 'Ce lien de signature est invalide ou a expiré.'}
-            </CardDescription>
-          </CardHeader>
+      <div className="min-h-screen bg-muted/30 flex items-center justify-center p-4">
+        <Card className="max-w-md w-full p-6">
+          <h2 className="text-xl font-semibold text-destructive mb-2">Contrat non trouvé</h2>
+          <p className="text-muted-foreground">
+            {(error as Error)?.message || 'Ce lien de signature est invalide ou a expiré.'}
+          </p>
         </Card>
       </div>
     );
@@ -119,122 +114,165 @@ export default function ContractSign() {
 
   const isAlreadySigned = contract.clientSignatureData || contract.status === 'signed' || contract.status === 'active' || contract.status === 'completed';
 
+  const formatAmount = (amount: string) => {
+    const num = parseFloat(amount);
+    return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-muted p-4 md:p-8">
-      <div className="max-w-3xl mx-auto space-y-6">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold mb-2">Signature de contrat</h1>
-          <p className="text-muted-foreground">IA Infinity</p>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-start justify-between gap-4 flex-wrap">
+    <div className="min-h-screen bg-muted/30 p-4 md:p-8">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="bg-background rounded-lg shadow-lg overflow-hidden">
+          <div className="bg-primary text-primary-foreground p-6">
+            <div className="flex items-center gap-4">
+              <img 
+                src={logoIAInfinity} 
+                alt="IA Infinity" 
+                className="h-14 w-auto bg-white/10 rounded-lg p-1"
+              />
               <div>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  {contract.title}
-                </CardTitle>
-                <CardDescription>{contract.contractNumber}</CardDescription>
-              </div>
-              <Badge>{typeLabels[contract.type] || contract.type}</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex items-center gap-2 text-sm">
-                <Building2 className="h-4 w-4 text-muted-foreground" />
-                <span>{contract.clientCompany || contract.clientName}</span>
-              </div>
-              {contract.amount && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Euro className="h-4 w-4 text-muted-foreground" />
-                  <span>{contract.amount} {contract.currency || 'EUR'}</span>
-                </div>
-              )}
-              {contract.startDate && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span>Début: {format(new Date(contract.startDate), 'dd MMMM yyyy', { locale: fr })}</span>
-                </div>
-              )}
-              {contract.endDate && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span>Fin: {format(new Date(contract.endDate), 'dd MMMM yyyy', { locale: fr })}</span>
-                </div>
-              )}
-            </div>
-
-            {contract.scope && (
-              <div className="border-t pt-4">
-                <h4 className="font-medium mb-2">Objet du contrat</h4>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{contract.scope}</p>
-              </div>
-            )}
-
-            <div className="border-t pt-4">
-              <h4 className="font-medium mb-2">Document complet</h4>
-              <div className="flex flex-wrap gap-2">
-                {contract.driveWebViewLink && (
-                  <Button variant="outline" onClick={() => window.open(contract.driveWebViewLink, '_blank')}>
-                    <FileText className="mr-2 h-4 w-4" />
-                    Voir sur Google Drive
-                  </Button>
-                )}
-                <Button 
-                  variant="outline" 
-                  onClick={() => window.open(`/api/contracts/${id}/public-pdf?token=${encodeURIComponent(token)}`, '_blank')}
-                  data-testid="button-download-pdf"
-                >
-                  <FileText className="mr-2 h-4 w-4" />
-                  Télécharger PDF
-                </Button>
+                <h1 className="text-2xl font-bold">IA Infinity</h1>
+                <p className="opacity-90">{typeLabels[contract.type] || contract.type}</p>
               </div>
             </div>
+          </div>
 
-            {isAlreadySigned ? (
-              <div className="border-t pt-4">
-                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-                  <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
-                    <Check className="h-5 w-5" />
-                    <span className="font-medium">Ce contrat a déjà été signé</span>
+          <div className="p-8 space-y-6">
+            <div>
+              <p className="text-lg font-medium mb-1">Bonjour {contract.clientName},</p>
+              <p className="text-muted-foreground">
+                Veuillez trouver ci-dessous les détails de votre contrat. Pour finaliser, veuillez le consulter et le signer électroniquement.
+              </p>
+            </div>
+
+            <Card className="border">
+              <CardContent className="p-6 space-y-4">
+                <div>
+                  <h3 className="text-xl font-semibold">{contract.title}</h3>
+                  <p className="text-sm text-muted-foreground">N° {contract.contractNumber}</p>
+                </div>
+                
+                <Separator />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Montant</p>
+                    <p className="text-lg font-semibold text-primary">{formatAmount(contract.amount)} €</p>
                   </div>
-                  {contract.signedAt && (
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Signé le {format(new Date(contract.signedAt), 'dd MMMM yyyy à HH:mm', { locale: fr })}
-                    </p>
+                  {contract.startDate && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Date de début</p>
+                      <p className="font-medium">{format(new Date(contract.startDate), 'dd MMMM yyyy', { locale: fr })}</p>
+                    </div>
                   )}
-                  {contract.clientSignatureData && (
-                    <div className="mt-4">
-                      <img 
-                        src={contract.clientSignatureData} 
-                        alt="Signature" 
-                        className="max-h-24 bg-white rounded border p-2"
-                      />
+                  {contract.endDate && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Date de fin</p>
+                      <p className="font-medium">{format(new Date(contract.endDate), 'dd MMMM yyyy', { locale: fr })}</p>
                     </div>
                   )}
                 </div>
+
+                {contract.paymentTerms && (
+                  <>
+                    <Separator />
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-1">Conditions de paiement</p>
+                      <p className="text-sm whitespace-pre-wrap">{contract.paymentTerms}</p>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            <section>
+              <h3 className="text-lg font-semibold text-primary mb-3">OBJET DU CONTRAT</h3>
+              <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                {contract.scope || "Non défini"}
+              </p>
+            </section>
+
+            {contract.deliverables && contract.deliverables.length > 0 && (
+              <section>
+                <h3 className="text-lg font-semibold text-primary mb-3">LIVRABLES</h3>
+                <ul className="space-y-1 text-sm text-muted-foreground">
+                  {contract.deliverables.map((d: string, i: number) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className="text-primary mt-1">•</span>
+                      <span>{d}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => window.open(`/api/contracts/${id}/public-pdf?token=${encodeURIComponent(token)}`, '_blank')}
+                data-testid="button-download-pdf"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Télécharger le contrat PDF
+              </Button>
+            </div>
+
+            <Separator className="my-6" />
+
+            {isAlreadySigned ? (
+              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-6">
+                <div className="flex items-center gap-2 text-green-700 dark:text-green-400 mb-2">
+                  <Check className="h-5 w-5" />
+                  <span className="font-semibold text-lg">Contrat signé</span>
+                </div>
+                {contract.signedAt && (
+                  <p className="text-sm text-muted-foreground">
+                    Signé le {format(new Date(contract.signedAt), 'dd MMMM yyyy à HH:mm', { locale: fr })}
+                  </p>
+                )}
+                {contract.clientSignatureData && (
+                  <div className="mt-4">
+                    <p className="text-xs text-muted-foreground mb-2">Votre signature:</p>
+                    <img 
+                      src={contract.clientSignatureData} 
+                      alt="Signature" 
+                      className="max-h-20 bg-white rounded border p-2"
+                    />
+                  </div>
+                )}
               </div>
             ) : (
-              <div className="border-t pt-4">
-                <h4 className="font-medium mb-4 flex items-center gap-2">
-                  <PenTool className="h-4 w-4" />
-                  Votre signature
-                </h4>
-                <div className="border rounded-lg bg-white p-2">
-                  <SignatureCanvas
-                    ref={signaturePadRef}
-                    canvasProps={{
-                      className: 'w-full h-40 border rounded cursor-crosshair',
-                      style: { width: '100%', height: '160px' },
-                    }}
-                    backgroundColor="white"
-                    penColor="black"
-                  />
+              <section>
+                <h3 className="text-lg font-semibold text-primary mb-4 flex items-center gap-2">
+                  <PenTool className="h-5 w-5" />
+                  SIGNATURE
+                </h3>
+                
+                <div className="grid grid-cols-2 gap-8 mb-6">
+                  <div>
+                    <p className="font-medium mb-2">IA Infinity</p>
+                    <div className="border-b border-foreground/30 h-12" />
+                    <p className="text-xs text-muted-foreground mt-1">Prestataire</p>
+                  </div>
+                  <div>
+                    <p className="font-medium mb-2">{contract.clientName}</p>
+                    <div className="border rounded-lg bg-white p-2">
+                      <SignatureCanvas
+                        ref={signaturePadRef}
+                        canvasProps={{
+                          className: 'w-full cursor-crosshair',
+                          style: { width: '100%', height: '100px' },
+                        }}
+                        backgroundColor="white"
+                        penColor="black"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">Client - Dessinez votre signature ci-dessus</p>
+                  </div>
                 </div>
-                <div className="flex gap-2 mt-4">
-                  <Button variant="outline" onClick={clearSignature}>
+                
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={clearSignature} data-testid="button-clear-signature">
                     <RefreshCw className="mr-2 h-4 w-4" />
                     Effacer
                   </Button>
@@ -242,6 +280,7 @@ export default function ContractSign() {
                     onClick={handleSign}
                     disabled={signMutation.isPending}
                     className="flex-1"
+                    data-testid="button-sign-contract"
                   >
                     {signMutation.isPending ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -251,13 +290,13 @@ export default function ContractSign() {
                     Signer le contrat
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">
+                <p className="text-xs text-muted-foreground mt-3">
                   En signant ce contrat, vous acceptez les termes et conditions décrits dans le document.
                 </p>
-              </div>
+              </section>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         <p className="text-center text-xs text-muted-foreground">
           Propulsé par IA Infinity
