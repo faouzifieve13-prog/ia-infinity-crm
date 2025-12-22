@@ -28,6 +28,56 @@ const typeLabels: Record<string, string> = {
   sous_traitance: 'Contrat de Sous-Traitance',
 };
 
+interface DatePickerWithSaveProps {
+  value: Date | string | null | undefined;
+  onSave: (date: Date | null) => void;
+  placeholder?: string;
+  testId?: string;
+  isPending?: boolean;
+}
+
+function DatePickerWithSave({ value, onSave, placeholder = "Choisir...", testId, isPending }: DatePickerWithSaveProps) {
+  const [open, setOpen] = useState(false);
+  const dateValue = value ? new Date(value) : undefined;
+  
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn(
+            "w-full justify-start text-left font-normal",
+            !value && "text-destructive border-destructive/50"
+          )}
+          data-testid={testId}
+          disabled={isPending}
+        >
+          {isPending ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <CalendarIcon className="mr-2 h-4 w-4" />
+          )}
+          {dateValue 
+            ? format(dateValue, "dd MMM yyyy", { locale: fr })
+            : placeholder}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={dateValue}
+          onSelect={(date) => {
+            onSave(date || null);
+            setOpen(false);
+          }}
+          initialFocus
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function ContractPreview() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
@@ -257,34 +307,16 @@ export default function ContractPreview() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-muted-foreground text-xs">Date de début</Label>
-                  {isEditing ? (
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !currentStartDate && "text-muted-foreground"
-                          )}
-                          data-testid="button-start-date"
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {currentStartDate 
-                            ? format(new Date(currentStartDate), "dd MMM yyyy", { locale: fr })
-                            : "Choisir..."}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={currentStartDate ? new Date(currentStartDate) : undefined}
-                          onSelect={(date) => setEditedContract({ ...editedContract, startDate: date || null })}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
+                  {contract.status === 'draft' ? (
+                    <DatePickerWithSave
+                      value={contract.startDate}
+                      onSave={(date) => updateContractMutation.mutate({ startDate: date })}
+                      placeholder="Choisir..."
+                      testId="button-start-date"
+                      isPending={updateContractMutation.isPending}
+                    />
                   ) : (
-                    <p className={cn("text-sm font-medium", !contract.startDate && "text-destructive")}>
+                    <p className="text-sm font-medium">
                       {contract.startDate 
                         ? format(new Date(contract.startDate), "dd MMMM yyyy", { locale: fr })
                         : "Non définie"}
@@ -293,34 +325,16 @@ export default function ContractPreview() {
                 </div>
                 <div>
                   <Label className="text-muted-foreground text-xs">Date de fin</Label>
-                  {isEditing ? (
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !currentEndDate && "text-muted-foreground"
-                          )}
-                          data-testid="button-end-date"
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {currentEndDate 
-                            ? format(new Date(currentEndDate), "dd MMM yyyy", { locale: fr })
-                            : "Choisir..."}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={currentEndDate ? new Date(currentEndDate) : undefined}
-                          onSelect={(date) => setEditedContract({ ...editedContract, endDate: date || null })}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
+                  {contract.status === 'draft' ? (
+                    <DatePickerWithSave
+                      value={contract.endDate}
+                      onSave={(date) => updateContractMutation.mutate({ endDate: date })}
+                      placeholder="Choisir..."
+                      testId="button-end-date"
+                      isPending={updateContractMutation.isPending}
+                    />
                   ) : (
-                    <p className={cn("text-sm font-medium", !contract.endDate && "text-destructive")}>
+                    <p className="text-sm font-medium">
                       {contract.endDate 
                         ? format(new Date(contract.endDate), "dd MMMM yyyy", { locale: fr })
                         : "Non définie"}
