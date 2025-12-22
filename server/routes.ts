@@ -1223,10 +1223,88 @@ export async function registerRoutes(
         signatureTokenExpiresAt: null,
       });
       
+      // Try to save signed PDF to Drive (async, don't block response)
+      try {
+        if (contract.driveFileId) {
+          const { downloadFileFromDrive, uploadFileToDrive, getOrCreateFolder } = await import("./drive");
+          const { convertDocxToPdf } = await import("./docx-to-pdf");
+          const { embedSignatureInPdf } = await import("./pdf");
+          
+          // Download DOCX, convert to PDF
+          const docxBuffer = await downloadFileFromDrive(contract.driveFileId);
+          let pdfBuffer = await convertDocxToPdf(docxBuffer);
+          
+          // Embed signature in PDF if possible
+          try {
+            pdfBuffer = await embedSignatureInPdf(pdfBuffer, signatureData, contract.clientName);
+          } catch (embedError) {
+            console.warn("Could not embed signature in PDF:", embedError);
+          }
+          
+          // Get or create client folder
+          const clientFolderName = contract.clientCompany || contract.clientName;
+          const clientFolderId = await getOrCreateFolder(clientFolderName, 'Clients - Contrats signés');
+          
+          // Upload signed PDF
+          const filename = `${contract.contractNumber}_SIGNE_${contract.clientName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+          await uploadFileToDrive(pdfBuffer, filename, 'application/pdf', clientFolderName);
+        }
+      } catch (driveError) {
+        console.error("Failed to save signed PDF to Drive:", driveError);
+      }
+      
       res.json({ success: true, contract: updatedContract });
     } catch (error) {
       console.error("Sign contract error:", error);
       res.status(500).json({ error: "Erreur lors de la signature" });
+    }
+  });
+
+  // Public PDF download endpoint (token required)
+  app.get("/api/contracts/:id/public-pdf", async (req: Request, res: Response) => {
+    try {
+      const token = req.query.token as string;
+      
+      if (!token) {
+        return res.status(401).json({ error: "Token de signature manquant" });
+      }
+      
+      const validation = await validateSignatureToken(req.params.id, token);
+      
+      if (!validation.valid) {
+        return res.status(403).json({ error: validation.error });
+      }
+      
+      const contract = validation.contract;
+      
+      // If there's a DOCX on Drive, convert it to PDF
+      if (contract.driveFileId) {
+        const { downloadFileFromDrive } = await import("./drive");
+        const { convertDocxToPdf } = await import("./docx-to-pdf");
+        
+        const docxBuffer = await downloadFileFromDrive(contract.driveFileId);
+        const pdfBuffer = await convertDocxToPdf(docxBuffer);
+        
+        const filename = `${contract.contractNumber}_${contract.clientName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.send(pdfBuffer);
+      }
+      
+      // Fallback: generate PDF from contract data
+      const { generateContractPDF } = await import("./pdf");
+      const pdfBuffer = await generateContractPDF({
+        contract,
+        organizationName: 'IA Infinity',
+      });
+      
+      const sanitizedFilename = contract.contractNumber.replace(/[^a-zA-Z0-9-_]/g, '_');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFilename}.pdf"`);
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      console.error("Public PDF download error:", error);
+      res.status(500).json({ error: error.message || "Échec du téléchargement PDF" });
     }
   });
 

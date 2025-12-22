@@ -173,15 +173,25 @@ export default function ContractSign() {
               </div>
             )}
 
-            {contract.driveWebViewLink && (
-              <div className="border-t pt-4">
-                <h4 className="font-medium mb-2">Document complet</h4>
-                <Button variant="outline" onClick={() => window.open(contract.driveWebViewLink, '_blank')}>
+            <div className="border-t pt-4">
+              <h4 className="font-medium mb-2">Document complet</h4>
+              <div className="flex flex-wrap gap-2">
+                {contract.driveWebViewLink && (
+                  <Button variant="outline" onClick={() => window.open(contract.driveWebViewLink, '_blank')}>
+                    <FileText className="mr-2 h-4 w-4" />
+                    Voir sur Google Drive
+                  </Button>
+                )}
+                <Button 
+                  variant="outline" 
+                  onClick={() => window.open(`/api/contracts/${id}/public-pdf?token=${encodeURIComponent(token)}`, '_blank')}
+                  data-testid="button-download-pdf"
+                >
                   <FileText className="mr-2 h-4 w-4" />
-                  Voir le contrat sur Google Drive
+                  Télécharger PDF
                 </Button>
               </div>
-            )}
+            </div>
 
             {isAlreadySigned ? (
               <div className="border-t pt-4">

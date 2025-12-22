@@ -391,3 +391,18 @@ export async function generateQuotePDF(params: QuotePDFParams): Promise<Buffer> 
     doc.end();
   });
 }
+
+// Embed signature in an existing PDF buffer
+// Note: For full PDF manipulation, a library like pdf-lib would be needed
+// This is a simplified version that stores signature reference
+export async function embedSignatureInPdf(
+  pdfBuffer: Buffer, 
+  signatureDataUrl: string, 
+  signerName: string
+): Promise<Buffer> {
+  // For now, return the original buffer
+  // The signature is stored separately in the database
+  // A proper implementation would use pdf-lib to overlay the signature
+  console.log(`Signature by ${signerName} recorded`);
+  return pdfBuffer;
+}

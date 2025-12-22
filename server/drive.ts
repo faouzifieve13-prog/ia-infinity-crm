@@ -240,7 +240,7 @@ export async function getDriveStatus(): Promise<{ connected: boolean; email?: st
 }
 
 // Get or create a generic folder
-async function getOrCreateFolder(folderName: string): Promise<string> {
+export async function getOrCreateFolder(folderName: string, parentFolderName?: string): Promise<string> {
   const drive = await getUncachableGoogleDriveClient();
 
   const searchResponse = await drive.files.list({
