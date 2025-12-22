@@ -24,7 +24,9 @@ import {
   StickyNote,
   RefreshCw,
   Send,
-  Inbox
+  Inbox,
+  Sparkles,
+  SendHorizontal
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -219,6 +221,70 @@ export default function AccountDetail() {
       toast({
         title: 'Erreur',
         description: error.message || 'Impossible de mettre à jour le suivi.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const [generatedCR, setGeneratedCR] = useState<string>('');
+
+  const generateCRMutation = useMutation({
+    mutationFn: async (): Promise<{ cr: string }> => {
+      const response = await apiRequest('POST', `/api/accounts/${accountId}/generate-cr`, {});
+      return await response.json();
+    },
+    onSuccess: (data: { cr: string }) => {
+      setGeneratedCR(data.cr);
+      toast({
+        title: 'CR généré',
+        description: 'Le compte rendu a été généré avec succès par ChatGPT.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de générer le CR.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const sendCRMutation = useMutation({
+    mutationFn: async (cr: string): Promise<{ success: boolean; messageId?: string }> => {
+      const response = await apiRequest('POST', `/api/accounts/${accountId}/send-cr`, { cr });
+      return await response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: 'CR envoyé',
+        description: 'Le compte rendu a été envoyé par email au client.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible d\'envoyer le CR.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const saveCRToNotesMutation = useMutation({
+    mutationFn: async (cr: string) => {
+      return apiRequest('PATCH', `/api/accounts/${accountId}`, { notes: cr });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts', accountId] });
+      toast({
+        title: 'CR sauvegardé',
+        description: 'Le compte rendu a été enregistré dans les notes.',
+      });
+      setGeneratedCR('');
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de sauvegarder le CR.',
         variant: 'destructive',
       });
     },
@@ -640,20 +706,89 @@ export default function AccountDetail() {
           </Card>
 
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
               <CardTitle className="flex items-center gap-2">
                 <StickyNote className="h-5 w-5 text-primary" />
                 Notes / Compte-rendu
               </CardTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => generateCRMutation.mutate()}
+                  disabled={generateCRMutation.isPending}
+                  data-testid="button-generate-cr"
+                >
+                  {generateCRMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-2 h-4 w-4" />
+                  )}
+                  Générer CR (IA)
+                </Button>
+                {(account.notes || generatedCR) && account.contactEmail && (
+                  <Button 
+                    variant="default" 
+                    size="sm"
+                    onClick={() => sendCRMutation.mutate(generatedCR || account.notes || '')}
+                    disabled={sendCRMutation.isPending}
+                    data-testid="button-send-cr"
+                  >
+                    {sendCRMutation.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <SendHorizontal className="mr-2 h-4 w-4" />
+                    )}
+                    Envoyer au client
+                  </Button>
+                )}
+              </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              {generatedCR && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-sm font-medium flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-amber-500" />
+                      CR généré par ChatGPT
+                    </h4>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => saveCRToNotesMutation.mutate(generatedCR)}
+                        disabled={saveCRToNotesMutation.isPending}
+                        data-testid="button-save-cr"
+                      >
+                        {saveCRToNotesMutation.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="mr-2 h-4 w-4" />
+                        )}
+                        Sauvegarder
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => setGeneratedCR('')}
+                        data-testid="button-dismiss-cr"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+                    <p className="whitespace-pre-wrap text-sm" data-testid="text-generated-cr">{generatedCR}</p>
+                  </div>
+                </div>
+              )}
               {account.notes ? (
                 <div className="prose prose-sm dark:prose-invert max-w-none">
                   <p className="whitespace-pre-wrap" data-testid="text-notes">{account.notes}</p>
                 </div>
-              ) : (
+              ) : !generatedCR && (
                 <p className="text-sm text-muted-foreground">
-                  Aucune note enregistrée. Cliquez sur "Modifier" pour ajouter des notes.
+                  Aucune note enregistrée. Utilisez le bouton "Générer CR (IA)" pour créer un compte-rendu automatique ou cliquez sur "Modifier" pour ajouter des notes manuellement.
                 </p>
               )}
             </CardContent>

@@ -162,6 +162,162 @@ export async function registerRoutes(
     }
   });
 
+  // Generate CR (Compte Rendu) using ChatGPT for a client
+  app.post("/api/accounts/:id/generate-cr", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const account = await storage.getAccount(req.params.id, orgId);
+      if (!account) {
+        return res.status(404).json({ error: "Account not found" });
+      }
+
+      // Get related data for context
+      const deals = (await storage.getDeals(orgId)).filter(d => d.accountId === account.id);
+      const projects = (await storage.getProjects(orgId)).filter(p => p.accountId === account.id);
+      const contracts = (await storage.getContracts(orgId)).filter(c => c.accountId === account.id);
+
+      // Import OpenAI
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+
+      const contextData = {
+        client: {
+          name: account.name,
+          contactName: account.contactName,
+          plan: account.plan,
+          status: account.status,
+          notes: account.notes,
+        },
+        deals: deals.map(d => ({ name: d.name, stage: d.stage, value: d.value })),
+        projects: projects.map(p => ({ name: p.name, status: p.status, progress: p.progress, description: p.description })),
+        contracts: contracts.map(c => ({ title: c.title, type: c.type, status: c.status, amount: c.amount })),
+      };
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `Tu es un assistant professionnel qui rédige des comptes rendus de suivi client pour IA Infinity, une entreprise spécialisée dans l'intelligence artificielle et l'automatisation. 
+            
+Rédige un compte rendu de suivi clair, professionnel et structuré en français. Le CR doit inclure:
+- Un résumé de la situation actuelle du client
+- L'état des projets en cours
+- Les opportunités commerciales
+- Les prochaines étapes recommandées
+- Les points d'attention
+
+Utilise un ton professionnel mais accessible. Formate le texte avec des titres et des listes à puces pour une lecture facile.`,
+          },
+          {
+            role: "user",
+            content: `Génère un compte rendu de suivi pour le client suivant:\n\n${JSON.stringify(contextData, null, 2)}`,
+          },
+        ],
+        max_completion_tokens: 2000,
+      });
+
+      const generatedCR = response.choices[0]?.message?.content || "";
+
+      // Optionally save to notes
+      if (req.body.saveToNotes) {
+        await storage.updateAccount(req.params.id, orgId, { notes: generatedCR });
+      }
+
+      res.json({ cr: generatedCR });
+    } catch (error) {
+      console.error("Generate CR error:", error);
+      res.status(500).json({ error: "Failed to generate CR" });
+    }
+  });
+
+  // Send CR by email to client
+  app.post("/api/accounts/:id/send-cr", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const account = await storage.getAccount(req.params.id, orgId);
+      if (!account) {
+        return res.status(404).json({ error: "Account not found" });
+      }
+
+      if (!account.contactEmail) {
+        return res.status(400).json({ error: "No contact email for this client" });
+      }
+
+      const { cr } = req.body;
+      if (!cr) {
+        return res.status(400).json({ error: "CR content is required" });
+      }
+
+      const { sendGenericEmail } = await import("./gmail");
+      
+      const htmlBody = `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); padding: 32px 40px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">
+                IA Infinity
+              </h1>
+              <p style="margin: 8px 0 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">
+                Compte Rendu de Suivi
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px;">
+              <h2 style="margin: 0 0 16px 0; color: #18181b; font-size: 20px; font-weight: 600;">
+                Bonjour ${account.contactName || account.name},
+              </h2>
+              <div style="color: #52525b; font-size: 14px; line-height: 1.8; white-space: pre-wrap;">
+${cr.replace(/\n/g, '<br>')}
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #fafafa; padding: 24px 40px; text-align: center; border-top: 1px solid #e4e4e7;">
+              <p style="margin: 0; color: #a1a1aa; font-size: 12px;">
+                © ${new Date().getFullYear()} IA Infinity. Tous droits réservés.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+      `.trim();
+
+      const result = await sendGenericEmail({
+        to: account.contactEmail,
+        subject: `Compte Rendu de Suivi - ${account.name} | IA Infinity`,
+        htmlBody,
+      });
+
+      if (result.success) {
+        res.json({ success: true, messageId: result.messageId });
+      } else {
+        res.status(500).json({ error: result.error || "Failed to send email" });
+      }
+    } catch (error) {
+      console.error("Send CR error:", error);
+      res.status(500).json({ error: "Failed to send CR" });
+    }
+  });
+
   app.get("/api/contacts", async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);

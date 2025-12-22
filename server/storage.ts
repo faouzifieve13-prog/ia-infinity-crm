@@ -272,20 +272,46 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteAccount(id: string, orgId: string): Promise<boolean> {
-    // First delete documents referencing this account
+    // First delete invitations referencing this account
+    await db.delete(invitations).where(eq(invitations.accountId, id));
+    // Delete emails referencing this account
+    await db.delete(emails).where(eq(emails.accountId, id));
+    // Delete expenses referencing this account
+    await db.delete(expenses).where(eq(expenses.accountId, id));
+    // Delete documents referencing this account
     await db.delete(documents).where(eq(documents.accountId, id));
-    // Delete documents that reference deals of this account
+    // Get deals for this account to delete related records
     const accountDeals = await db.select({ id: deals.id }).from(deals).where(eq(deals.accountId, id));
     for (const deal of accountDeals) {
+      // Delete documents referencing this deal
       await db.delete(documents).where(eq(documents.dealId, deal.id));
+      // Delete emails referencing this deal
+      await db.delete(emails).where(eq(emails.dealId, deal.id));
+      // Delete activities referencing this deal
+      await db.delete(activities).where(eq(activities.dealId, deal.id));
+      // Delete quotes referencing this deal
+      await db.delete(quotes).where(eq(quotes.dealId, deal.id));
     }
-    // Then delete related contracts
+    // Delete invoice line items first, then invoices
+    const accountInvoices = await db.select({ id: invoices.id }).from(invoices).where(eq(invoices.accountId, id));
+    for (const invoice of accountInvoices) {
+      await db.delete(invoiceLineItems).where(eq(invoiceLineItems.invoiceId, invoice.id));
+    }
+    await db.delete(invoices).where(eq(invoices.accountId, id));
+    // Delete projects and their tasks
+    const accountProjects = await db.select({ id: projects.id }).from(projects).where(eq(projects.accountId, id));
+    for (const project of accountProjects) {
+      await db.delete(tasks).where(eq(tasks.projectId, project.id));
+      await db.delete(activities).where(eq(activities.projectId, project.id));
+    }
+    await db.delete(projects).where(eq(projects.accountId, id));
+    // Delete related contracts
     await db.delete(contracts).where(eq(contracts.accountId, id));
-    // Then delete related deals
+    // Delete related deals
     await db.delete(deals).where(eq(deals.accountId, id));
-    // Then delete related contacts
+    // Delete related contacts
     await db.delete(contacts).where(eq(contacts.accountId, id));
-    // Then delete the account
+    // Finally delete the account
     await db.delete(accounts)
       .where(and(eq(accounts.id, id), eq(accounts.orgId, orgId)));
     return true;
