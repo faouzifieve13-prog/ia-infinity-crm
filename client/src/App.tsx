@@ -90,7 +90,12 @@ function AppContent() {
   
   // Public contract signing page
   if (location.startsWith("/contracts/") && location.includes("/sign")) {
-    return <ContractSign />;
+    return (
+      <Switch>
+        <Route path="/contracts/:id/sign" component={ContractSign} />
+        <Route component={NotFound} />
+      </Switch>
+    );
   }
   
   return (
