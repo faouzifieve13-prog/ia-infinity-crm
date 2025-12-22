@@ -272,7 +272,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteAccount(id: string, orgId: string): Promise<boolean> {
-    // First delete related deals
+    // First delete documents referencing this account
+    await db.delete(documents).where(eq(documents.accountId, id));
+    // Delete documents that reference deals of this account
+    const accountDeals = await db.select({ id: deals.id }).from(deals).where(eq(deals.accountId, id));
+    for (const deal of accountDeals) {
+      await db.delete(documents).where(eq(documents.dealId, deal.id));
+    }
+    // Then delete related contracts
+    await db.delete(contracts).where(eq(contracts.accountId, id));
+    // Then delete related deals
     await db.delete(deals).where(eq(deals.accountId, id));
     // Then delete related contacts
     await db.delete(contacts).where(eq(contacts.accountId, id));
