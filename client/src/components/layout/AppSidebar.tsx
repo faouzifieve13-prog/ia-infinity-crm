@@ -155,10 +155,18 @@ const navCategories: NavCategory[] = [
       { title: 'Contrats', url: '/contracts', icon: FileSignature, spaces: ['internal', 'client'] },
     ],
   },
+  {
+    title: 'Administration',
+    icon: Shield,
+    spaces: ['internal'],
+    items: [
+      { title: 'Gestion des accès', url: '/invitations', icon: UserPlus, spaces: ['internal'] },
+      { title: 'Sync Notion', url: '/notion-sync', icon: RefreshCw, spaces: ['internal'] },
+    ],
+  },
 ];
 
 const secondaryItems: NavItem[] = [
-  { title: 'Invitations', url: '/invitations', icon: UserPlus, spaces: ['internal'] },
   { title: 'Paramètres', url: '/settings', icon: Settings, spaces: ['internal', 'client', 'vendor'] },
   { title: 'Aide', url: '/help', icon: HelpCircle, spaces: ['internal', 'client', 'vendor'] },
 ];
@@ -166,7 +174,7 @@ const secondaryItems: NavItem[] = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { currentSpace } = useSpace();
-  const [openCategories, setOpenCategories] = useState<string[]>(['Commercial', 'Projets', 'Finance', 'Tâches', 'RDV', 'Documents']);
+  const [openCategories, setOpenCategories] = useState<string[]>(['Commercial', 'Projets', 'Finance', 'Tâches', 'RDV', 'Documents', 'Administration']);
 
   const toggleCategory = (category: string) => {
     setOpenCategories(prev => 
