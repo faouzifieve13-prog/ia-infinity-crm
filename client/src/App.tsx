@@ -28,6 +28,7 @@ import NotionSync from "@/pages/NotionSync";
 import Invitations from "@/pages/Invitations";
 import AcceptInvite from "@/pages/AcceptInvite";
 import ContractSign from "@/pages/ContractSign";
+import ContractPreview from "@/pages/ContractPreview";
 import Settings from "@/pages/Settings";
 import { LandingPage } from "@/pages/LandingPage";
 import NotFound from "@/pages/not-found";
@@ -51,6 +52,7 @@ function Router() {
       <Route path="/missions" component={Missions} />
       <Route path="/documents" component={Documents} />
       <Route path="/contracts" component={Contracts} />
+      <Route path="/contracts/:id/preview" component={ContractPreview} />
       <Route path="/expenses" component={Expenses} />
       <Route path="/finance" component={Finance} />
       <Route path="/calendar" component={Calendar} />

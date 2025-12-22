@@ -1083,8 +1083,7 @@ export default function DealDetail() {
             </div>
             <div className="rounded-lg border p-4 bg-blue-50 dark:bg-blue-950">
               <p className="text-sm text-blue-700 dark:text-blue-300">
-                <strong>Conseil:</strong> Utilisez "Créer brouillon" pour personnaliser le contrat avant l'envoi. 
-                Le contrat sera disponible dans la section Contrats.
+                <strong>Conseil:</strong> Utilisez "Créer et personnaliser" pour éditer le contrat avec l'aide de ChatGPT avant l'envoi.
               </p>
             </div>
           </div>
@@ -1096,16 +1095,14 @@ export default function DealDetail() {
               variant="outline"
               onClick={async () => {
                 try {
-                  await apiRequest('POST', '/api/contracts/create-from-deal', {
+                  const response = await apiRequest('POST', '/api/contracts/create-from-deal', {
                     dealId: dealId,
                     type: selectedContractType,
                   });
+                  const contract = await response.json();
                   queryClient.invalidateQueries({ queryKey: ['/api/contracts'] });
-                  toast({ 
-                    title: 'Brouillon créé', 
-                    description: 'Rendez-vous dans la section Contrats pour le personnaliser' 
-                  });
                   setContractDialogOpen(false);
+                  navigate(`/contracts/${contract.id}/preview`);
                 } catch (error: any) {
                   toast({ 
                     title: 'Erreur', 
@@ -1117,7 +1114,7 @@ export default function DealDetail() {
               data-testid="button-create-draft"
             >
               <FileText className="mr-2 h-4 w-4" />
-              Créer brouillon
+              Créer et personnaliser
             </Button>
             <Button 
               onClick={() => generateAndSendContractMutation.mutate(selectedContractType)}

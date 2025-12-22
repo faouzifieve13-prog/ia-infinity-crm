@@ -1045,6 +1045,99 @@ export async function registerRoutes(
     }
   });
 
+  // AI-powered contract personalization endpoint
+  app.post("/api/contracts/:id/personalize", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const contract = await storage.getContract(req.params.id, orgId);
+      
+      if (!contract) {
+        return res.status(404).json({ error: "Contract not found" });
+      }
+
+      const { instructions } = req.body;
+      
+      // Import OpenAI
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+
+      const systemPrompt = `Tu es un assistant juridique et commercial expert en rédaction de contrats. 
+Tu dois aider à personnaliser le contenu d'un contrat de prestation de services en français.
+Réponds toujours en JSON avec les champs suivants:
+- scope: description du périmètre de la mission (string)
+- deliverables: liste des livrables (array de strings)
+- paymentTerms: conditions de paiement (string)
+- description: description détaillée optionnelle (string ou null)
+
+Assure-toi que le contenu soit professionnel, clair et adapté au contexte français.`;
+
+      const userPrompt = `Voici les informations du contrat à personnaliser:
+- Type: ${contract.type}
+- Client: ${contract.clientName} (${contract.clientCompany || 'Particulier'})
+- Montant: ${contract.amount} ${contract.currency}
+- Périmètre actuel: ${contract.scope || 'Non défini'}
+- Livrables actuels: ${(contract.deliverables || []).join(', ') || 'Non définis'}
+- Conditions de paiement actuelles: ${contract.paymentTerms || 'Non définies'}
+
+Instructions de personnalisation: ${instructions || 'Améliorer et professionnaliser le contenu du contrat'}
+
+Génère une version personnalisée et professionnelle de ces éléments.`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 1500,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        return res.status(500).json({ error: "No response from AI" });
+      }
+
+      const suggestions = JSON.parse(content);
+      res.json({ 
+        success: true, 
+        suggestions,
+        contract 
+      });
+    } catch (error) {
+      console.error("Contract personalization error:", error);
+      res.status(500).json({ error: "Failed to personalize contract" });
+    }
+  });
+
+  // Apply AI suggestions to a contract
+  app.post("/api/contracts/:id/apply-suggestions", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const { scope, deliverables, paymentTerms, description } = req.body;
+      
+      const updateData: any = {};
+      if (scope) updateData.scope = scope;
+      if (deliverables) updateData.deliverables = deliverables;
+      if (paymentTerms) updateData.paymentTerms = paymentTerms;
+      if (description !== undefined) updateData.description = description;
+      
+      const contract = await storage.updateContract(req.params.id, orgId, updateData);
+      
+      if (!contract) {
+        return res.status(404).json({ error: "Contract not found" });
+      }
+      
+      res.json({ success: true, contract });
+    } catch (error) {
+      console.error("Apply suggestions error:", error);
+      res.status(500).json({ error: "Failed to apply suggestions" });
+    }
+  });
+
   app.post("/api/contracts/:id/send", async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);

@@ -770,3 +770,33 @@ export type ContractStatus = 'draft' | 'sent' | 'signed' | 'active' | 'completed
 export type ExpenseStatus = 'pending' | 'paid' | 'cancelled';
 export type ExpenseCategory = 'tools' | 'software' | 'services' | 'travel' | 'marketing' | 'office' | 'salaries' | 'taxes' | 'other';
 export type InvitationStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
+
+// Chat tables for AI conversations
+export const conversations = pgTable("conversations", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  title: text("title").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const messages = pgTable("messages", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  conversationId: integer("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  role: text("role").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertConversationSchema = z.object({
+  title: z.string(),
+});
+
+export const insertMessageSchema = z.object({
+  conversationId: z.number(),
+  role: z.string(),
+  content: z.string(),
+});
+
+export type Conversation = typeof conversations.$inferSelect;
+export type InsertConversation = z.infer<typeof insertConversationSchema>;
+export type Message = typeof messages.$inferSelect;
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
