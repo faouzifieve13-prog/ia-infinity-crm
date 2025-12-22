@@ -20,6 +20,7 @@ import {
   Building2, Euro, Calendar as CalendarIcon, Save, Wand2, Download, AlertCircle, Edit3, X
 } from 'lucide-react';
 import type { Contract } from '@shared/schema';
+import logoIAInfinity from '@assets/logo_iA_Infinity_1766415032734.png';
 
 const typeLabels: Record<string, string> = {
   audit: "Contrat d'Audit",
@@ -309,9 +310,18 @@ export default function ContractPreview() {
 
         <div className="bg-background rounded-lg shadow-lg overflow-hidden">
           <div className="bg-primary text-primary-foreground p-6">
-            <h1 className="text-2xl font-bold">IA Infinity</h1>
-            <p className="opacity-90">{typeLabels[contract.type] || contract.type}</p>
-            <p className="text-sm opacity-75">N° {contract.contractNumber}</p>
+            <div className="flex items-center gap-4">
+              <img 
+                src={logoIAInfinity} 
+                alt="IA Infinity" 
+                className="h-14 w-auto bg-white/10 rounded-lg p-1"
+              />
+              <div>
+                <h1 className="text-2xl font-bold">IA Infinity</h1>
+                <p className="opacity-90">{typeLabels[contract.type] || contract.type}</p>
+                <p className="text-sm opacity-75">N° {contract.contractNumber}</p>
+              </div>
+            </div>
           </div>
 
           <div className="p-8 space-y-8">
