@@ -89,7 +89,7 @@ export async function registerRoutes(
           // Create an invitation for client portal access
           const token = generateToken();
           const tokenHash = hashToken(token);
-          const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+          const expiresAt = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000); // 6 months
           
           await storage.createInvitation({
             orgId,

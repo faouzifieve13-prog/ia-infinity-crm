@@ -93,7 +93,7 @@ export default function Invitations() {
     email: '',
     role: 'client_member' as UserRole,
     space: 'client' as Space,
-    expiresInMinutes: 30,
+    expiresInMinutes: 259200, // 6 months by default
     accountId: '',
     vendorId: '',
     sendEmail: true,
@@ -197,7 +197,7 @@ export default function Invitations() {
       email: '',
       role: 'client_member',
       space: 'client',
-      expiresInMinutes: 30,
+      expiresInMinutes: 259200, // 6 months by default
       accountId: '',
       vendorId: '',
       sendEmail: true,
