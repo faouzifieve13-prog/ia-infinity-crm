@@ -433,6 +433,142 @@ export async function sendContractEmail(params: ContractEmailParams): Promise<bo
   }
 }
 
+export interface ClientWelcomeEmailParams {
+  to: string;
+  clientName: string;
+  companyName: string;
+  portalLink: string;
+  organizationName?: string;
+}
+
+export async function sendClientWelcomeEmail(params: ClientWelcomeEmailParams): Promise<boolean> {
+  try {
+    const gmail = await getUncachableGmailClient();
+    
+    const orgName = params.organizationName || 'IA Infinity';
+    
+    const subject = `Bienvenue chez ${orgName} - Accès à votre espace client`;
+    
+    const htmlBody = `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); padding: 32px 40px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">
+                ${orgName}
+              </h1>
+              <p style="margin: 8px 0 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">
+                Votre partenaire en Intelligence Artificielle
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <h2 style="margin: 0 0 16px 0; color: #18181b; font-size: 22px; font-weight: 600;">
+                Bienvenue ${params.clientName} !
+              </h2>
+              
+              <p style="margin: 0 0 24px 0; color: #52525b; font-size: 16px; line-height: 1.6;">
+                Nous sommes ravis de vous compter parmi nos clients. Votre espace dédié <strong>${params.companyName}</strong> a été créé avec succès.
+              </p>
+              
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; border: 1px solid #bae6fd;">
+                <tr>
+                  <td style="padding: 24px;">
+                    <h3 style="margin: 0 0 12px 0; color: #0369a1; font-size: 16px; font-weight: 600;">
+                      Votre Portail Client
+                    </h3>
+                    <p style="margin: 0; color: #0c4a6e; font-size: 14px; line-height: 1.6;">
+                      Accédez à votre espace personnel pour suivre vos projets, consulter vos documents et communiquer avec notre équipe.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+              
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
+                <tr>
+                  <td align="center">
+                    <a href="${params.portalLink}" style="display: inline-block; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);">
+                      Accéder à mon espace client
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              
+              <p style="margin: 0 0 16px 0; color: #71717a; font-size: 14px; line-height: 1.6;">
+                Si le bouton ne fonctionne pas, copiez et collez ce lien dans votre navigateur :
+              </p>
+              
+              <p style="margin: 0 0 24px 0; color: #3b82f6; font-size: 12px; word-break: break-all; background-color: #f4f4f5; padding: 12px; border-radius: 4px;">
+                ${params.portalLink}
+              </p>
+              
+              <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 24px 0;">
+              
+              <h4 style="margin: 0 0 12px 0; color: #18181b; font-size: 14px; font-weight: 600;">
+                Prochaines étapes
+              </h4>
+              <ul style="margin: 0 0 24px 0; padding-left: 20px; color: #52525b; font-size: 14px; line-height: 1.8;">
+                <li>Explorez votre espace client</li>
+                <li>Consultez vos documents et contrats</li>
+                <li>Suivez l'avancement de vos projets</li>
+                <li>Contactez notre équipe pour toute question</li>
+              </ul>
+              
+              <p style="margin: 0; color: #52525b; font-size: 14px; line-height: 1.6;">
+                Notre équipe reste à votre disposition pour vous accompagner dans votre transformation digitale.
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #fafafa; padding: 24px 40px; text-align: center; border-top: 1px solid #e4e4e7;">
+              <p style="margin: 0 0 8px 0; color: #71717a; font-size: 14px; font-weight: 500;">
+                L'équipe ${orgName}
+              </p>
+              <p style="margin: 0; color: #a1a1aa; font-size: 12px;">
+                © ${new Date().getFullYear()} ${orgName}. Tous droits réservés.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim();
+    
+    const encodedMessage = createEmailMessage(params.to, subject, htmlBody);
+    
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage
+      }
+    });
+    
+    console.log(`Welcome email sent successfully to ${params.to}`);
+    return true;
+  } catch (error) {
+    console.error('Failed to send welcome email:', error);
+    return false;
+  }
+}
+
 export interface GenericEmailParams {
   to: string;
   subject: string;
