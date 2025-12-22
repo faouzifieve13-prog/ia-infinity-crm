@@ -1045,7 +1045,7 @@ export async function registerRoutes(
     }
   });
 
-  // AI-powered contract personalization endpoint
+  // AI-powered contract personalization endpoint using Word templates
   app.post("/api/contracts/:id/personalize", async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
@@ -1064,27 +1064,50 @@ export async function registerRoutes(
         baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
       });
 
-      const systemPrompt = `Tu es un assistant juridique et commercial expert en rédaction de contrats. 
-Tu dois aider à personnaliser le contenu d'un contrat de prestation de services en français.
-Réponds toujours en JSON avec les champs suivants:
-- scope: description du périmètre de la mission (string)
-- deliverables: liste des livrables (array de strings)
-- paymentTerms: conditions de paiement (string)
-- description: description détaillée optionnelle (string ou null)
+      const isAudit = contract.type === 'audit';
+      
+      const systemPrompt = `Tu es un assistant juridique et commercial expert en rédaction de contrats en français.
+Tu dois personnaliser un contrat selon un modèle professionnel.
 
-Assure-toi que le contenu soit professionnel, clair et adapté au contexte français.`;
+${isAudit ? `
+MODÈLE: Contrat d'Audit Général
+Ce contrat concerne une mission d'audit pour identifier les opportunités d'optimisation et d'intégration de l'IA.
+L'audit porte sur: analyse des workflows, évaluation des outils, gestion CRM, processus de vente/marketing, communication.
+Livrables typiques: Rapport d'audit complet, Feuille de route IA, Recommandations priorisées, Estimation budgétaire.
+Paiement: 50% à la signature, 50% à la livraison du rapport.
+` : `
+MODÈLE: Contrat de Prestation d'Automatisation
+Ce contrat fait suite à un audit et concerne la mise en œuvre de solutions d'automatisation.
+Prestations: automatisation des processus de vente, séquences d'emails automatisées, intégration CRM, formation des équipes.
+Livrables: Solutions d'automatisation opérationnelles, documentation technique, formation utilisateurs.
+Paiement: 40% à la signature, 30% à mi-projet, 30% à la livraison finale.
+Garantie: 30 jours après mise en production.
+`}
 
-      const userPrompt = `Voici les informations du contrat à personnaliser:
-- Type: ${contract.type}
-- Client: ${contract.clientName} (${contract.clientCompany || 'Particulier'})
-- Montant: ${contract.amount} ${contract.currency}
-- Périmètre actuel: ${contract.scope || 'Non défini'}
-- Livrables actuels: ${(contract.deliverables || []).join(', ') || 'Non définis'}
-- Conditions de paiement actuelles: ${contract.paymentTerms || 'Non définies'}
+Réponds en JSON avec ces champs:
+- title: titre professionnel du contrat (ex: "Contrat d'Audit IA - [Nom Entreprise]")
+- scope: objet et périmètre détaillé de la mission (paragraphe professionnel)
+- deliverables: liste des livrables concrets (array de strings)
+- paymentTerms: modalités de paiement détaillées (string)
 
-Instructions de personnalisation: ${instructions || 'Améliorer et professionnaliser le contenu du contrat'}
+Personnalise selon les informations client et les instructions fournies.`;
 
-Génère une version personnalisée et professionnelle de ces éléments.`;
+      const userPrompt = `Personnalise ce contrat pour:
+- Client: ${contract.clientName}
+- Société: ${contract.clientCompany || 'Non précisée'}
+- Email: ${contract.clientEmail}
+- Montant: ${contract.amount} € HT
+- Date début prévue: ${contract.startDate ? new Date(contract.startDate).toLocaleDateString('fr-FR') : 'À définir'}
+- Date fin prévue: ${contract.endDate ? new Date(contract.endDate).toLocaleDateString('fr-FR') : 'À définir'}
+
+Contenu actuel:
+- Périmètre: ${contract.scope || 'Non défini'}
+- Livrables: ${(contract.deliverables || []).join(', ') || 'Non définis'}
+- Conditions paiement: ${contract.paymentTerms || 'Non définies'}
+
+Instructions supplémentaires: ${instructions || 'Personnaliser de manière professionnelle selon le profil client'}
+
+Génère un contrat complet et professionnel adapté à ce client.`;
 
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
@@ -1117,9 +1140,10 @@ Génère une version personnalisée et professionnelle de ces éléments.`;
   app.post("/api/contracts/:id/apply-suggestions", async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const { scope, deliverables, paymentTerms, description } = req.body;
+      const { title, scope, deliverables, paymentTerms, description } = req.body;
       
       const updateData: any = {};
+      if (title) updateData.title = title;
       if (scope) updateData.scope = scope;
       if (deliverables) updateData.deliverables = deliverables;
       if (paymentTerms) updateData.paymentTerms = paymentTerms;
@@ -1135,6 +1159,34 @@ Génère une version personnalisée et professionnelle de ces éléments.`;
     } catch (error) {
       console.error("Apply suggestions error:", error);
       res.status(500).json({ error: "Failed to apply suggestions" });
+    }
+  });
+
+  // Download contract as PDF
+  app.get("/api/contracts/:id/download-pdf", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const contract = await storage.getContract(req.params.id, orgId);
+      
+      if (!contract) {
+        return res.status(404).json({ error: "Contrat non trouvé" });
+      }
+      
+      const { generateContractPDF } = await import("./pdf");
+      
+      const pdfBuffer = await generateContractPDF({ 
+        contract,
+        organizationName: 'IA Infinity' 
+      });
+      
+      const filename = `${contract.contractNumber.replace(/[^a-zA-Z0-9-_]/g, '_')}.pdf`;
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', pdfBuffer.length);
+      res.send(pdfBuffer);
+    } catch (error) {
+      console.error("Download PDF error:", error);
+      res.status(500).json({ error: "Échec de la génération du PDF" });
     }
   });
 
