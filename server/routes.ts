@@ -1322,6 +1322,8 @@ Génère un contrat complet et professionnel adapté à ce client.`;
         amount: contract.amount,
         currency: contract.currency,
         scope: contract.scope,
+        deliverables: contract.deliverables,
+        paymentTerms: contract.paymentTerms,
         startDate: contract.startDate,
         endDate: contract.endDate,
         clientSignatureData: contract.clientSignatureData,
@@ -1361,15 +1363,38 @@ Génère un contrat complet et professionnel adapté à ce client.`;
         return res.status(403).json({ error: "Ce contrat ne peut plus être signé" });
       }
       
+      const signedAt = new Date();
+      
       // Update the contract with signature and clear the token (single use)
       const updatedContract = await storage.updateContractByIdOnly(req.params.id, {
         clientSignatureData: signatureData,
         signedByClient: contract.clientName,
-        signedAt: new Date(),
+        signedAt,
         status: 'signed',
         signatureTokenHash: null,
         signatureTokenExpiresAt: null,
       });
+      
+      // Create document record in client's documents space
+      try {
+        if (contract.accountId) {
+          const account = await storage.getAccount(contract.accountId, contract.orgId);
+          if (account) {
+            await storage.createDocument({
+              orgId: contract.orgId,
+              accountId: contract.accountId,
+              projectId: contract.projectId || null,
+              dealId: contract.dealId || null,
+              name: `${contract.contractNumber} - ${contract.title} (Signé)`,
+              url: (contract as any).driveWebViewLink || null,
+              mimeType: 'application/pdf',
+              storageProvider: 'drive',
+            });
+          }
+        }
+      } catch (docError) {
+        console.error("Failed to create document record:", docError);
+      }
       
       // Try to save signed PDF to Drive (async, don't block response)
       try {
@@ -1401,7 +1426,29 @@ Génère un contrat complet et professionnel adapté à ce client.`;
         console.error("Failed to save signed PDF to Drive:", driveError);
       }
       
-      res.json({ success: true, contract: updatedContract });
+      // Return the updated contract data for frontend
+      res.json({ 
+        success: true, 
+        contract: {
+          id: updatedContract?.id || contract.id,
+          title: contract.title,
+          contractNumber: contract.contractNumber,
+          type: contract.type,
+          status: 'signed',
+          clientName: contract.clientName,
+          clientCompany: contract.clientCompany,
+          amount: contract.amount,
+          currency: contract.currency,
+          scope: contract.scope,
+          deliverables: contract.deliverables,
+          paymentTerms: contract.paymentTerms,
+          startDate: contract.startDate,
+          endDate: contract.endDate,
+          clientSignatureData: signatureData,
+          signedAt,
+          signedByClient: contract.clientName,
+        }
+      });
     } catch (error) {
       console.error("Sign contract error:", error);
       res.status(500).json({ error: "Erreur lors de la signature" });

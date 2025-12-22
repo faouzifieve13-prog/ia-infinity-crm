@@ -1,6 +1,6 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useCallback } from 'react';
 import { useParams } from 'wouter';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import SignatureCanvas from 'react-signature-canvas';
@@ -24,13 +24,15 @@ export default function ContractSign() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const signaturePadRef = useRef<SignatureCanvas>(null);
+  const queryClient = useQueryClient();
+  const [signedContract, setSignedContract] = useState<any>(null);
   
   const token = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('token') || '';
   }, []);
 
-  const { data: contract, isLoading, error, refetch } = useQuery<any>({
+  const { data: fetchedContract, isLoading, error } = useQuery<any>({
     queryKey: ['/api/contracts/public', id, token],
     queryFn: async () => {
       const response = await fetch(`/api/contracts/public/${id}?token=${encodeURIComponent(token)}`);
@@ -40,8 +42,10 @@ export default function ContractSign() {
       }
       return response.json();
     },
-    enabled: !!id && !!token,
+    enabled: !!id && !!token && !signedContract,
   });
+
+  const contract = signedContract || fetchedContract;
 
   const signMutation = useMutation({
     mutationFn: async (signatureData: string) => {
@@ -56,9 +60,11 @@ export default function ContractSign() {
       }
       return response.json();
     },
-    onSuccess: () => {
-      toast({ title: 'Contrat signé avec succès', description: 'Merci pour votre signature.' });
-      refetch();
+    onSuccess: (data) => {
+      toast({ title: 'Contrat signé avec succès', description: 'Merci pour votre signature. Le contrat a été enregistré.' });
+      if (data.contract) {
+        setSignedContract(data.contract);
+      }
     },
     onError: (error: any) => {
       toast({ title: 'Erreur', description: error.message, variant: 'destructive' });
