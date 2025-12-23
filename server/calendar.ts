@@ -1,5 +1,9 @@
 // Google Calendar integration using Replit connection
 import { google, calendar_v3 } from 'googleapis';
+import { db } from './db';
+import { calendarEvents, contacts, accounts } from '@shared/schema';
+import { eq, and, gte, lte, desc } from 'drizzle-orm';
+import type { CalendarEvent as DBCalendarEvent, InsertCalendarEvent } from '@shared/schema';
 
 async function getConnectionSettings() {
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
@@ -243,4 +247,262 @@ export async function deleteCalendarEvent(eventId: string): Promise<void> {
     calendarId: 'primary',
     eventId,
   });
+}
+
+// Database synchronization functions
+
+async function matchAttendeeToContact(orgId: string, attendeeEmails: string[]): Promise<{ accountId?: string; contactId?: string }> {
+  for (const email of attendeeEmails) {
+    const [contact] = await db.select().from(contacts)
+      .where(and(eq(contacts.orgId, orgId), eq(contacts.email, email.toLowerCase())));
+    
+    if (contact) {
+      return {
+        accountId: contact.accountId || undefined,
+        contactId: contact.id
+      };
+    }
+    
+    const [account] = await db.select().from(accounts)
+      .where(and(eq(accounts.orgId, orgId), eq(accounts.contactEmail, email.toLowerCase())));
+    
+    if (account) {
+      return {
+        accountId: account.id,
+        contactId: undefined
+      };
+    }
+  }
+  
+  return {};
+}
+
+export async function syncCalendarEventsToDb(orgId: string, daysAhead: number = 30): Promise<{ synced: number; errors: string[] }> {
+  try {
+    const calendar = await getUncachableGoogleCalendarClient();
+    
+    const now = new Date();
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + daysAhead);
+    
+    const response = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin: now.toISOString(),
+      timeMax: futureDate.toISOString(),
+      singleEvents: true,
+      orderBy: 'startTime',
+      maxResults: 100,
+    });
+    
+    const events = response.data.items || [];
+    let synced = 0;
+    const errors: string[] = [];
+    
+    for (const event of events) {
+      try {
+        if (!event.id || !event.summary) continue;
+        
+        const attendeeEmails = (event.attendees || [])
+          .filter(a => a.email && !a.self)
+          .map(a => a.email!.toLowerCase());
+        
+        const { accountId, contactId } = await matchAttendeeToContact(orgId, attendeeEmails);
+        
+        const startDateTime = event.start?.dateTime || event.start?.date;
+        const endDateTime = event.end?.dateTime || event.end?.date;
+        
+        if (!startDateTime || !endDateTime) continue;
+        
+        const eventData: InsertCalendarEvent = {
+          orgId,
+          googleEventId: event.id,
+          title: event.summary,
+          description: event.description || null,
+          start: new Date(startDateTime),
+          end: new Date(endDateTime),
+          timezone: event.start?.timeZone || 'Europe/Paris',
+          location: event.location || null,
+          meetLink: event.hangoutLink || null,
+          status: (event.status as 'confirmed' | 'tentative' | 'cancelled') || 'confirmed',
+          attendees: attendeeEmails,
+          accountId: accountId || null,
+          contactId: contactId || null,
+          dealId: null,
+        };
+        
+        const existing = await db.select().from(calendarEvents)
+          .where(and(
+            eq(calendarEvents.orgId, orgId),
+            eq(calendarEvents.googleEventId, event.id)
+          ));
+        
+        if (existing.length > 0) {
+          await db.update(calendarEvents)
+            .set({
+              ...eventData,
+              lastSyncedAt: new Date(),
+            })
+            .where(eq(calendarEvents.id, existing[0].id));
+        } else {
+          await db.insert(calendarEvents).values(eventData);
+        }
+        
+        synced++;
+      } catch (err: any) {
+        errors.push(`Event ${event.id}: ${err.message}`);
+      }
+    }
+    
+    return { synced, errors };
+  } catch (error: any) {
+    console.error('Calendar sync error:', error);
+    throw new Error(`Failed to sync calendar: ${error.message}`);
+  }
+}
+
+export async function getUpcomingDbEvents(
+  orgId: string, 
+  options: { 
+    days?: number; 
+    accountId?: string; 
+    contactId?: string;
+    limit?: number;
+  } = {}
+): Promise<DBCalendarEvent[]> {
+  const { days = 30, accountId, contactId, limit = 50 } = options;
+  
+  const now = new Date();
+  const futureDate = new Date();
+  futureDate.setDate(futureDate.getDate() + days);
+  
+  const baseConditions = [
+    eq(calendarEvents.orgId, orgId),
+    gte(calendarEvents.start, now),
+    lte(calendarEvents.start, futureDate)
+  ];
+  
+  if (accountId) {
+    baseConditions.push(eq(calendarEvents.accountId, accountId));
+  }
+  if (contactId) {
+    baseConditions.push(eq(calendarEvents.contactId, contactId));
+  }
+  
+  return db.select().from(calendarEvents)
+    .where(and(...baseConditions))
+    .orderBy(calendarEvents.start)
+    .limit(limit);
+}
+
+export async function getPastDbEvents(
+  orgId: string,
+  options: {
+    days?: number;
+    limit?: number;
+  } = {}
+): Promise<DBCalendarEvent[]> {
+  const { days = 7, limit = 20 } = options;
+  
+  const now = new Date();
+  const pastDate = new Date();
+  pastDate.setDate(pastDate.getDate() - days);
+  
+  return db.select().from(calendarEvents)
+    .where(and(
+      eq(calendarEvents.orgId, orgId),
+      gte(calendarEvents.start, pastDate),
+      lte(calendarEvents.end, now)
+    ))
+    .orderBy(desc(calendarEvents.start))
+    .limit(limit);
+}
+
+export async function getDbCalendarEvent(id: string, orgId: string): Promise<DBCalendarEvent | undefined> {
+  const [event] = await db.select().from(calendarEvents)
+    .where(and(eq(calendarEvents.id, id), eq(calendarEvents.orgId, orgId)));
+  return event;
+}
+
+export async function updateCalendarEventLinks(
+  id: string, 
+  orgId: string, 
+  data: { accountId?: string | null; contactId?: string | null; dealId?: string | null }
+): Promise<DBCalendarEvent | undefined> {
+  const [updated] = await db.update(calendarEvents)
+    .set(data)
+    .where(and(eq(calendarEvents.id, id), eq(calendarEvents.orgId, orgId)))
+    .returning();
+  return updated;
+}
+
+export async function updateMessageStatus(
+  id: string,
+  orgId: string,
+  messageType: 'preConfirmation' | 'reminder' | 'thankYou',
+  status: 'pending' | 'sent' | 'skipped' | 'failed'
+): Promise<DBCalendarEvent | undefined> {
+  const updateData: any = {};
+  
+  if (messageType === 'preConfirmation') {
+    updateData.preConfirmationStatus = status;
+    if (status === 'sent') updateData.preConfirmationSentAt = new Date();
+  } else if (messageType === 'reminder') {
+    updateData.reminderStatus = status;
+    if (status === 'sent') updateData.reminderSentAt = new Date();
+  } else if (messageType === 'thankYou') {
+    updateData.thankYouStatus = status;
+    if (status === 'sent') updateData.thankYouSentAt = new Date();
+  }
+  
+  const [updated] = await db.update(calendarEvents)
+    .set(updateData)
+    .where(and(eq(calendarEvents.id, id), eq(calendarEvents.orgId, orgId)))
+    .returning();
+  return updated;
+}
+
+export async function getEventsNeedingMessages(orgId: string): Promise<{
+  needsConfirmation: DBCalendarEvent[];
+  needsReminder: DBCalendarEvent[];
+  needsThankYou: DBCalendarEvent[];
+}> {
+  const now = new Date();
+  
+  const in48Hours = new Date();
+  in48Hours.setHours(in48Hours.getHours() + 48);
+  
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  
+  const allUpcoming = await db.select().from(calendarEvents)
+    .where(and(
+      eq(calendarEvents.orgId, orgId),
+      gte(calendarEvents.start, now),
+      lte(calendarEvents.start, in48Hours)
+    ));
+  
+  const allPast = await db.select().from(calendarEvents)
+    .where(and(
+      eq(calendarEvents.orgId, orgId),
+      gte(calendarEvents.end, yesterday),
+      lte(calendarEvents.end, now)
+    ));
+  
+  return {
+    needsConfirmation: allUpcoming.filter(e => 
+      e.preConfirmationStatus === 'pending' && (e.accountId || e.contactId)
+    ),
+    needsReminder: allUpcoming.filter(e => 
+      e.reminderStatus === 'pending' && (e.accountId || e.contactId)
+    ),
+    needsThankYou: allPast.filter(e => 
+      e.thankYouStatus === 'pending' && (e.accountId || e.contactId)
+    ),
+  };
+}
+
+export async function getAllDbCalendarEvents(orgId: string): Promise<DBCalendarEvent[]> {
+  return db.select().from(calendarEvents)
+    .where(eq(calendarEvents.orgId, orgId))
+    .orderBy(calendarEvents.start);
 }
