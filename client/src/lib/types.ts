@@ -334,3 +334,16 @@ export interface Email {
   labels?: string[] | null;
   createdAt?: string;
 }
+
+export interface GmailMessage {
+  id: string;
+  threadId: string;
+  subject: string;
+  from: string;
+  fromName: string;
+  to: string;
+  date: string;
+  snippet: string;
+  isUnread: boolean;
+  labelIds: string[];
+}

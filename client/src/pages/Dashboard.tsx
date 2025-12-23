@@ -15,6 +15,7 @@ import { ActivityFeed } from '@/components/ActivityFeed';
 import { WorkflowList } from '@/components/WorkflowList';
 import { ProjectCard } from '@/components/projects/ProjectCard';
 import { InvoiceTable } from '@/components/finance/InvoiceTable';
+import { InboxWidget } from '@/components/dashboard/InboxWidget';
 import { useSpace } from '@/hooks/use-space';
 import { MissionCard } from '@/components/vendor/MissionCard';
 import type { DashboardStats, Project, Activity, WorkflowRun, Invoice, Mission, Account } from '@/lib/types';
@@ -168,7 +169,8 @@ function InternalDashboard() {
           }))} />
         </div>
 
-        <div>
+        <div className="space-y-6">
+          <InboxWidget />
           <ActivityFeed activities={activities.slice(0, 10).map(a => ({
             id: a.id,
             type: a.type,
