@@ -3,7 +3,7 @@ import { eq, and, desc, asc, sql, isNotNull } from "drizzle-orm";
 import {
   organizations, users, memberships, accounts, contacts, deals, quotes, activities,
   projects, tasks, invoices, invoiceLineItems, vendors, missions, documents,
-  workflowRuns, importJobs, contracts, expenses, invitations, emails,
+  workflowRuns, importJobs, contracts, expenses, invitations, emails, followUpHistory,
   type Organization, type InsertOrganization,
   type User, type InsertUser,
   type Membership, type InsertMembership,
@@ -25,8 +25,9 @@ import {
   type Invitation, type InsertInvitation,
   type Email, type InsertEmail,
   type Quote, type InsertQuote,
+  type FollowUpHistory, type InsertFollowUpHistory,
   type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
-  type ExpenseStatus, type ExpenseCategory, type InvitationStatus
+  type ExpenseStatus, type ExpenseCategory, type InvitationStatus, type FollowUpType
 } from "@shared/schema";
 
 export interface IStorage {
@@ -186,6 +187,10 @@ export interface IStorage {
   createEmail(email: InsertEmail): Promise<Email>;
   updateEmail(id: string, orgId: string, data: Partial<InsertEmail>): Promise<Email | undefined>;
   deleteEmail(id: string, orgId: string): Promise<boolean>;
+  
+  getFollowUpHistory(dealId: string, orgId: string): Promise<FollowUpHistory[]>;
+  createFollowUpHistory(followUp: InsertFollowUpHistory): Promise<FollowUpHistory>;
+  updateFollowUpHistory(id: string, orgId: string, data: Partial<InsertFollowUpHistory>): Promise<FollowUpHistory | undefined>;
   
   getDashboardStats(orgId: string): Promise<{
     totalDeals: number;
@@ -1172,6 +1177,24 @@ export class DatabaseStorage implements IStorage {
   async deleteEmail(id: string, orgId: string): Promise<boolean> {
     await db.delete(emails).where(and(eq(emails.id, id), eq(emails.orgId, orgId)));
     return true;
+  }
+
+  async getFollowUpHistory(dealId: string, orgId: string): Promise<FollowUpHistory[]> {
+    return db.select().from(followUpHistory)
+      .where(and(eq(followUpHistory.dealId, dealId), eq(followUpHistory.orgId, orgId)))
+      .orderBy(desc(followUpHistory.sentAt));
+  }
+
+  async createFollowUpHistory(followUp: InsertFollowUpHistory): Promise<FollowUpHistory> {
+    const [created] = await db.insert(followUpHistory).values(followUp).returning();
+    return created;
+  }
+
+  async updateFollowUpHistory(id: string, orgId: string, data: Partial<InsertFollowUpHistory>): Promise<FollowUpHistory | undefined> {
+    const [updated] = await db.update(followUpHistory).set(data)
+      .where(and(eq(followUpHistory.id, id), eq(followUpHistory.orgId, orgId)))
+      .returning();
+    return updated;
   }
 }
 

@@ -3996,11 +3996,99 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
         prospectStatusUpdatedAt: new Date(),
       });
 
+      await storage.createFollowUpHistory({
+        orgId,
+        dealId,
+        type: 'email',
+        subject: parsed.subject,
+        content: parsed.body,
+        recipientEmail: parsed.to,
+        sentAt: new Date(),
+      });
+
       console.log(`Follow-up email sent to ${parsed.to} for deal ${dealId}`);
       res.json({ success: true, messageId: result.messageId });
     } catch (error: any) {
       console.error("Send follow-up email error:", error);
       res.status(500).json({ error: error.message || "Failed to send follow-up email" });
+    }
+  });
+
+  app.get("/api/deals/:id/follow-up/history", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const dealId = req.params.id;
+      
+      const history = await storage.getFollowUpHistory(dealId, orgId);
+      res.json(history);
+    } catch (error: any) {
+      console.error("Get follow-up history error:", error);
+      res.status(500).json({ error: error.message || "Failed to get follow-up history" });
+    }
+  });
+
+  app.post("/api/deals/:id/follow-up/history", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const dealId = req.params.id;
+      
+      const schema = z.object({
+        type: z.enum(['email', 'whatsapp', 'call', 'meeting', 'visio', 'sms']),
+        subject: z.string().optional(),
+        content: z.string(),
+        recipientEmail: z.string().optional(),
+        recipientPhone: z.string().optional(),
+        notes: z.string().optional(),
+      });
+      
+      const parsed = schema.parse(req.body);
+      
+      const deal = await storage.getDeal(dealId, orgId);
+      if (!deal) {
+        return res.status(404).json({ error: "Deal not found" });
+      }
+
+      const followUp = await storage.createFollowUpHistory({
+        orgId,
+        dealId,
+        type: parsed.type,
+        subject: parsed.subject,
+        content: parsed.content,
+        recipientEmail: parsed.recipientEmail,
+        recipientPhone: parsed.recipientPhone,
+        sentAt: new Date(),
+        notes: parsed.notes,
+      });
+
+      res.json(followUp);
+    } catch (error: any) {
+      console.error("Create follow-up history error:", error);
+      res.status(500).json({ error: error.message || "Failed to create follow-up history" });
+    }
+  });
+
+  app.patch("/api/deals/:dealId/follow-up/history/:id", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const { dealId, id } = req.params;
+      
+      const schema = z.object({
+        response: z.string().optional(),
+        responseAt: z.coerce.date().optional(),
+        notes: z.string().optional(),
+      });
+      
+      const parsed = schema.parse(req.body);
+      
+      const updated = await storage.updateFollowUpHistory(id, orgId, parsed);
+      if (!updated) {
+        return res.status(404).json({ error: "Follow-up history not found" });
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update follow-up history error:", error);
+      res.status(500).json({ error: error.message || "Failed to update follow-up history" });
     }
   });
 
