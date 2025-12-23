@@ -3828,5 +3828,161 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
+  // Generate follow-up messages with AI
+  app.post("/api/deals/:id/follow-up/generate", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const dealId = req.params.id;
+      
+      const deal = await storage.getDeal(dealId, orgId);
+      if (!deal) {
+        return res.status(404).json({ error: "Deal not found" });
+      }
+
+      let account = null;
+      if (deal.accountId) {
+        account = await storage.getAccount(deal.accountId, orgId);
+      }
+
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+
+      const context = `
+Informations sur le prospect:
+- Nom de l'entreprise: ${deal.accountName || account?.name || 'Non spécifié'}
+- Contact: ${deal.contactName || account?.contactName || 'Non spécifié'}
+- Email: ${account?.contactEmail || 'Non spécifié'}
+- Téléphone: ${deal.contactPhone || account?.contactPhone || 'Non spécifié'}
+- Montant du deal: ${deal.amount}€
+- Notes du deal: ${deal.notes || 'Aucune note'}
+- Notes de relance: ${deal.followUpNotes || 'Aucune note de relance'}
+- Types de mission: ${deal.missionTypes?.join(', ') || 'Non spécifié'}
+- Dernière action: ${deal.nextAction || 'Aucune'}
+`;
+
+      const emailPrompt = `Tu es un commercial expert en IA et automatisation. Rédige un email de relance professionnel et chaleureux en français pour ce prospect.
+
+${context}
+
+L'email doit:
+- Être personnalisé avec le nom du contact
+- Rappeler brièvement notre précédent échange
+- Proposer de reprendre contact
+- Être concis (max 150 mots)
+- Avoir un ton professionnel mais amical
+- Inclure une proposition de valeur liée à l'IA/automatisation
+
+Réponds uniquement avec l'email, sans objet ni signature.`;
+
+      const whatsappPrompt = `Tu es un commercial expert en IA et automatisation. Rédige un court message WhatsApp de relance en français pour ce prospect.
+
+${context}
+
+Le message doit:
+- Être très court (max 50 mots)
+- Être amical et direct
+- Proposer un appel ou une rencontre
+- Être adapté au format WhatsApp (informel mais professionnel)
+
+Réponds uniquement avec le message WhatsApp.`;
+
+      const [emailResponse, whatsappResponse] = await Promise.all([
+        openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [{ role: "user", content: emailPrompt }],
+          max_completion_tokens: 500,
+        }),
+        openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [{ role: "user", content: whatsappPrompt }],
+          max_completion_tokens: 200,
+        }),
+      ]);
+
+      const emailContent = emailResponse.choices[0]?.message?.content || "";
+      const whatsappContent = whatsappResponse.choices[0]?.message?.content || "";
+
+      const phone = deal.contactPhone || account?.contactPhone || "";
+      const cleanPhone = phone.replace(/[^0-9+]/g, "");
+      const whatsappUrl = cleanPhone 
+        ? `https://wa.me/${cleanPhone.replace(/^\+/, "")}?text=${encodeURIComponent(whatsappContent)}`
+        : null;
+
+      res.json({
+        email: {
+          subject: `Relance - ${deal.accountName || account?.name || 'Votre projet IA'}`,
+          body: emailContent,
+          to: account?.contactEmail || "",
+        },
+        whatsapp: {
+          message: whatsappContent,
+          phone: cleanPhone,
+          url: whatsappUrl,
+        },
+        context: {
+          accountName: deal.accountName || account?.name,
+          contactName: deal.contactName || account?.contactName,
+        },
+      });
+    } catch (error: any) {
+      console.error("Generate follow-up error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate follow-up messages" });
+    }
+  });
+
+  // Send follow-up email
+  app.post("/api/deals/:id/follow-up/send-email", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const dealId = req.params.id;
+      
+      const schema = z.object({
+        to: z.string().email(),
+        subject: z.string(),
+        body: z.string(),
+      });
+      
+      const parsed = schema.parse(req.body);
+      
+      const deal = await storage.getDeal(dealId, orgId);
+      if (!deal) {
+        return res.status(404).json({ error: "Deal not found" });
+      }
+
+      const { sendGenericEmail } = await import("./gmail");
+      
+      const htmlBody = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; line-height: 1.6;">
+          ${parsed.body.split('\n').map(line => `<p>${line}</p>`).join('')}
+          <br>
+          <p style="color: #666; font-size: 14px;">--<br>
+          Ismaël Le Pennec<br>
+          IA Infinity<br>
+          <a href="https://i-a-infinity.com">i-a-infinity.com</a></p>
+        </div>
+      `;
+      
+      const result = await sendGenericEmail({
+        to: parsed.to,
+        subject: parsed.subject,
+        htmlBody,
+      });
+
+      await storage.updateDeal(dealId, orgId, {
+        followUpNotes: `Email de relance envoyé le ${new Date().toLocaleDateString('fr-FR')}`,
+        prospectStatusUpdatedAt: new Date(),
+      });
+
+      console.log(`Follow-up email sent to ${parsed.to} for deal ${dealId}`);
+      res.json({ success: true, messageId: result.messageId });
+    } catch (error: any) {
+      console.error("Send follow-up email error:", error);
+      res.status(500).json({ error: error.message || "Failed to send follow-up email" });
+    }
+  });
+
   return httpServer;
 }
