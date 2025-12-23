@@ -3885,17 +3885,24 @@ https://i-a-infinity.com
 
 Réponds uniquement avec l'email complet incluant la signature.`;
 
-      const whatsappPrompt = `Tu es un commercial expert en IA et automatisation. Rédige un court message WhatsApp de relance en français pour ce prospect.
+      const whatsappPrompt = `Tu es un commercial expert en IA et automatisation. Rédige un message WhatsApp de relance en français pour ce prospect.
 
 ${context}
 
 Le message doit:
-- Être très court (max 50 mots)
-- Être amical et direct
+- Commencer par une salutation personnalisée avec le prénom du contact
+- Corps du message court et percutant (2-3 phrases max)
 - Proposer un appel ou une rencontre
-- Être adapté au format WhatsApp (informel mais professionnel)
+- Être amical mais professionnel
+- Terminer avec cette signature exacte (sur des lignes séparées):
 
-Réponds uniquement avec le message WhatsApp.`;
+---
+*Ismael Lepennec*
+IA Infinity
+06 21 00 58 94
+i-a-infinity.com
+
+Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
 
       const [emailResponse, whatsappResponse] = await Promise.all([
         openai.chat.completions.create({
@@ -3906,7 +3913,7 @@ Réponds uniquement avec le message WhatsApp.`;
         openai.chat.completions.create({
           model: "gpt-4o",
           messages: [{ role: "user", content: whatsappPrompt }],
-          max_completion_tokens: 200,
+          max_completion_tokens: 300,
         }),
       ]);
 
