@@ -3874,8 +3874,16 @@ L'email doit:
 - Être concis (max 150 mots)
 - Avoir un ton professionnel mais amical
 - Inclure une proposition de valeur liée à l'IA/automatisation
+- Terminer avec cette signature exacte:
 
-Réponds uniquement avec l'email, sans objet ni signature.`;
+Cordialement,
+
+Ismael Lepennec
+IA Infinity
+06 21 00 58 94
+https://i-a-infinity.com
+
+Réponds uniquement avec l'email complet incluant la signature.`;
 
       const whatsappPrompt = `Tu es un commercial expert en IA et automatisation. Rédige un court message WhatsApp de relance en français pour ce prospect.
 
@@ -3907,8 +3915,13 @@ Réponds uniquement avec le message WhatsApp.`;
 
       const phone = deal.contactPhone || account?.contactPhone || "";
       const cleanPhone = phone.replace(/[^0-9+]/g, "");
-      const whatsappUrl = cleanPhone 
-        ? `https://wa.me/${cleanPhone.replace(/^\+/, "")}?text=${encodeURIComponent(whatsappContent)}`
+      // Convert French numbers: 06... -> 336..., 07... -> 337...
+      let whatsappPhone = cleanPhone.replace(/^\+/, "");
+      if (whatsappPhone.startsWith("0") && whatsappPhone.length === 10) {
+        whatsappPhone = "33" + whatsappPhone.substring(1);
+      }
+      const whatsappUrl = whatsappPhone 
+        ? `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(whatsappContent)}`
         : null;
 
       res.json({
@@ -3919,7 +3932,7 @@ Réponds uniquement avec le message WhatsApp.`;
         },
         whatsapp: {
           message: whatsappContent,
-          phone: cleanPhone,
+          phone: whatsappPhone,
           url: whatsappUrl,
         },
         context: {
