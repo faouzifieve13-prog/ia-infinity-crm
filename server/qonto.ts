@@ -26,6 +26,8 @@ interface QontoQuoteRequest {
   number?: string;
   terms_and_conditions?: string;
   currency: string;
+  locale: string;
+  tin_number?: string;
   header?: string;
   footer?: string;
   discount?: {
@@ -218,6 +220,8 @@ export async function createQontoQuote(quoteData: {
     issue_date: quoteData.issueDate,
     expiry_date: quoteData.expiryDate,
     currency: 'EUR',
+    locale: 'fr',
+    tin_number: 'FR00000000000',
     items: quoteData.items.map(item => ({
       title: item.title,
       description: item.description,
