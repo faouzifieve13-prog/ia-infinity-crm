@@ -104,7 +104,7 @@ function InternalDashboard() {
         <p className="text-muted-foreground">Aperçu de vos performances commerciales</p>
       </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <MetricCard
           title="Revenu gagné"
           value={wonValue}
@@ -136,6 +136,7 @@ function InternalDashboard() {
           index={3}
           accentColor="info"
         />
+        <InboxWidget />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -170,7 +171,6 @@ function InternalDashboard() {
         </div>
 
         <div className="space-y-6">
-          <InboxWidget />
           <ActivityFeed activities={activities.slice(0, 10).map(a => ({
             id: a.id,
             type: a.type,
