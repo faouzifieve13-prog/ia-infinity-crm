@@ -31,7 +31,10 @@ import {
   FileEdit,
   PhoneCall,
   XCircle,
-  AlertTriangle
+  AlertTriangle,
+  MessageSquare,
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -154,6 +157,9 @@ export default function DealDetail() {
   const [selectedQontoQuoteType, setSelectedQontoQuoteType] = useState<'audit' | 'automatisation'>('audit');
   const [statusFollowUpDate, setStatusFollowUpDate] = useState<string>('');
   const [statusFollowUpNotes, setStatusFollowUpNotes] = useState<string>('');
+  const [followUpEmail, setFollowUpEmail] = useState({ to: '', subject: '', body: '' });
+  const [followUpWhatsapp, setFollowUpWhatsapp] = useState({ message: '', phone: '', url: '' });
+  const [showFollowUpPanel, setShowFollowUpPanel] = useState(false);
   const [qontoFormData, setQontoFormData] = useState({
     title: '',
     description: '',
@@ -492,6 +498,54 @@ export default function DealDetail() {
       toast({
         title: 'Erreur',
         description: error.message || 'Impossible de mettre à jour le statut.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const generateFollowUpMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('POST', `/api/deals/${dealId}/follow-up/generate`);
+      return response.json();
+    },
+    onSuccess: (data: { email: { to: string; subject: string; body: string }; whatsapp: { message: string; phone: string; url: string | null } }) => {
+      setFollowUpEmail(data.email);
+      setFollowUpWhatsapp({ message: data.whatsapp.message, phone: data.whatsapp.phone, url: data.whatsapp.url || '' });
+      setShowFollowUpPanel(true);
+      toast({
+        title: 'Messages générés',
+        description: 'Les messages de relance ont été générés par l\'IA.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de générer les messages.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const sendFollowUpEmailMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest('POST', `/api/deals/${dealId}/follow-up/send-email`, {
+        to: followUpEmail.to,
+        subject: followUpEmail.subject,
+        body: followUpEmail.body,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/deals', dealId] });
+      setShowFollowUpPanel(false);
+      toast({
+        title: 'Email envoyé',
+        description: 'L\'email de relance a été envoyé avec succès.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible d\'envoyer l\'email.',
         variant: 'destructive',
       });
     },
@@ -1102,6 +1156,124 @@ export default function DealDetail() {
                       )}
                       Enregistrer la relance
                     </Button>
+
+                    <Separator className="my-3" />
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full bg-gradient-to-r from-violet-500/10 to-purple-500/10 border-violet-500/30 hover:border-violet-500/50"
+                      onClick={() => generateFollowUpMutation.mutate()}
+                      disabled={generateFollowUpMutation.isPending}
+                      data-testid="button-generate-follow-up"
+                    >
+                      {generateFollowUpMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-4 w-4 mr-2 text-violet-500" />
+                      )}
+                      Générer messages avec IA
+                    </Button>
+                  </div>
+                )}
+
+                {showFollowUpPanel && (
+                  <div className="space-y-4 pt-4 border-t mt-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium text-sm flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-violet-500" />
+                        Messages générés par l'IA
+                      </h4>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => generateFollowUpMutation.mutate()}
+                        disabled={generateFollowUpMutation.isPending}
+                        data-testid="button-regenerate-follow-up"
+                      >
+                        {generateFollowUpMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Mail className="h-3 w-3" />
+                          Email de relance
+                        </Label>
+                        <Input
+                          value={followUpEmail.to}
+                          onChange={(e) => setFollowUpEmail(prev => ({ ...prev, to: e.target.value }))}
+                          placeholder="Email destinataire"
+                          className="mt-1 mb-2"
+                          data-testid="input-follow-up-email-to"
+                        />
+                        <Input
+                          value={followUpEmail.subject}
+                          onChange={(e) => setFollowUpEmail(prev => ({ ...prev, subject: e.target.value }))}
+                          placeholder="Objet"
+                          className="mb-2"
+                          data-testid="input-follow-up-email-subject"
+                        />
+                        <Textarea
+                          value={followUpEmail.body}
+                          onChange={(e) => setFollowUpEmail(prev => ({ ...prev, body: e.target.value }))}
+                          placeholder="Contenu de l'email..."
+                          className="min-h-[120px]"
+                          data-testid="input-follow-up-email-body"
+                        />
+                        <Button
+                          size="sm"
+                          className="w-full mt-2"
+                          onClick={() => sendFollowUpEmailMutation.mutate()}
+                          disabled={sendFollowUpEmailMutation.isPending || !followUpEmail.to || !followUpEmail.body}
+                          data-testid="button-send-follow-up-email"
+                        >
+                          {sendFollowUpEmailMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Send className="h-4 w-4 mr-2" />
+                          )}
+                          Envoyer l'email
+                        </Button>
+                      </div>
+
+                      <Separator />
+
+                      <div>
+                        <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                          <MessageSquare className="h-3 w-3" />
+                          Message WhatsApp
+                        </Label>
+                        <Textarea
+                          value={followUpWhatsapp.message}
+                          onChange={(e) => setFollowUpWhatsapp(prev => ({ ...prev, message: e.target.value }))}
+                          placeholder="Message WhatsApp..."
+                          className="mt-1 min-h-[80px]"
+                          data-testid="input-follow-up-whatsapp"
+                        />
+                        {followUpWhatsapp.url ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full mt-2 bg-green-500/10 border-green-500/30 hover:bg-green-500/20"
+                            onClick={() => window.open(followUpWhatsapp.url, '_blank')}
+                            data-testid="button-open-whatsapp"
+                          >
+                            <MessageSquare className="h-4 w-4 mr-2 text-green-500" />
+                            Ouvrir WhatsApp
+                          </Button>
+                        ) : (
+                          <p className="text-xs text-muted-foreground mt-2">
+                            Aucun numéro de téléphone disponible pour WhatsApp
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
