@@ -3844,6 +3844,29 @@ Génère un contrat complet et professionnel adapté à ce client.`;
         account = await storage.getAccount(deal.accountId, orgId);
       }
 
+      const followUpHistoryList = await storage.getFollowUpHistory(dealId, orgId);
+      
+      let historyContext = "";
+      if (followUpHistoryList.length > 0) {
+        historyContext = "\n\nHistorique des échanges précédents:\n";
+        for (const entry of followUpHistoryList.slice(0, 10)) {
+          const date = entry.sentAt ? new Date(entry.sentAt).toLocaleDateString('fr-FR') : 'Date inconnue';
+          const typeLabel = {
+            email: 'Email',
+            whatsapp: 'WhatsApp',
+            call: 'Appel',
+            meeting: 'Réunion',
+            visio: 'Visio',
+            sms: 'SMS'
+          }[entry.type] || entry.type;
+          
+          historyContext += `\n${date} - ${typeLabel}:\n${entry.content.substring(0, 300)}${entry.content.length > 300 ? '...' : ''}`;
+          if (entry.response) {
+            historyContext += `\n→ Réponse: ${entry.response.substring(0, 200)}${entry.response.length > 200 ? '...' : ''}`;
+          }
+        }
+      }
+
       const OpenAI = (await import("openai")).default;
       const openai = new OpenAI({
         apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -3861,15 +3884,17 @@ Informations sur le prospect:
 - Notes de relance: ${deal.followUpNotes || 'Aucune note de relance'}
 - Types de mission: ${deal.missionTypes?.join(', ') || 'Non spécifié'}
 - Dernière action: ${deal.nextAction || 'Aucune'}
-`;
+${historyContext}`;
 
+      const hasHistory = followUpHistoryList.length > 0;
       const emailPrompt = `Tu es un commercial expert en IA et automatisation. Rédige un email de relance professionnel et chaleureux en français pour ce prospect.
 
 ${context}
 
 L'email doit:
 - Être personnalisé avec le nom du contact
-- Rappeler brièvement notre précédent échange
+${hasHistory ? `- Faire référence à nos échanges précédents de manière naturelle (tu as l'historique ci-dessus)
+- Montrer que tu as suivi le dossier et que tu te souviens des discussions passées` : `- Rappeler brièvement notre précédent échange (premier contact)`}
 - Proposer de reprendre contact
 - Être concis (max 150 mots)
 - Avoir un ton professionnel mais amical
@@ -3891,6 +3916,7 @@ ${context}
 
 Le message doit:
 - Commencer par une salutation personnalisée avec le prénom du contact
+${hasHistory ? `- Faire un clin d'œil à nos échanges précédents pour montrer qu'on se souvient de lui` : `- Premier contact WhatsApp, être chaleureux`}
 - Corps du message court et percutant (2-3 phrases max)
 - Proposer un appel ou une rencontre
 - Être amical mais professionnel
