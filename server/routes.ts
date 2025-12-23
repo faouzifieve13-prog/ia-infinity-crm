@@ -12,7 +12,7 @@ import {
   type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
   type UserRole, type Space, type InvitationStatus
 } from "@shared/schema";
-import { sendInvitationEmail, sendClientWelcomeEmail, testGmailConnection } from "./gmail";
+import { sendInvitationEmail, sendClientWelcomeEmail, testGmailConnection, getInboxEmails } from "./gmail";
 
 function generateToken(): string {
   return randomBytes(32).toString("hex");
@@ -3420,6 +3420,18 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     } catch (error) {
       console.error("Gmail status error:", error);
       res.status(500).json({ connected: false, error: "Failed to check Gmail status" });
+    }
+  });
+
+  // Gmail inbox - fetch emails from connected Gmail account
+  app.get("/api/gmail/inbox", async (req: Request, res: Response) => {
+    try {
+      const maxResults = parseInt(req.query.maxResults as string) || 20;
+      const emails = await getInboxEmails(Math.min(maxResults, 50));
+      res.json(emails);
+    } catch (error: any) {
+      console.error("Gmail inbox error:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch inbox emails" });
     }
   });
 

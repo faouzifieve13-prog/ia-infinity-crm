@@ -235,6 +235,77 @@ export async function testGmailConnection(): Promise<{ connected: boolean; email
   }
 }
 
+export interface EmailMessage {
+  id: string;
+  threadId: string;
+  subject: string;
+  from: string;
+  fromName: string;
+  to: string;
+  date: string;
+  snippet: string;
+  isUnread: boolean;
+  labelIds: string[];
+}
+
+export async function getInboxEmails(maxResults: number = 20): Promise<EmailMessage[]> {
+  try {
+    const gmail = await getUncachableGmailClient();
+    
+    // List messages from inbox
+    const response = await gmail.users.messages.list({
+      userId: 'me',
+      maxResults,
+      labelIds: ['INBOX'],
+    });
+    
+    const messages = response.data.messages || [];
+    const emails: EmailMessage[] = [];
+    
+    // Fetch details for each message
+    for (const msg of messages) {
+      if (!msg.id) continue;
+      
+      try {
+        const detail = await gmail.users.messages.get({
+          userId: 'me',
+          id: msg.id,
+          format: 'metadata',
+          metadataHeaders: ['Subject', 'From', 'To', 'Date'],
+        });
+        
+        const headers = detail.data.payload?.headers || [];
+        const getHeader = (name: string) => headers.find(h => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
+        
+        const fromRaw = getHeader('From');
+        const fromMatch = fromRaw.match(/^(?:"?([^"<]*)"?\s*)?<?([^>]*)>?$/);
+        const fromName = fromMatch?.[1]?.trim() || fromRaw.split('@')[0];
+        const fromEmail = fromMatch?.[2] || fromRaw;
+        
+        emails.push({
+          id: msg.id,
+          threadId: msg.threadId || '',
+          subject: getHeader('Subject') || '(Sans objet)',
+          from: fromEmail,
+          fromName: fromName,
+          to: getHeader('To'),
+          date: getHeader('Date'),
+          snippet: detail.data.snippet || '',
+          isUnread: detail.data.labelIds?.includes('UNREAD') || false,
+          labelIds: detail.data.labelIds || [],
+        });
+      } catch (err) {
+        console.error(`Failed to fetch email ${msg.id}:`, err);
+      }
+    }
+    
+    return emails;
+  } catch (error: any) {
+    console.error('Failed to fetch inbox emails:', error);
+    throw new Error(`Failed to fetch emails: ${error.message}`);
+  }
+}
+
 export interface ContractEmailParams {
   to: string;
   contractNumber: string;
