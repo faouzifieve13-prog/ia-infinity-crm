@@ -62,14 +62,16 @@ interface QontoClient {
 
 interface QontoClientRequest {
   name: string;
-  email?: string;
-  address?: {
-    street?: string;
-    city?: string;
-    zip_code?: string;
-    country?: string;
-  };
+  type: 'company' | 'individual';
+  contact_email?: string;
+  vat_number?: string;
   currency?: string;
+  billing_address?: {
+    street_address: string;
+    city: string;
+    zip_code: string;
+    country_code: string;
+  };
 }
 
 function getQontoHeaders(): HeadersInit {
@@ -168,10 +170,18 @@ export async function findOrCreateQontoClient(name: string, email?: string): Pro
   }
 
   // Create new client if not found
+  // Qonto requires type and billing_address for client creation
   const newClient = await createQontoClient({
     name,
-    email,
-    currency: 'EUR'
+    type: 'company',
+    contact_email: email,
+    currency: 'EUR',
+    billing_address: {
+      street_address: 'Non renseigné',
+      city: 'France',
+      zip_code: '00000',
+      country_code: 'FR'
+    }
   });
 
   return newClient.id;
