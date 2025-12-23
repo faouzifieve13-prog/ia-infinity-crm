@@ -3619,6 +3619,135 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
+  // Calendar DB Sync Routes
+  app.post("/api/calendar/sync", async (req: Request, res: Response) => {
+    try {
+      const orgId = DEFAULT_ORG_ID;
+      const { daysAhead } = req.body;
+      const { syncCalendarEventsToDb } = await import("./calendar");
+      const result = await syncCalendarEventsToDb(orgId, daysAhead || 30);
+      res.json(result);
+    } catch (error) {
+      console.error("Calendar sync error:", error);
+      res.status(500).json({ error: "Failed to sync calendar" });
+    }
+  });
+
+  app.get("/api/calendar/db/upcoming", async (req: Request, res: Response) => {
+    try {
+      const orgId = DEFAULT_ORG_ID;
+      const { days, accountId, contactId, limit } = req.query;
+      const { getUpcomingDbEvents } = await import("./calendar");
+      const events = await getUpcomingDbEvents(orgId, {
+        days: days ? parseInt(days as string) : undefined,
+        accountId: accountId as string,
+        contactId: contactId as string,
+        limit: limit ? parseInt(limit as string) : undefined,
+      });
+      res.json(events);
+    } catch (error) {
+      console.error("Get upcoming db events error:", error);
+      res.status(500).json({ error: "Failed to get upcoming events" });
+    }
+  });
+
+  app.get("/api/calendar/db/past", async (req: Request, res: Response) => {
+    try {
+      const orgId = DEFAULT_ORG_ID;
+      const { days, limit } = req.query;
+      const { getPastDbEvents } = await import("./calendar");
+      const events = await getPastDbEvents(orgId, {
+        days: days ? parseInt(days as string) : undefined,
+        limit: limit ? parseInt(limit as string) : undefined,
+      });
+      res.json(events);
+    } catch (error) {
+      console.error("Get past db events error:", error);
+      res.status(500).json({ error: "Failed to get past events" });
+    }
+  });
+
+  app.get("/api/calendar/db/all", async (req: Request, res: Response) => {
+    try {
+      const orgId = DEFAULT_ORG_ID;
+      const { getAllDbCalendarEvents } = await import("./calendar");
+      const events = await getAllDbCalendarEvents(orgId);
+      res.json(events);
+    } catch (error) {
+      console.error("Get all db events error:", error);
+      res.status(500).json({ error: "Failed to get all events" });
+    }
+  });
+
+  app.get("/api/calendar/db/:id", async (req: Request, res: Response) => {
+    try {
+      const orgId = DEFAULT_ORG_ID;
+      const { getDbCalendarEvent } = await import("./calendar");
+      const event = await getDbCalendarEvent(req.params.id, orgId);
+      if (!event) {
+        return res.status(404).json({ error: "Event not found" });
+      }
+      res.json(event);
+    } catch (error) {
+      console.error("Get db event error:", error);
+      res.status(500).json({ error: "Failed to get event" });
+    }
+  });
+
+  app.patch("/api/calendar/db/:id/links", async (req: Request, res: Response) => {
+    try {
+      const orgId = DEFAULT_ORG_ID;
+      const { accountId, contactId, dealId } = req.body;
+      const { updateCalendarEventLinks } = await import("./calendar");
+      const event = await updateCalendarEventLinks(req.params.id, orgId, {
+        accountId,
+        contactId,
+        dealId,
+      });
+      if (!event) {
+        return res.status(404).json({ error: "Event not found" });
+      }
+      res.json(event);
+    } catch (error) {
+      console.error("Update event links error:", error);
+      res.status(500).json({ error: "Failed to update event links" });
+    }
+  });
+
+  app.patch("/api/calendar/db/:id/message-status", async (req: Request, res: Response) => {
+    try {
+      const orgId = DEFAULT_ORG_ID;
+      const { messageType, status } = req.body;
+      if (!['preConfirmation', 'reminder', 'thankYou'].includes(messageType)) {
+        return res.status(400).json({ error: "Invalid message type" });
+      }
+      if (!['pending', 'sent', 'skipped', 'failed'].includes(status)) {
+        return res.status(400).json({ error: "Invalid status" });
+      }
+      const { updateMessageStatus } = await import("./calendar");
+      const event = await updateMessageStatus(req.params.id, orgId, messageType, status);
+      if (!event) {
+        return res.status(404).json({ error: "Event not found" });
+      }
+      res.json(event);
+    } catch (error) {
+      console.error("Update message status error:", error);
+      res.status(500).json({ error: "Failed to update message status" });
+    }
+  });
+
+  app.get("/api/calendar/db/needs-messages", async (req: Request, res: Response) => {
+    try {
+      const orgId = DEFAULT_ORG_ID;
+      const { getEventsNeedingMessages } = await import("./calendar");
+      const events = await getEventsNeedingMessages(orgId);
+      res.json(events);
+    } catch (error) {
+      console.error("Get events needing messages error:", error);
+      res.status(500).json({ error: "Failed to get events needing messages" });
+    }
+  });
+
   // ============================================
   // Google Drive Routes
   // ============================================
