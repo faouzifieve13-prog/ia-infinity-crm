@@ -21,6 +21,7 @@ import Vendors from "@/pages/Vendors";
 import Missions from "@/pages/Missions";
 import Documents from "@/pages/Documents";
 import Contracts from "@/pages/Contracts";
+import Quotes from "@/pages/Quotes";
 import Expenses from "@/pages/Expenses";
 import Finance from "@/pages/Finance";
 import Calendar from "@/pages/Calendar";
@@ -52,6 +53,7 @@ function Router() {
       <Route path="/missions" component={Missions} />
       <Route path="/documents" component={Documents} />
       <Route path="/contracts" component={Contracts} />
+      <Route path="/quotes" component={Quotes} />
       <Route path="/contracts/:id/preview" component={ContractPreview} />
       <Route path="/expenses" component={Expenses} />
       <Route path="/finance" component={Finance} />
