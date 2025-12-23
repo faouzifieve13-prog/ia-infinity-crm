@@ -40,8 +40,14 @@ export function InboxWidget() {
     refetchInterval: 5 * 60 * 1000,
   });
 
+  const IA_INFINITY_EMAIL = 'ismael.lepennec@i-a-infinity.com';
+  
   const openInGmail = (email: GmailMessage) => {
-    window.open(`https://mail.google.com/mail/u/0/#inbox/${email.threadId}`, '_blank');
+    window.open(`https://mail.google.com/mail/u/?authuser=${IA_INFINITY_EMAIL}#inbox/${email.threadId}`, '_blank');
+  };
+  
+  const openGmailInbox = () => {
+    window.open(`https://mail.google.com/mail/u/?authuser=${IA_INFINITY_EMAIL}`, '_blank');
   };
 
   return (
@@ -77,7 +83,7 @@ export function InboxWidget() {
             <Button 
               variant="outline" 
               size="sm" 
-              onClick={() => window.open('https://mail.google.com', '_blank')}
+              onClick={openGmailInbox}
               data-testid="button-open-gmail-fallback"
             >
               <ExternalLink className="h-4 w-4 mr-2" />
@@ -144,7 +150,7 @@ export function InboxWidget() {
             <Button
               variant="ghost"
               className="w-full text-sm"
-              onClick={() => window.open('https://mail.google.com', '_blank')}
+              onClick={openGmailInbox}
               data-testid="button-open-gmail"
             >
               <ExternalLink className="h-4 w-4 mr-2" />

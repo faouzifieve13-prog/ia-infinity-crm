@@ -71,8 +71,14 @@ function SidebarInboxWidget() {
     refetchInterval: 5 * 60 * 1000,
   });
 
+  const IA_INFINITY_EMAIL = 'ismael.lepennec@i-a-infinity.com';
+  
   const openInGmail = (email: GmailMessage) => {
-    window.open(`https://mail.google.com/mail/u/0/#inbox/${email.threadId}`, '_blank');
+    window.open(`https://mail.google.com/mail/u/?authuser=${IA_INFINITY_EMAIL}#inbox/${email.threadId}`, '_blank');
+  };
+  
+  const openGmailInbox = () => {
+    window.open(`https://mail.google.com/mail/u/?authuser=${IA_INFINITY_EMAIL}`, '_blank');
   };
 
   return (
@@ -106,7 +112,7 @@ function SidebarInboxWidget() {
               variant="outline"
               size="sm"
               className="h-7 text-xs"
-              onClick={() => window.open('https://mail.google.com', '_blank')}
+              onClick={openGmailInbox}
               data-testid="button-sidebar-open-gmail"
             >
               <ExternalLink className="h-3 w-3 mr-1" />
@@ -150,7 +156,7 @@ function SidebarInboxWidget() {
             variant="ghost"
             size="sm"
             className="w-full h-7 text-xs"
-            onClick={() => window.open('https://mail.google.com', '_blank')}
+            onClick={openGmailInbox}
             data-testid="button-sidebar-view-all-gmail"
           >
             <ExternalLink className="h-3 w-3 mr-1" />
