@@ -27,6 +27,7 @@ export const missionTypeEnum = pgEnum('mission_type', ['audit', 'automatisation'
 export const emailDirectionEnum = pgEnum('email_direction', ['inbound', 'outbound']);
 export const quoteStatusEnum = pgEnum('quote_status', ['draft', 'sent', 'signed', 'rejected', 'expired']);
 export const prospectStatusEnum = pgEnum('prospect_status', ['active', 'draft', 'follow_up', 'abandoned']);
+export const followUpTypeEnum = pgEnum('follow_up_type', ['email', 'whatsapp', 'call', 'meeting', 'visio', 'sms']);
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -131,6 +132,25 @@ export const deals = pgTable("deals", {
   index("deals_owner_idx").on(table.orgId, table.ownerId),
   index("deals_notion_idx").on(table.notionPageId),
   index("deals_prospect_status_idx").on(table.orgId, table.prospectStatus),
+]);
+
+export const followUpHistory = pgTable("follow_up_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  dealId: varchar("deal_id").notNull().references(() => deals.id),
+  type: followUpTypeEnum("type").notNull(),
+  subject: text("subject"),
+  content: text("content").notNull(),
+  recipientEmail: text("recipient_email"),
+  recipientPhone: text("recipient_phone"),
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+  response: text("response"),
+  responseAt: timestamp("response_at"),
+  notes: text("notes"),
+}, (table) => [
+  index("follow_up_history_org_idx").on(table.orgId),
+  index("follow_up_history_deal_idx").on(table.dealId),
+  index("follow_up_history_sent_idx").on(table.dealId, table.sentAt),
 ]);
 
 export const quotes = pgTable("quotes", {
@@ -712,6 +732,10 @@ export const insertInvitationSchema = createInsertSchema(invitations).omit({ id:
 export const insertEmailSchema = createInsertSchema(emails).omit({ id: true, createdAt: true }).extend({
   receivedAt: z.coerce.date(),
 });
+export const insertFollowUpHistorySchema = createInsertSchema(followUpHistory).omit({ id: true }).extend({
+  sentAt: z.coerce.date().optional(),
+  responseAt: z.coerce.date().optional().nullable(),
+});
 
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -734,6 +758,7 @@ export type InsertContract = z.infer<typeof insertContractSchema>;
 export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 export type InsertInvitation = z.infer<typeof insertInvitationSchema>;
 export type InsertEmail = z.infer<typeof insertEmailSchema>;
+export type InsertFollowUpHistory = z.infer<typeof insertFollowUpHistorySchema>;
 
 export type Organization = typeof organizations.$inferSelect;
 export type User = typeof users.$inferSelect;
@@ -756,6 +781,7 @@ export type Contract = typeof contracts.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
 export type Email = typeof emails.$inferSelect;
+export type FollowUpHistory = typeof followUpHistory.$inferSelect;
 
 export type UserRole = 'admin' | 'sales' | 'delivery' | 'finance' | 'client_admin' | 'client_member' | 'vendor';
 export type MissionType = 'audit' | 'automatisation';
@@ -776,6 +802,7 @@ export type ContractStatus = 'draft' | 'sent' | 'signed' | 'active' | 'completed
 export type ExpenseStatus = 'pending' | 'paid' | 'cancelled';
 export type ExpenseCategory = 'tools' | 'software' | 'services' | 'travel' | 'marketing' | 'office' | 'salaries' | 'taxes' | 'other';
 export type InvitationStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
+export type FollowUpType = 'email' | 'whatsapp' | 'call' | 'meeting' | 'visio' | 'sms';
 
 // Chat tables for AI conversations
 export const conversations = pgTable("conversations", {
