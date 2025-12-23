@@ -13,10 +13,6 @@ interface QontoQuoteItem {
     currency: string;
   };
   vat_rate: string;
-  discount?: {
-    type: 'percentage' | 'absolute';
-    value: string;
-  };
 }
 
 interface QontoQuoteRequest {
@@ -54,12 +50,6 @@ interface QontoClient {
   email?: string;
   locale?: string;
   tax_identification_number?: string;
-  address?: {
-    street?: string;
-    city?: string;
-    zip_code?: string;
-    country?: string;
-  };
 }
 
 interface QontoClientRequest {
@@ -67,8 +57,7 @@ interface QontoClientRequest {
   type: 'company' | 'individual';
   email?: string;
   locale: string;
-  tax_identification_number?: string;
-  vat_number?: string;
+  tax_identification_number: string;
   currency?: string;
   billing_address: {
     street_address: string;
@@ -83,7 +72,7 @@ function getQontoHeaders(): HeadersInit {
   const secretKey = process.env.QONTO_ACCESS_TOKEN || process.env.QONTO_API_KEY;
   
   if (!login || !secretKey) {
-    throw new Error('QONTO_LOGIN et QONTO_ACCESS_TOKEN doivent être configurés');
+    throw new Error('Configuration Qonto manquante. Veuillez configurer QONTO_LOGIN et QONTO_ACCESS_TOKEN.');
   }
   
   return {
@@ -97,8 +86,9 @@ export async function testQontoConnection(): Promise<{ connected: boolean; error
   try {
     const login = process.env.QONTO_LOGIN;
     const secretKey = process.env.QONTO_ACCESS_TOKEN || process.env.QONTO_API_KEY;
+    
     if (!login || !secretKey) {
-      return { connected: false, error: 'QONTO_LOGIN et clé secrète non configurés' };
+      return { connected: false, error: 'Configuration Qonto manquante' };
     }
 
     const response = await fetch(`${QONTO_API_BASE}/organization`, {
@@ -143,8 +133,6 @@ export async function getQontoClients(): Promise<QontoClient[]> {
 }
 
 export async function createQontoClient(clientData: QontoClientRequest): Promise<QontoClient> {
-  console.log('Creating Qonto client with data:', JSON.stringify(clientData, null, 2));
-  
   const response = await fetch(`${QONTO_API_BASE}/clients`, {
     method: 'POST',
     headers: getQontoHeaders(),
@@ -153,8 +141,25 @@ export async function createQontoClient(clientData: QontoClientRequest): Promise
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    console.error('Qonto client creation error:', errorData);
-    throw new Error(errorData.message || `Erreur création client Qonto: ${response.status}`);
+    console.error('Erreur création client Qonto:', JSON.stringify(errorData, null, 2));
+    throw new Error(`Erreur création client Qonto: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.client || data;
+}
+
+export async function updateQontoClient(clientId: string, updates: Partial<QontoClientRequest>): Promise<QontoClient> {
+  const response = await fetch(`${QONTO_API_BASE}/clients/${clientId}`, {
+    method: 'PATCH',
+    headers: getQontoHeaders(),
+    body: JSON.stringify(updates)
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    console.error('Erreur mise à jour client Qonto:', JSON.stringify(errorData, null, 2));
+    throw new Error(`Erreur mise à jour client Qonto: ${response.status}`);
   }
 
   const data = await response.json();
@@ -163,20 +168,34 @@ export async function createQontoClient(clientData: QontoClientRequest): Promise
 
 export async function findOrCreateQontoClient(name: string, email?: string): Promise<string> {
   const clients = await getQontoClients();
-  const existingClient = clients.find(c => 
+  
+  let existingClient = clients.find(c => 
     c.name.toLowerCase() === name.toLowerCase() || 
     (email && c.email?.toLowerCase() === email.toLowerCase())
   );
 
   if (existingClient) {
-    console.log(`Found existing Qonto client: ${existingClient.id}`);
-    return existingClient.id;
+    if (!existingClient.locale || !existingClient.tax_identification_number) {
+      try {
+        await updateQontoClient(existingClient.id, {
+          locale: 'fr',
+          tax_identification_number: '00000000000000'
+        });
+      } catch (e) {
+        console.log('Impossible de mettre à jour le client existant, création d\'un nouveau');
+        existingClient = undefined;
+      }
+    }
+    
+    if (existingClient) {
+      return existingClient.id;
+    }
   }
 
-  console.log(`Creating new Qonto client: ${name}`);
+  const uniqueName = existingClient ? `${name} - ${Date.now()}` : name;
   
   const newClient = await createQontoClient({
-    name,
+    name: uniqueName,
     type: 'company',
     email: email,
     locale: 'fr',
@@ -190,7 +209,6 @@ export async function findOrCreateQontoClient(name: string, email?: string): Pro
     }
   });
 
-  console.log(`Created Qonto client: ${newClient.id}`);
   return newClient.id;
 }
 
@@ -233,7 +251,7 @@ export async function createQontoQuote(quoteData: {
         value: item.unitPrice.toFixed(2),
         currency: 'EUR'
       },
-      vat_rate: item.vatRate.toString()
+      vat_rate: (item.vatRate / 100).toFixed(2)
     }))
   };
 
@@ -253,8 +271,6 @@ export async function createQontoQuote(quoteData: {
     };
   }
 
-  console.log('Creating Qonto quote with request:', JSON.stringify(request, null, 2));
-
   const response = await fetch(`${QONTO_API_BASE}/quotes`, {
     method: 'POST',
     headers: getQontoHeaders(),
@@ -263,12 +279,11 @@ export async function createQontoQuote(quoteData: {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    console.error('Qonto quote creation error:', errorData);
-    throw new Error(errorData.message || `Erreur création devis Qonto: ${response.status}`);
+    console.error('Erreur création devis Qonto:', JSON.stringify(errorData, null, 2));
+    throw new Error(`Erreur création devis Qonto: ${response.status}`);
   }
 
   const data = await response.json();
-  console.log('Qonto quote created successfully:', data);
   return data;
 }
 
