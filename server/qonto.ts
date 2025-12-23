@@ -24,10 +24,8 @@ interface QontoQuoteRequest {
   issue_date: string;
   expiry_date: string;
   number?: string;
-  terms_and_conditions?: string;
+  terms_and_conditions: string;
   currency: string;
-  locale: string;
-  tin_number?: string;
   header?: string;
   footer?: string;
   discount?: {
@@ -54,6 +52,8 @@ interface QontoClient {
   id: string;
   name: string;
   email?: string;
+  locale?: string;
+  tax_identification_number?: string;
   address?: {
     street?: string;
     city?: string;
@@ -65,10 +65,12 @@ interface QontoClient {
 interface QontoClientRequest {
   name: string;
   type: 'company' | 'individual';
-  contact_email?: string;
+  email?: string;
+  locale: string;
+  tax_identification_number?: string;
   vat_number?: string;
   currency?: string;
-  billing_address?: {
+  billing_address: {
     street_address: string;
     city: string;
     zip_code: string;
@@ -77,8 +79,6 @@ interface QontoClientRequest {
 }
 
 function getQontoHeaders(): HeadersInit {
-  // Qonto uses login:secret-key format for API authentication
-  // Format: slug:secret-key (e.g., ia-infinity-3253:10c0d600c9fc90c36c0d80ad1351bfe7)
   const login = process.env.QONTO_LOGIN;
   const secretKey = process.env.QONTO_ACCESS_TOKEN || process.env.QONTO_API_KEY;
   
@@ -101,7 +101,6 @@ export async function testQontoConnection(): Promise<{ connected: boolean; error
       return { connected: false, error: 'QONTO_LOGIN et clé secrète non configurés' };
     }
 
-    // Test connection by fetching organization info
     const response = await fetch(`${QONTO_API_BASE}/organization`, {
       method: 'GET',
       headers: getQontoHeaders()
@@ -144,6 +143,8 @@ export async function getQontoClients(): Promise<QontoClient[]> {
 }
 
 export async function createQontoClient(clientData: QontoClientRequest): Promise<QontoClient> {
+  console.log('Creating Qonto client with data:', JSON.stringify(clientData, null, 2));
+  
   const response = await fetch(`${QONTO_API_BASE}/clients`, {
     method: 'POST',
     headers: getQontoHeaders(),
@@ -152,15 +153,15 @@ export async function createQontoClient(clientData: QontoClientRequest): Promise
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
+    console.error('Qonto client creation error:', errorData);
     throw new Error(errorData.message || `Erreur création client Qonto: ${response.status}`);
   }
 
   const data = await response.json();
-  return data.client;
+  return data.client || data;
 }
 
 export async function findOrCreateQontoClient(name: string, email?: string): Promise<string> {
-  // First try to find existing client
   const clients = await getQontoClients();
   const existingClient = clients.find(c => 
     c.name.toLowerCase() === name.toLowerCase() || 
@@ -168,24 +169,28 @@ export async function findOrCreateQontoClient(name: string, email?: string): Pro
   );
 
   if (existingClient) {
+    console.log(`Found existing Qonto client: ${existingClient.id}`);
     return existingClient.id;
   }
 
-  // Create new client if not found
-  // Qonto requires type and billing_address for client creation
+  console.log(`Creating new Qonto client: ${name}`);
+  
   const newClient = await createQontoClient({
     name,
     type: 'company',
-    contact_email: email,
+    email: email,
+    locale: 'fr',
+    tax_identification_number: '00000000000000',
     currency: 'EUR',
     billing_address: {
-      street_address: 'Non renseigné',
-      city: 'France',
-      zip_code: '00000',
+      street_address: 'Adresse non renseignée',
+      city: 'Paris',
+      zip_code: '75001',
       country_code: 'FR'
     }
   });
 
+  console.log(`Created Qonto client: ${newClient.id}`);
   return newClient.id;
 }
 
@@ -211,17 +216,14 @@ export async function createQontoQuote(quoteData: {
   footer?: string;
   termsAndConditions?: string;
 }): Promise<QontoQuoteResponse> {
-  // Find or create client in Qonto
   const clientId = await findOrCreateQontoClient(quoteData.clientName, quoteData.clientEmail);
 
-  // Prepare quote request
   const request: QontoQuoteRequest = {
     client_id: clientId,
     issue_date: quoteData.issueDate,
     expiry_date: quoteData.expiryDate,
     currency: 'EUR',
-    locale: 'fr',
-    tin_number: 'FR00000000000',
+    terms_and_conditions: quoteData.termsAndConditions || 'Conditions générales de vente applicables.',
     items: quoteData.items.map(item => ({
       title: item.title,
       description: item.description,
@@ -231,8 +233,7 @@ export async function createQontoQuote(quoteData: {
         value: item.unitPrice.toFixed(2),
         currency: 'EUR'
       },
-      // Qonto API expects vat_rate as decimal (0.20 for 20%), input is percentage (20)
-      vat_rate: (item.vatRate / 100).toFixed(2)
+      vat_rate: item.vatRate.toString()
     }))
   };
 
@@ -245,15 +246,14 @@ export async function createQontoQuote(quoteData: {
   if (quoteData.footer) {
     request.footer = quoteData.footer;
   }
-  if (quoteData.termsAndConditions) {
-    request.terms_and_conditions = quoteData.termsAndConditions;
-  }
   if (quoteData.discount) {
     request.discount = {
       type: quoteData.discount.type,
       value: quoteData.discount.value.toString()
     };
   }
+
+  console.log('Creating Qonto quote with request:', JSON.stringify(request, null, 2));
 
   const response = await fetch(`${QONTO_API_BASE}/quotes`, {
     method: 'POST',
@@ -268,6 +268,7 @@ export async function createQontoQuote(quoteData: {
   }
 
   const data = await response.json();
+  console.log('Qonto quote created successfully:', data);
   return data;
 }
 
