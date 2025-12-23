@@ -428,7 +428,17 @@ ${cr.replace(/\n/g, '<br>')}
   app.patch("/api/deals/:id", async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const deal = await storage.updateDeal(req.params.id, orgId, req.body);
+      const updateData = { ...req.body };
+      if (updateData.prospectStatusUpdatedAt && typeof updateData.prospectStatusUpdatedAt === 'string') {
+        updateData.prospectStatusUpdatedAt = new Date(updateData.prospectStatusUpdatedAt);
+      }
+      if (updateData.followUpDate && typeof updateData.followUpDate === 'string') {
+        updateData.followUpDate = new Date(updateData.followUpDate);
+      }
+      if (updateData.nextActionDate && typeof updateData.nextActionDate === 'string') {
+        updateData.nextActionDate = new Date(updateData.nextActionDate);
+      }
+      const deal = await storage.updateDeal(req.params.id, orgId, updateData);
       if (!deal) {
         return res.status(404).json({ error: "Deal not found" });
       }
