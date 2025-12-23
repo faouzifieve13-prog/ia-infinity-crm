@@ -804,6 +804,52 @@ export type ExpenseCategory = 'tools' | 'software' | 'services' | 'travel' | 'ma
 export type InvitationStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
 export type FollowUpType = 'email' | 'whatsapp' | 'call' | 'meeting' | 'visio' | 'sms';
 
+// Calendar events synchronization
+export const calendarEventStatusEnum = pgEnum('calendar_event_status', ['confirmed', 'tentative', 'cancelled']);
+export const meetingMessageStatusEnum = pgEnum('meeting_message_status', ['pending', 'sent', 'skipped', 'failed']);
+
+export const calendarEvents = pgTable("calendar_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  googleEventId: text("google_event_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  start: timestamp("start").notNull(),
+  end: timestamp("end").notNull(),
+  timezone: text("timezone").default('Europe/Paris'),
+  location: text("location"),
+  meetLink: text("meet_link"),
+  status: calendarEventStatusEnum("status").notNull().default('confirmed'),
+  attendees: text("attendees").array().default(sql`ARRAY[]::text[]`),
+  accountId: varchar("account_id").references(() => accounts.id),
+  contactId: varchar("contact_id").references(() => contacts.id),
+  dealId: varchar("deal_id").references(() => deals.id),
+  preConfirmationStatus: meetingMessageStatusEnum("pre_confirmation_status").default('pending'),
+  preConfirmationSentAt: timestamp("pre_confirmation_sent_at"),
+  reminderStatus: meetingMessageStatusEnum("reminder_status").default('pending'),
+  reminderSentAt: timestamp("reminder_sent_at"),
+  thankYouStatus: meetingMessageStatusEnum("thank_you_status").default('pending'),
+  thankYouSentAt: timestamp("thank_you_sent_at"),
+  lastSyncedAt: timestamp("last_synced_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("calendar_events_org_idx").on(table.orgId),
+  index("calendar_events_google_idx").on(table.googleEventId),
+  index("calendar_events_start_idx").on(table.orgId, table.start),
+  index("calendar_events_account_idx").on(table.accountId),
+  index("calendar_events_contact_idx").on(table.contactId),
+]);
+
+export const insertCalendarEventSchema = createInsertSchema(calendarEvents).omit({ 
+  id: true, 
+  createdAt: true,
+  lastSyncedAt: true 
+});
+export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
+export type CalendarEvent = typeof calendarEvents.$inferSelect;
+export type CalendarEventStatus = 'confirmed' | 'tentative' | 'cancelled';
+export type MeetingMessageStatus = 'pending' | 'sent' | 'skipped' | 'failed';
+
 // Chat tables for AI conversations
 export const conversations = pgTable("conversations", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
