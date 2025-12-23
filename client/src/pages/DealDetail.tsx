@@ -8,6 +8,7 @@ import {
   ArrowLeft, 
   Building2, 
   User, 
+  Users,
   DollarSign,
   TrendingUp,
   Clock,
@@ -34,7 +35,8 @@ import {
   AlertTriangle,
   MessageSquare,
   Sparkles,
-  RefreshCw
+  RefreshCw,
+  History
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -185,6 +187,27 @@ export default function DealDetail() {
   // Fetch quotes for this deal
   const { data: dealQuotes = [], refetch: refetchQuotes } = useQuery<Quote[]>({
     queryKey: ['/api/deals', dealId, 'quotes'],
+    enabled: !!dealId,
+  });
+
+  // Fetch follow-up history for this deal
+  interface FollowUpHistoryEntry {
+    id: string;
+    orgId: string;
+    dealId: string;
+    type: 'email' | 'whatsapp' | 'call' | 'meeting' | 'visio' | 'sms';
+    subject?: string | null;
+    content: string;
+    recipientEmail?: string | null;
+    recipientPhone?: string | null;
+    sentAt: string;
+    response?: string | null;
+    responseAt?: string | null;
+    notes?: string | null;
+  }
+  
+  const { data: followUpHistory = [] } = useQuery<FollowUpHistoryEntry[]>({
+    queryKey: ['/api/deals', dealId, 'follow-up', 'history'],
     enabled: !!dealId,
   });
 
@@ -537,6 +560,7 @@ export default function DealDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/deals', dealId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/deals', dealId, 'follow-up', 'history'] });
       setShowFollowUpPanel(false);
       toast({
         title: 'Email envoyé',
@@ -547,6 +571,30 @@ export default function DealDetail() {
       toast({
         title: 'Erreur',
         description: error.message || 'Impossible d\'envoyer l\'email.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const recordWhatsAppMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest('POST', `/api/deals/${dealId}/follow-up/history`, {
+        type: 'whatsapp',
+        content: followUpWhatsapp.message,
+        recipientPhone: followUpWhatsapp.phone,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/deals', dealId, 'follow-up', 'history'] });
+      toast({
+        title: 'WhatsApp enregistré',
+        description: 'Le message WhatsApp a été enregistré dans l\'historique.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible d\'enregistrer le message.',
         variant: 'destructive',
       });
     },
@@ -1264,10 +1312,18 @@ export default function DealDetail() {
                             size="sm"
                             variant="outline"
                             className="w-full mt-2 bg-green-500/10 border-green-500/30 hover:bg-green-500/20"
-                            onClick={() => window.open(followUpWhatsapp.url, '_blank')}
+                            onClick={() => {
+                              window.open(followUpWhatsapp.url, '_blank');
+                              recordWhatsAppMutation.mutate();
+                            }}
+                            disabled={recordWhatsAppMutation.isPending}
                             data-testid="button-open-whatsapp"
                           >
-                            <MessageSquare className="h-4 w-4 mr-2 text-green-500" />
+                            {recordWhatsAppMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <MessageSquare className="h-4 w-4 mr-2 text-green-500" />
+                            )}
                             Ouvrir WhatsApp
                           </Button>
                         ) : (
@@ -1276,6 +1332,70 @@ export default function DealDetail() {
                           </p>
                         )}
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {followUpHistory.length > 0 && (
+                  <div className="mt-4 pt-4 border-t">
+                    <Label className="text-xs text-muted-foreground flex items-center gap-1 mb-3">
+                      <History className="h-3 w-3" />
+                      Historique des relances ({followUpHistory.length})
+                    </Label>
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                      {followUpHistory.map((entry) => {
+                        const typeIcons: Record<string, typeof Mail> = {
+                          email: Mail,
+                          whatsapp: MessageSquare,
+                          call: PhoneCall,
+                          meeting: Users,
+                          visio: Video,
+                          sms: MessageSquare,
+                        };
+                        const TypeIcon = typeIcons[entry.type] || Mail;
+                        const typeLabels: Record<string, string> = {
+                          email: 'Email',
+                          whatsapp: 'WhatsApp',
+                          call: 'Appel',
+                          meeting: 'Réunion',
+                          visio: 'Visio',
+                          sms: 'SMS',
+                        };
+                        return (
+                          <div 
+                            key={entry.id}
+                            className="p-3 rounded-lg bg-muted/50 border border-border/50"
+                            data-testid={`follow-up-history-${entry.id}`}
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <TypeIcon className="h-3 w-3 text-muted-foreground" />
+                              <span className="text-xs font-medium">{typeLabels[entry.type]}</span>
+                              <span className="text-xs text-muted-foreground ml-auto">
+                                {new Date(entry.sentAt).toLocaleDateString('fr-FR', {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                            </div>
+                            {entry.subject && (
+                              <p className="text-xs font-medium mb-1">{entry.subject}</p>
+                            )}
+                            <p className="text-xs text-muted-foreground line-clamp-2">
+                              {entry.content}
+                            </p>
+                            {entry.response && (
+                              <div className="mt-2 p-2 bg-green-500/10 rounded border border-green-500/30">
+                                <p className="text-xs text-green-600 dark:text-green-400">
+                                  Réponse: {entry.response}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
