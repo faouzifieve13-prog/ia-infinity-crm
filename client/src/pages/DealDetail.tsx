@@ -160,6 +160,7 @@ export default function DealDetail() {
   const [followUpEmail, setFollowUpEmail] = useState({ to: '', subject: '', body: '' });
   const [followUpWhatsapp, setFollowUpWhatsapp] = useState({ message: '', phone: '', url: '' });
   const [showFollowUpPanel, setShowFollowUpPanel] = useState(false);
+  const [showFollowUpForm, setShowFollowUpForm] = useState(false);
   const [qontoFormData, setQontoFormData] = useState({
     title: '',
     description: '',
@@ -1102,7 +1103,9 @@ export default function DealDetail() {
                           if (key === 'follow_up') {
                             setStatusFollowUpDate(deal.followUpDate ? deal.followUpDate.split('T')[0] : '');
                             setStatusFollowUpNotes(deal.followUpNotes || '');
+                            setShowFollowUpForm(true);
                           } else {
+                            setShowFollowUpForm(false);
                             updateProspectStatusMutation.mutate({ status: key });
                           }
                         }}
@@ -1116,7 +1119,7 @@ export default function DealDetail() {
                   })}
                 </div>
 
-                {(deal.prospectStatus === 'follow_up' || statusFollowUpDate) && (
+                {(deal.prospectStatus === 'follow_up' || showFollowUpForm) && (
                   <div className="space-y-3 pt-2">
                     <div>
                       <Label className="text-xs text-muted-foreground">Date de relance</Label>
