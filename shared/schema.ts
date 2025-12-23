@@ -26,6 +26,7 @@ export const contactTypeEnum = pgEnum('contact_type', ['client', 'vendor', 'part
 export const missionTypeEnum = pgEnum('mission_type', ['audit', 'automatisation']);
 export const emailDirectionEnum = pgEnum('email_direction', ['inbound', 'outbound']);
 export const quoteStatusEnum = pgEnum('quote_status', ['draft', 'sent', 'signed', 'rejected', 'expired']);
+export const prospectStatusEnum = pgEnum('prospect_status', ['active', 'draft', 'follow_up', 'abandoned']);
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -118,6 +119,10 @@ export const deals = pgTable("deals", {
   contactPhone: text("contact_phone"),
   notionPageId: text("notion_page_id"),
   notionLastEditedAt: timestamp("notion_last_edited_at"),
+  prospectStatus: prospectStatusEnum("prospect_status").default('active'),
+  prospectStatusUpdatedAt: timestamp("prospect_status_updated_at"),
+  followUpDate: timestamp("follow_up_date"),
+  followUpNotes: text("follow_up_notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
@@ -125,6 +130,7 @@ export const deals = pgTable("deals", {
   index("deals_stage_idx").on(table.orgId, table.stage),
   index("deals_owner_idx").on(table.orgId, table.ownerId),
   index("deals_notion_idx").on(table.notionPageId),
+  index("deals_prospect_status_idx").on(table.orgId, table.prospectStatus),
 ]);
 
 export const quotes = pgTable("quotes", {

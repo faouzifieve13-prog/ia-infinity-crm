@@ -27,7 +27,11 @@ import {
   HardDrive,
   Eye,
   Trash2,
-  ChevronDown
+  ChevronDown,
+  FileEdit,
+  PhoneCall,
+  XCircle,
+  AlertTriangle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -68,7 +72,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
-import type { Deal, Account, Document } from '@/lib/types';
+import type { Deal, Account, Document, ProspectStatus } from '@/lib/types';
 
 interface Quote {
   id: string;
@@ -95,6 +99,13 @@ const stageConfig = {
   negotiation: { label: 'Négociation', color: 'bg-orange-500' },
   won: { label: 'Gagné', color: 'bg-emerald-500' },
   lost: { label: 'Perdu', color: 'bg-red-500' },
+};
+
+const prospectStatusConfig: Record<ProspectStatus, { label: string; color: string; bgColor: string; icon: typeof TrendingUp }> = {
+  active: { label: 'Actif', color: 'text-emerald-500', bgColor: 'bg-emerald-500/20', icon: TrendingUp },
+  draft: { label: 'Brouillon', color: 'text-slate-400', bgColor: 'bg-slate-500/20', icon: FileEdit },
+  follow_up: { label: 'À relancer', color: 'text-amber-500', bgColor: 'bg-amber-500/20', icon: PhoneCall },
+  abandoned: { label: 'Abandonné', color: 'text-red-400', bgColor: 'bg-red-500/20', icon: XCircle },
 };
 
 const dealFormSchema = z.object({
@@ -141,6 +152,8 @@ export default function DealDetail() {
   const [qontoQuoteDialogOpen, setQontoQuoteDialogOpen] = useState(false);
   const [sendingQuoteId, setSendingQuoteId] = useState<string | null>(null);
   const [selectedQontoQuoteType, setSelectedQontoQuoteType] = useState<'audit' | 'automatisation'>('audit');
+  const [statusFollowUpDate, setStatusFollowUpDate] = useState<string>('');
+  const [statusFollowUpNotes, setStatusFollowUpNotes] = useState<string>('');
   const [qontoFormData, setQontoFormData] = useState({
     title: '',
     description: '',
@@ -453,6 +466,32 @@ export default function DealDetail() {
       toast({
         title: 'Erreur',
         description: error.message || 'Impossible d\'envoyer le devis.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const updateProspectStatusMutation = useMutation({
+    mutationFn: async ({ status, followUpDate, followUpNotes }: { status: ProspectStatus; followUpDate?: string | null; followUpNotes?: string | null }) => {
+      return apiRequest('PATCH', `/api/deals/${dealId}`, {
+        prospectStatus: status,
+        prospectStatusUpdatedAt: new Date().toISOString(),
+        followUpDate: followUpDate || null,
+        followUpNotes: followUpNotes || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/deals'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/deals', dealId] });
+      toast({
+        title: 'Statut mis à jour',
+        description: 'Le statut du prospect a été modifié.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de mettre à jour le statut.',
         variant: 'destructive',
       });
     },
@@ -942,6 +981,130 @@ export default function DealDetail() {
               ) : (
                 <p className="text-muted-foreground text-sm">Aucun compte associé</p>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5" />
+                Statut du prospect
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Statut actuel</span>
+                {(() => {
+                  const status = deal.prospectStatus || 'active';
+                  const config = prospectStatusConfig[status as ProspectStatus];
+                  const StatusIcon = config.icon;
+                  return (
+                    <Badge variant="outline" className={`${config.bgColor} ${config.color} border-0`}>
+                      <StatusIcon className="h-3 w-3 mr-1" />
+                      {config.label}
+                    </Badge>
+                  );
+                })()}
+              </div>
+              
+              {deal.prospectStatusUpdatedAt && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Mis à jour le</span>
+                  <span>{formatDate(deal.prospectStatusUpdatedAt)}</span>
+                </div>
+              )}
+
+              {deal.followUpDate && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Date de relance</span>
+                  <span className={new Date(deal.followUpDate) < new Date() ? 'text-red-500 font-medium' : ''}>
+                    {formatDate(deal.followUpDate)}
+                  </span>
+                </div>
+              )}
+
+              {deal.followUpNotes && (
+                <div className="text-sm">
+                  <span className="text-muted-foreground block mb-1">Notes de suivi</span>
+                  <p className="bg-muted/50 rounded-md p-2 text-sm">{deal.followUpNotes}</p>
+                </div>
+              )}
+
+              <Separator />
+
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Changer le statut</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(Object.entries(prospectStatusConfig) as [ProspectStatus, typeof prospectStatusConfig['active']][]).map(([key, config]) => {
+                    const StatusIcon = config.icon;
+                    const isActive = (deal.prospectStatus || 'active') === key;
+                    return (
+                      <Button
+                        key={key}
+                        variant={isActive ? "default" : "outline"}
+                        size="sm"
+                        className={isActive ? '' : `hover:${config.bgColor}`}
+                        onClick={() => {
+                          if (key === 'follow_up') {
+                            setStatusFollowUpDate(deal.followUpDate ? deal.followUpDate.split('T')[0] : '');
+                            setStatusFollowUpNotes(deal.followUpNotes || '');
+                          } else {
+                            updateProspectStatusMutation.mutate({ status: key });
+                          }
+                        }}
+                        disabled={updateProspectStatusMutation.isPending}
+                        data-testid={`button-status-${key}`}
+                      >
+                        <StatusIcon className="h-3 w-3 mr-1" />
+                        {config.label}
+                      </Button>
+                    );
+                  })}
+                </div>
+
+                {(deal.prospectStatus === 'follow_up' || statusFollowUpDate) && (
+                  <div className="space-y-3 pt-2">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Date de relance</Label>
+                      <Input
+                        type="date"
+                        value={statusFollowUpDate || (deal.followUpDate ? deal.followUpDate.split('T')[0] : '')}
+                        onChange={(e) => setStatusFollowUpDate(e.target.value)}
+                        className="mt-1"
+                        data-testid="input-follow-up-date"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Notes</Label>
+                      <Textarea
+                        value={statusFollowUpNotes || deal.followUpNotes || ''}
+                        onChange={(e) => setStatusFollowUpNotes(e.target.value)}
+                        placeholder="Notes de suivi..."
+                        className="mt-1 min-h-[60px]"
+                        data-testid="input-follow-up-notes"
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      className="w-full"
+                      onClick={() => updateProspectStatusMutation.mutate({
+                        status: 'follow_up',
+                        followUpDate: statusFollowUpDate,
+                        followUpNotes: statusFollowUpNotes,
+                      })}
+                      disabled={updateProspectStatusMutation.isPending || !statusFollowUpDate}
+                      data-testid="button-save-follow-up"
+                    >
+                      {updateProspectStatusMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4 mr-2" />
+                      )}
+                      Enregistrer la relance
+                    </Button>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 

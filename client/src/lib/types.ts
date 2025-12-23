@@ -13,6 +13,7 @@ export type WorkflowStatus = 'active' | 'paused' | 'error' | 'success' | 'failed
 export type ContractType = 'audit' | 'prestation' | 'formation' | 'suivi' | 'sous_traitance';
 export type ContractStatus = 'draft' | 'sent' | 'signed' | 'active' | 'completed' | 'cancelled';
 export type ContactType = 'client' | 'vendor' | 'partner' | 'prospect';
+export type ProspectStatus = 'active' | 'draft' | 'follow_up' | 'abandoned';
 
 export interface User {
   id: string;
@@ -76,6 +77,10 @@ export interface Deal {
   contactPhone?: string | null;
   notionPageId?: string | null;
   notionLastEditedAt?: string | null;
+  prospectStatus?: ProspectStatus | null;
+  prospectStatusUpdatedAt?: string | null;
+  followUpDate?: string | null;
+  followUpNotes?: string | null;
   createdAt?: string;
   updatedAt?: string;
   accountName?: string | null;

@@ -2,11 +2,12 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
-import { GripVertical, Calendar, TrendingUp, Clock } from 'lucide-react';
+import { GripVertical, Calendar, TrendingUp, Clock, AlertCircle, FileEdit, PhoneCall, XCircle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import type { ProspectStatus } from '@/lib/types';
 
 interface DealOwner {
   id: string;
@@ -25,7 +26,16 @@ interface DealCardDeal {
   daysInStage: number;
   owner: DealOwner;
   missionTypes?: string[] | null;
+  prospectStatus?: ProspectStatus | null;
+  followUpDate?: string | null;
 }
+
+const prospectStatusConfig: Record<ProspectStatus, { label: string; color: string; icon: typeof AlertCircle }> = {
+  active: { label: 'Actif', color: 'bg-emerald-500/20 text-emerald-500 border-emerald-500/30', icon: TrendingUp },
+  draft: { label: 'Brouillon', color: 'bg-slate-500/20 text-slate-400 border-slate-500/30', icon: FileEdit },
+  follow_up: { label: 'À relancer', color: 'bg-amber-500/20 text-amber-500 border-amber-500/30', icon: PhoneCall },
+  abandoned: { label: 'Abandonné', color: 'bg-red-500/20 text-red-400 border-red-500/30', icon: XCircle },
+};
 
 interface DealCardProps {
   deal: DealCardDeal;
@@ -118,28 +128,43 @@ export function DealCard({ deal }: DealCardProps) {
                 {deal.contactName}
               </p>
               
-              {deal.missionTypes && deal.missionTypes.length > 0 && (
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {deal.missionTypes.includes('audit') && (
-                    <Badge 
-                      variant="secondary" 
-                      className="text-[10px] px-1.5 py-0 h-4 bg-violet-500/20 text-violet-600 dark:text-violet-400 border-0"
-                      data-testid={`badge-mission-audit-${deal.id}`}
-                    >
-                      Audit
-                    </Badge>
-                  )}
-                  {deal.missionTypes.includes('automatisation') && (
-                    <Badge 
-                      variant="secondary" 
-                      className="text-[10px] px-1.5 py-0 h-4 bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-0"
-                      data-testid={`badge-mission-auto-${deal.id}`}
-                    >
-                      Automatisation
-                    </Badge>
-                  )}
-                </div>
-              )}
+              <div className="flex flex-wrap gap-1 mb-2">
+                {deal.prospectStatus && deal.prospectStatus !== 'active' && (
+                  <Badge 
+                    variant="outline" 
+                    className={`text-[10px] px-1.5 py-0 h-4 ${prospectStatusConfig[deal.prospectStatus].color}`}
+                    data-testid={`badge-prospect-status-${deal.id}`}
+                  >
+                    {(() => {
+                      const StatusIcon = prospectStatusConfig[deal.prospectStatus!].icon;
+                      return <StatusIcon className="h-2.5 w-2.5 mr-1" />;
+                    })()}
+                    {prospectStatusConfig[deal.prospectStatus].label}
+                  </Badge>
+                )}
+                {deal.missionTypes && deal.missionTypes.length > 0 && (
+                  <>
+                    {deal.missionTypes.includes('audit') && (
+                      <Badge 
+                        variant="secondary" 
+                        className="text-[10px] px-1.5 py-0 h-4 bg-violet-500/20 text-violet-600 dark:text-violet-400 border-0"
+                        data-testid={`badge-mission-audit-${deal.id}`}
+                      >
+                        Audit
+                      </Badge>
+                    )}
+                    {deal.missionTypes.includes('automatisation') && (
+                      <Badge 
+                        variant="secondary" 
+                        className="text-[10px] px-1.5 py-0 h-4 bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-0"
+                        data-testid={`badge-mission-auto-${deal.id}`}
+                      >
+                        Automatisation
+                      </Badge>
+                    )}
+                  </>
+                )}
+              </div>
               
               {deal.nextAction && (
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3 bg-muted/50 rounded-md px-2 py-1">
