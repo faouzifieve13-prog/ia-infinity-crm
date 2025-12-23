@@ -213,7 +213,6 @@ const navCategories: NavCategory[] = [
     spaces: ['internal'],
     items: [
       { title: 'Gestion des accès', url: '/invitations', icon: UserPlus, spaces: ['internal'] },
-      { title: 'Sync Notion', url: '/notion-sync', icon: RefreshCw, spaces: ['internal'] },
     ],
   },
 ];

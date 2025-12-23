@@ -18,7 +18,7 @@ import {
 
 const mockNotifications = [
   { id: '1', title: 'Nouveau deal conclu', description: 'DigiSoft - 52 000€', time: 'Il y a 5 min', type: 'success' as const },
-  { id: '2', title: 'Erreur workflow', description: 'Sync Notion a échoué', time: 'Il y a 1h', type: 'error' as const },
+  { id: '2', title: 'Tâche terminée', description: 'Audit IA complété', time: 'Il y a 1h', type: 'success' as const },
   { id: '3', title: 'Facture en retard', description: 'DataFlow Inc - 9 500€', time: 'Il y a 2h', type: 'warning' as const },
 ];
 
