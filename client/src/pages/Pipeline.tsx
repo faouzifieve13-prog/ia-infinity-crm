@@ -161,6 +161,7 @@ export default function Pipeline() {
     missionTypes: deal.missionTypes,
     prospectStatus: deal.prospectStatus,
     followUpDate: deal.followUpDate,
+    followUpNotes: deal.followUpNotes,
     owner: { 
       id: deal.ownerId || '', 
       name: deal.ownerName || 'Unknown', 

@@ -28,6 +28,7 @@ interface DealCardDeal {
   missionTypes?: string[] | null;
   prospectStatus?: ProspectStatus | null;
   followUpDate?: string | null;
+  followUpNotes?: string | null;
 }
 
 const prospectStatusConfig: Record<ProspectStatus, { label: string; color: string; icon: typeof AlertCircle }> = {
@@ -165,6 +166,13 @@ export function DealCard({ deal }: DealCardProps) {
                   </>
                 )}
               </div>
+
+              {deal.followUpNotes && (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2 bg-amber-500/10 rounded-md px-2 py-1.5 border border-amber-500/20">
+                  <Calendar className="h-3 w-3 text-amber-500 shrink-0" />
+                  <span className="truncate text-amber-600 dark:text-amber-400">{deal.followUpNotes}</span>
+                </div>
+              )}
               
               {deal.nextAction && (
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3 bg-muted/50 rounded-md px-2 py-1">
