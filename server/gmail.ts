@@ -774,3 +774,206 @@ export async function syncGmailEmails(orgId: string, accountId?: string): Promis
   
   return result;
 }
+
+// ============================================
+// Meeting Message Functions
+// ============================================
+
+export interface MeetingMessageParams {
+  to: string;
+  recipientName: string;
+  companyName?: string;
+  eventTitle: string;
+  eventDate: Date;
+  eventTime: string;
+  eventLocation?: string;
+  meetLink?: string;
+  messageType: 'preConfirmation' | 'reminder' | 'thankYou';
+  customContext?: string;
+}
+
+const IA_INFINITY_SIGNATURE = `
+--
+Ismael Lepennec
+IA Infinity
+06 21 00 58 94
+i-a-infinity.com`;
+
+function getDefaultMeetingMessage(params: MeetingMessageParams): { subject: string; body: string } {
+  const eventDateFormatted = new Intl.DateTimeFormat('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(params.eventDate);
+  
+  const locationInfo = params.meetLink 
+    ? `Lien visio : ${params.meetLink}` 
+    : params.eventLocation 
+      ? `Lieu : ${params.eventLocation}` 
+      : '';
+
+  switch (params.messageType) {
+    case 'preConfirmation':
+      return {
+        subject: `Confirmation de notre rendez-vous - ${params.eventTitle}`,
+        body: `Bonjour ${params.recipientName},
+
+Je vous confirme notre rendez-vous prévu le ${eventDateFormatted} à ${params.eventTime}.
+
+${params.eventTitle}
+${locationInfo}
+
+N'hésitez pas à me contacter si vous avez des questions ou si vous souhaitez modifier ce rendez-vous.
+
+Au plaisir de vous retrouver !
+${IA_INFINITY_SIGNATURE}`
+      };
+      
+    case 'reminder':
+      return {
+        subject: `Rappel : Notre rendez-vous demain - ${params.eventTitle}`,
+        body: `Bonjour ${params.recipientName},
+
+Je me permets de vous rappeler notre rendez-vous demain ${eventDateFormatted} à ${params.eventTime}.
+
+${params.eventTitle}
+${locationInfo}
+
+À très bientôt !
+${IA_INFINITY_SIGNATURE}`
+      };
+      
+    case 'thankYou':
+      return {
+        subject: `Merci pour notre échange - ${params.eventTitle}`,
+        body: `Bonjour ${params.recipientName},
+
+Je tenais à vous remercier pour le temps que vous m'avez accordé lors de notre rendez-vous.
+
+J'ai été ravi de pouvoir échanger avec vous. N'hésitez pas à me recontacter si vous avez des questions.
+
+À bientôt,
+${IA_INFINITY_SIGNATURE}`
+      };
+  }
+}
+
+export async function generateAIMeetingMessage(params: MeetingMessageParams): Promise<{ subject: string; body: string }> {
+  try {
+    const OpenAI = (await import('openai')).default;
+    const openai = new OpenAI({
+      apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+    });
+    
+    if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
+      console.log('OpenAI API key not configured, using default message');
+      return getDefaultMeetingMessage(params);
+    }
+
+    const eventDateFormatted = new Intl.DateTimeFormat('fr-FR', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(params.eventDate);
+
+    const messageTypeDescriptions = {
+      preConfirmation: 'un email de confirmation de rendez-vous envoyé 48h avant',
+      reminder: 'un email de rappel de rendez-vous envoyé 24h avant',
+      thankYou: 'un email de remerciement après le rendez-vous',
+    };
+
+    const prompt = `Tu es un assistant commercial pour IA Infinity, une entreprise spécialisée en Intelligence Artificielle et automatisation.
+
+Génère ${messageTypeDescriptions[params.messageType]} pour :
+- Destinataire : ${params.recipientName}${params.companyName ? ` de ${params.companyName}` : ''}
+- Événement : ${params.eventTitle}
+- Date : ${eventDateFormatted} à ${params.eventTime}
+${params.eventLocation ? `- Lieu : ${params.eventLocation}` : ''}
+${params.meetLink ? `- Lien visio : ${params.meetLink}` : ''}
+${params.customContext ? `- Contexte supplémentaire : ${params.customContext}` : ''}
+
+Instructions :
+- Ton professionnel mais chaleureux
+- Message court et efficace (max 150 mots)
+- Tutoiement autorisé si contexte décontracté
+- Ne pas inclure la signature (elle sera ajoutée automatiquement)
+- Retourne uniquement un JSON avec "subject" (objet de l'email) et "body" (corps du message)`;
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      temperature: 0.7,
+      max_tokens: 500,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      console.log('Empty response from OpenAI, using default message');
+      return getDefaultMeetingMessage(params);
+    }
+
+    const parsed = JSON.parse(content);
+    return {
+      subject: parsed.subject || getDefaultMeetingMessage(params).subject,
+      body: (parsed.body || getDefaultMeetingMessage(params).body) + IA_INFINITY_SIGNATURE,
+    };
+  } catch (error) {
+    console.error('AI message generation failed:', error);
+    return getDefaultMeetingMessage(params);
+  }
+}
+
+export async function sendMeetingEmail(params: MeetingMessageParams, useAI: boolean = true): Promise<boolean> {
+  try {
+    const gmail = await getUncachableGmailClient();
+    
+    const message = useAI 
+      ? await generateAIMeetingMessage(params)
+      : getDefaultMeetingMessage(params);
+    
+    const htmlBody = `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td style="padding: 40px;">
+              <pre style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; white-space: pre-wrap; word-wrap: break-word; font-size: 15px; line-height: 1.6; color: #18181b;">
+${message.body.replace(/</g, '&lt;').replace(/>/g, '&gt;')}
+              </pre>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim();
+    
+    const encodedMessage = createEmailMessage(params.to, message.subject, htmlBody);
+    
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage
+      }
+    });
+    
+    console.log(`Meeting ${params.messageType} email sent to ${params.to}`);
+    return true;
+  } catch (error) {
+    console.error(`Failed to send meeting ${params.messageType} email:`, error);
+    return false;
+  }
+}

@@ -3748,6 +3748,82 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
+  // Send meeting message
+  app.post("/api/calendar/db/:id/send-message", async (req: Request, res: Response) => {
+    try {
+      const orgId = DEFAULT_ORG_ID;
+      const { messageType, useAI = true } = req.body;
+      
+      if (!['preConfirmation', 'reminder', 'thankYou'].includes(messageType)) {
+        return res.status(400).json({ error: "Invalid message type" });
+      }
+      
+      const { getDbCalendarEvent, updateMessageStatus } = await import("./calendar");
+      const event = await getDbCalendarEvent(req.params.id, orgId);
+      
+      if (!event) {
+        return res.status(404).json({ error: "Event not found" });
+      }
+      
+      // Get contact/account email
+      let recipientEmail: string | null = null;
+      let recipientName: string = 'Cher client';
+      let companyName: string | undefined;
+      
+      if (event.contactId) {
+        const contact = await storage.getContact(event.contactId, orgId);
+        if (contact?.email) {
+          recipientEmail = contact.email;
+          recipientName = contact.name || 'Cher client';
+        }
+      }
+      
+      if (event.accountId) {
+        const account = await storage.getAccount(event.accountId, orgId);
+        if (account) {
+          companyName = account.name;
+          if (!recipientEmail && account.contactEmail) {
+            recipientEmail = account.contactEmail;
+          }
+        }
+      }
+      
+      // Fallback to attendees
+      if (!recipientEmail && event.attendees && event.attendees.length > 0) {
+        recipientEmail = event.attendees[0];
+        recipientName = recipientEmail.split('@')[0];
+      }
+      
+      if (!recipientEmail) {
+        return res.status(400).json({ error: "No email address found for this event" });
+      }
+      
+      const { sendMeetingEmail } = await import("./gmail");
+      const success = await sendMeetingEmail({
+        to: recipientEmail,
+        recipientName,
+        companyName,
+        eventTitle: event.title,
+        eventDate: new Date(event.start),
+        eventTime: new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(new Date(event.start)),
+        eventLocation: event.location || undefined,
+        meetLink: event.meetLink || undefined,
+        messageType,
+      }, useAI);
+      
+      if (success) {
+        await updateMessageStatus(req.params.id, orgId, messageType, 'sent');
+        res.json({ success: true, message: `${messageType} email sent successfully` });
+      } else {
+        await updateMessageStatus(req.params.id, orgId, messageType, 'failed');
+        res.status(500).json({ error: "Failed to send email" });
+      }
+    } catch (error) {
+      console.error("Send meeting message error:", error);
+      res.status(500).json({ error: "Failed to send meeting message" });
+    }
+  });
+
   // ============================================
   // Google Drive Routes
   // ============================================

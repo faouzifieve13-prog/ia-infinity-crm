@@ -161,6 +161,21 @@ export default function Calendar() {
     },
   });
 
+  // Send meeting message mutation
+  const sendMessageMutation = useMutation({
+    mutationFn: async ({ eventId, messageType }: { eventId: string; messageType: string }) => {
+      return apiRequest('POST', `/api/calendar/db/${eventId}/send-message`, { messageType, useAI: true });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/db/upcoming'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/db/past'] });
+      toast({ title: 'Message envoyé', description: 'Le message a été envoyé avec succès' });
+    },
+    onError: () => {
+      toast({ title: 'Erreur', description: 'Échec de l\'envoi du message', variant: 'destructive' });
+    },
+  });
+
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
 
@@ -331,12 +346,11 @@ export default function Calendar() {
                           variant="ghost"
                           size="sm"
                           className="h-7 text-xs"
-                          onClick={() => updateMessageStatusMutation.mutate({
+                          onClick={() => sendMessageMutation.mutate({
                             eventId: event.id,
                             messageType: 'thankYou',
-                            status: 'sent',
                           })}
-                          disabled={updateMessageStatusMutation.isPending}
+                          disabled={sendMessageMutation.isPending}
                         >
                           <Send className="h-3 w-3 mr-1" />
                           Envoyer
@@ -356,6 +370,36 @@ export default function Calendar() {
                           Ignorer
                         </Button>
                       </>
+                    )}
+                    {!isPast && event.preConfirmationStatus === 'pending' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => sendMessageMutation.mutate({
+                          eventId: event.id,
+                          messageType: 'preConfirmation',
+                        })}
+                        disabled={sendMessageMutation.isPending}
+                      >
+                        <Send className="h-3 w-3 mr-1" />
+                        Confirmation
+                      </Button>
+                    )}
+                    {!isPast && event.reminderStatus === 'pending' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => sendMessageMutation.mutate({
+                          eventId: event.id,
+                          messageType: 'reminder',
+                        })}
+                        disabled={sendMessageMutation.isPending}
+                      >
+                        <Send className="h-3 w-3 mr-1" />
+                        Rappel
+                      </Button>
                     )}
                   </div>
                 )}
