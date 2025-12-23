@@ -31,8 +31,13 @@ import {
   PieChart,
   CreditCard,
   FolderOpen,
+  Mail,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import type { GmailMessage } from '@/lib/types';
 import {
   Sidebar,
   SidebarContent,
@@ -49,6 +54,8 @@ import {
   SidebarMenuSubButton,
 } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Collapsible,
   CollapsibleContent,
@@ -56,6 +63,104 @@ import {
 } from '@/components/ui/collapsible';
 import { useSpace } from '@/hooks/use-space';
 import type { Space } from '@/lib/types';
+
+function SidebarInboxWidget() {
+  const { data: emails = [], isLoading, isError, refetch, isFetching } = useQuery<GmailMessage[]>({
+    queryKey: ['/api/gmail/inbox'],
+    staleTime: 2 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
+  const openInGmail = (email: GmailMessage) => {
+    window.open(`https://mail.google.com/mail/u/0/#inbox/${email.threadId}`, '_blank');
+  };
+
+  return (
+    <div className="mx-2 mb-2 rounded-lg border border-sidebar-border/50 bg-sidebar-accent/30">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-sidebar-border/30">
+        <div className="flex items-center gap-2">
+          <Mail className="h-4 w-4 text-primary" />
+          <span className="text-sm font-medium">Boîte de réception</span>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          data-testid="button-sidebar-refresh-inbox"
+        >
+          <RefreshCw className={`h-3 w-3 ${isFetching ? 'animate-spin' : ''}`} />
+        </Button>
+      </div>
+      <div className="max-h-[200px] overflow-y-auto">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center justify-center py-4 px-3 text-center">
+            <AlertCircle className="h-5 w-5 text-muted-foreground mb-1" />
+            <p className="text-xs text-muted-foreground mb-2">Permissions insuffisantes</p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => window.open('https://mail.google.com', '_blank')}
+              data-testid="button-sidebar-open-gmail"
+            >
+              <ExternalLink className="h-3 w-3 mr-1" />
+              Ouvrir Gmail
+            </Button>
+          </div>
+        ) : emails.length === 0 ? (
+          <div className="flex items-center justify-center py-4 text-xs text-muted-foreground">
+            Aucun email
+          </div>
+        ) : (
+          <div className="divide-y divide-sidebar-border/30">
+            {emails.slice(0, 5).map((email) => (
+              <div
+                key={email.id}
+                className={`px-3 py-2 cursor-pointer hover:bg-sidebar-accent/50 transition-colors ${
+                  email.isUnread ? 'bg-primary/5' : ''
+                }`}
+                onClick={() => openInGmail(email)}
+                data-testid={`sidebar-email-${email.id}`}
+              >
+                <div className="flex items-center gap-1 mb-0.5">
+                  <span className={`text-xs truncate ${email.isUnread ? 'font-semibold' : ''}`}>
+                    {email.fromName || email.from?.split('@')[0]}
+                  </span>
+                  {email.isUnread && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary flex-shrink-0" />
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground truncate">
+                  {email.subject}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {(emails.length > 0 || isError) && (
+        <div className="border-t border-sidebar-border/30 px-3 py-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full h-7 text-xs"
+            onClick={() => window.open('https://mail.google.com', '_blank')}
+            data-testid="button-sidebar-view-all-gmail"
+          >
+            <ExternalLink className="h-3 w-3 mr-1" />
+            Voir tout dans Gmail
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const portalConfig: Record<Space, { label: string; icon: typeof Shield; gradient: string; badge: string }> = {
   internal: { 
@@ -299,8 +404,9 @@ export function AppSidebar() {
         ))}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border/50 px-2">
-        <SidebarGroup>
+      <SidebarFooter className="border-t border-sidebar-border/50 pt-2">
+        {currentSpace === 'internal' && <SidebarInboxWidget />}
+        <SidebarGroup className="px-2">
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>

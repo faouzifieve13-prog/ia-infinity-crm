@@ -15,7 +15,6 @@ import { ActivityFeed } from '@/components/ActivityFeed';
 import { WorkflowList } from '@/components/WorkflowList';
 import { ProjectCard } from '@/components/projects/ProjectCard';
 import { InvoiceTable } from '@/components/finance/InvoiceTable';
-import { InboxWidget } from '@/components/dashboard/InboxWidget';
 import { useSpace } from '@/hooks/use-space';
 import { MissionCard } from '@/components/vendor/MissionCard';
 import type { DashboardStats, Project, Activity, WorkflowRun, Invoice, Mission, Account } from '@/lib/types';
@@ -104,7 +103,7 @@ function InternalDashboard() {
         <p className="text-muted-foreground">Aperçu de vos performances commerciales</p>
       </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           title="Revenu gagné"
           value={wonValue}
@@ -136,7 +135,6 @@ function InternalDashboard() {
           index={3}
           accentColor="info"
         />
-        <InboxWidget />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
