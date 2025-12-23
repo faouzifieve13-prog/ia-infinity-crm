@@ -91,16 +91,19 @@ export async function testQontoConnection(): Promise<{ connected: boolean; error
       return { connected: false, error: 'Configuration Qonto manquante' };
     }
 
+    console.log(`Qonto auth test - login: ${login?.substring(0, 10)}...`);
+
     const response = await fetch(`${QONTO_API_BASE}/organization`, {
       method: 'GET',
       headers: getQontoHeaders()
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      const errorText = await response.text();
+      console.log(`Qonto auth error: ${response.status} - ${errorText}`);
       return { 
         connected: false, 
-        error: errorData.message || `Erreur API Qonto: ${response.status}` 
+        error: `Erreur API Qonto: ${response.status}` 
       };
     }
 
@@ -110,6 +113,7 @@ export async function testQontoConnection(): Promise<{ connected: boolean; error
       organization: data.organization?.legal_name || data.organization?.name 
     };
   } catch (error: any) {
+    console.log(`Qonto connection error: ${error.message}`);
     return { 
       connected: false, 
       error: error.message || 'Erreur de connexion à Qonto' 
