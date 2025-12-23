@@ -14,6 +14,13 @@ import {
   CheckCircle2,
   XCircle,
   RefreshCw,
+  MessageCircle,
+  Mail,
+  Building2,
+  User,
+  Send,
+  SkipForward,
+  AlertCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -65,11 +72,38 @@ interface CalendarStatus {
   error?: string;
 }
 
+interface DBCalendarEvent {
+  id: string;
+  orgId: string;
+  googleEventId: string;
+  title: string;
+  description: string | null;
+  start: string;
+  end: string;
+  timezone: string | null;
+  location: string | null;
+  meetLink: string | null;
+  status: 'confirmed' | 'tentative' | 'cancelled';
+  attendees: string[];
+  accountId: string | null;
+  contactId: string | null;
+  dealId: string | null;
+  preConfirmationStatus: 'pending' | 'sent' | 'skipped' | 'failed';
+  preConfirmationSentAt: string | null;
+  reminderStatus: 'pending' | 'sent' | 'skipped' | 'failed';
+  reminderSentAt: string | null;
+  thankYouStatus: 'pending' | 'sent' | 'skipped' | 'failed';
+  thankYouSentAt: string | null;
+  lastSyncedAt: string | null;
+  createdAt: string;
+}
+
 export default function Calendar() {
   const { toast } = useToast();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'calendar' | 'rdv'>('calendar');
   const [newEvent, setNewEvent] = useState({
     title: '',
     description: '',
@@ -80,6 +114,51 @@ export default function Calendar() {
 
   const { data: calendarStatus, isLoading: isStatusLoading } = useQuery<CalendarStatus>({
     queryKey: ['/api/calendar/status'],
+  });
+
+  // DB synced events
+  const { data: dbUpcomingEvents = [], refetch: refetchDbEvents } = useQuery<DBCalendarEvent[]>({
+    queryKey: ['/api/calendar/db/upcoming'],
+    enabled: calendarStatus?.connected === true,
+  });
+
+  const { data: dbPastEvents = [] } = useQuery<DBCalendarEvent[]>({
+    queryKey: ['/api/calendar/db/past'],
+    enabled: calendarStatus?.connected === true,
+  });
+
+  // Sync mutation
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest('POST', '/api/calendar/sync', { daysAhead: 30 });
+    },
+    onSuccess: async (response) => {
+      const result = await response.json();
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/db/upcoming'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/db/past'] });
+      toast({ 
+        title: 'Synchronisation terminée', 
+        description: `${result.synced} événement(s) synchronisé(s)` 
+      });
+    },
+    onError: () => {
+      toast({ title: 'Erreur', description: 'Échec de la synchronisation', variant: 'destructive' });
+    },
+  });
+
+  // Update message status mutation
+  const updateMessageStatusMutation = useMutation({
+    mutationFn: async ({ eventId, messageType, status }: { eventId: string; messageType: string; status: string }) => {
+      return apiRequest('PATCH', `/api/calendar/db/${eventId}/message-status`, { messageType, status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/db/upcoming'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/db/past'] });
+      toast({ title: 'Statut mis à jour' });
+    },
+    onError: () => {
+      toast({ title: 'Erreur', description: 'Échec de la mise à jour', variant: 'destructive' });
+    },
   });
 
   const monthStart = startOfMonth(currentMonth);
@@ -146,6 +225,148 @@ export default function Calendar() {
     createEventMutation.mutate(newEvent);
   };
 
+  const getMessageStatusIcon = (status: string) => {
+    switch (status) {
+      case 'sent':
+        return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+      case 'skipped':
+        return <SkipForward className="h-4 w-4 text-muted-foreground" />;
+      case 'failed':
+        return <AlertCircle className="h-4 w-4 text-red-500" />;
+      default:
+        return <Clock className="h-4 w-4 text-muted-foreground" />;
+    }
+  };
+
+  const getMessageStatusLabel = (status: string) => {
+    switch (status) {
+      case 'sent': return 'Envoyé';
+      case 'skipped': return 'Ignoré';
+      case 'failed': return 'Échec';
+      default: return 'En attente';
+    }
+  };
+
+  const renderDbEventCard = (event: DBCalendarEvent, isPast: boolean = false) => {
+    const hasAccount = !!event.accountId;
+    const hasContact = !!event.contactId;
+    const canSendMessages = hasAccount || hasContact;
+
+    return (
+      <Card key={event.id} className="hover-elevate" data-testid={`card-event-${event.id}`}>
+        <CardContent className="p-4">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <h3 className="font-medium truncate">{event.title}</h3>
+                <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3.5 w-3.5" />
+                    {format(new Date(event.start), 'd MMM HH:mm', { locale: fr })}
+                  </span>
+                  {event.location && (
+                    <span className="flex items-center gap-1">
+                      <MapPin className="h-3.5 w-3.5" />
+                      <span className="truncate max-w-[150px]">{event.location}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {event.meetLink && (
+                  <Badge variant="secondary">
+                    <Video className="h-3 w-3 mr-1" />
+                    Visio
+                  </Badge>
+                )}
+                {event.status === 'cancelled' && (
+                  <Badge variant="destructive">Annulé</Badge>
+                )}
+              </div>
+            </div>
+
+            {canSendMessages && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                {hasAccount && (
+                  <span className="flex items-center gap-1">
+                    <Building2 className="h-3 w-3" />
+                    Compte lié
+                  </span>
+                )}
+                {hasContact && (
+                  <span className="flex items-center gap-1">
+                    <User className="h-3 w-3" />
+                    Contact lié
+                  </span>
+                )}
+              </div>
+            )}
+
+            <div className="border-t pt-3 mt-1">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-4 text-xs">
+                  {!isPast && (
+                    <>
+                      <div className="flex items-center gap-1" title="Pré-confirmation 48h avant">
+                        {getMessageStatusIcon(event.preConfirmationStatus)}
+                        <span>Confirmation</span>
+                      </div>
+                      <div className="flex items-center gap-1" title="Rappel 24h avant">
+                        {getMessageStatusIcon(event.reminderStatus)}
+                        <span>Rappel</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex items-center gap-1" title="Remerciement après RDV">
+                    {getMessageStatusIcon(event.thankYouStatus)}
+                    <span>Remerciement</span>
+                  </div>
+                </div>
+                
+                {canSendMessages && (
+                  <div className="flex items-center gap-1">
+                    {isPast && event.thankYouStatus === 'pending' && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => updateMessageStatusMutation.mutate({
+                            eventId: event.id,
+                            messageType: 'thankYou',
+                            status: 'sent',
+                          })}
+                          disabled={updateMessageStatusMutation.isPending}
+                        >
+                          <Send className="h-3 w-3 mr-1" />
+                          Envoyer
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => updateMessageStatusMutation.mutate({
+                            eventId: event.id,
+                            messageType: 'thankYou',
+                            status: 'skipped',
+                          })}
+                          disabled={updateMessageStatusMutation.isPending}
+                        >
+                          <SkipForward className="h-3 w-3 mr-1" />
+                          Ignorer
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -154,13 +375,22 @@ export default function Calendar() {
           <p className="text-muted-foreground">Gérez vos rendez-vous et réunions</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={goToToday}>
-            Aujourd'hui
-          </Button>
           {calendarStatus?.connected && (
-            <Button variant="outline" size="icon" onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+              >
+                {syncMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                Synchroniser
+              </Button>
+            </>
           )}
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
@@ -490,6 +720,61 @@ export default function Calendar() {
           )}
         </CardContent>
       </Card>
+
+      {calendarStatus?.connected && (dbUpcomingEvents.length > 0 || dbPastEvents.length > 0) && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageCircle className="h-5 w-5 text-primary" />
+                RDV à venir
+              </CardTitle>
+              <CardDescription>
+                Événements synchronisés avec gestion des messages automatiques
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {dbUpcomingEvents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <CalendarIcon className="h-12 w-12 text-muted-foreground mb-2" />
+                  <p className="text-muted-foreground">Aucun RDV à venir</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Synchronisez vos événements pour les voir ici
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {dbUpcomingEvents.slice(0, 10).map((event) => renderDbEventCard(event, false))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Mail className="h-5 w-5 text-primary" />
+                RDV passés
+              </CardTitle>
+              <CardDescription>
+                Remerciements à envoyer après vos rendez-vous
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {dbPastEvents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <CalendarIcon className="h-12 w-12 text-muted-foreground mb-2" />
+                  <p className="text-muted-foreground">Aucun RDV passé récent</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {dbPastEvents.slice(0, 10).map((event) => renderDbEventCard(event, true))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
