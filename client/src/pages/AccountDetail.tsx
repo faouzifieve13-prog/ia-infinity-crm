@@ -140,26 +140,41 @@ export default function AccountDetail() {
       });
       const projectResult = await project.json();
       
+      let missionCreated = false;
       if (vendorId && projectResult?.id) {
-        await apiRequest('POST', '/api/missions', {
-          projectId: projectResult.id,
-          vendorId,
-          title: `Mission - ${projectData.name}`,
-          description: projectData.description || '',
-        });
+        try {
+          await apiRequest('POST', '/api/missions', {
+            projectId: projectResult.id,
+            vendorId,
+            title: `Mission - ${projectData.name}`,
+            description: projectData.description || '',
+          });
+          missionCreated = true;
+        } catch {
+          missionCreated = false;
+        }
       }
       
-      return projectResult;
+      return { project: projectResult, vendorId, missionCreated };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
       queryClient.invalidateQueries({ queryKey: ['/api/missions'] });
       setProjectDialogOpen(false);
       projectForm.reset();
-      toast({
-        title: 'Projet créé',
-        description: 'Le projet a été créé avec succès.',
-      });
+      
+      if (result.vendorId && !result.missionCreated) {
+        toast({
+          title: 'Projet créé',
+          description: 'Le projet a été créé mais l\'affectation du sous-traitant a échoué. Vous pouvez l\'affecter manuellement.',
+          variant: 'default',
+        });
+      } else {
+        toast({
+          title: 'Projet créé',
+          description: result.vendorId ? 'Le projet a été créé et le sous-traitant affecté.' : 'Le projet a été créé avec succès.',
+        });
+      }
     },
     onError: (error: Error) => {
       toast({
