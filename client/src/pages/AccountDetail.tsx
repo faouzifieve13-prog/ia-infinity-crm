@@ -62,12 +62,13 @@ import {
 } from '@/components/ui/dialog';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
-import type { Account, Deal, Project, Contact, Email } from '@/lib/types';
+import type { Account, Deal, Project, Contact, Email, Vendor, Mission } from '@/lib/types';
 
 const projectFormSchema = z.object({
   name: z.string().min(1, 'Le nom est requis'),
   description: z.string().optional(),
   status: z.enum(['active', 'on_hold', 'completed', 'cancelled']).default('active'),
+  vendorId: z.string().optional(),
 });
 
 type ProjectFormValues = z.infer<typeof projectFormSchema>;
@@ -132,13 +133,27 @@ export default function AccountDetail() {
 
   const createProjectMutation = useMutation({
     mutationFn: async (data: ProjectFormValues) => {
-      return apiRequest('POST', '/api/projects', {
-        ...data,
+      const { vendorId, ...projectData } = data;
+      const project = await apiRequest('POST', '/api/projects', {
+        ...projectData,
         accountId,
       });
+      const projectResult = await project.json();
+      
+      if (vendorId && projectResult?.id) {
+        await apiRequest('POST', '/api/missions', {
+          projectId: projectResult.id,
+          vendorId,
+          title: `Mission - ${projectData.name}`,
+          description: projectData.description || '',
+        });
+      }
+      
+      return projectResult;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/missions'] });
       setProjectDialogOpen(false);
       projectForm.reset();
       toast({
@@ -170,6 +185,10 @@ export default function AccountDetail() {
 
   const { data: allContacts = [] } = useQuery<Contact[]>({
     queryKey: ['/api/contacts'],
+  });
+
+  const { data: allVendors = [] } = useQuery<Vendor[]>({
+    queryKey: ['/api/vendors'],
   });
 
   const { data: accountEmails = [], isLoading: emailsLoading } = useQuery<Email[]>({
@@ -1054,6 +1073,31 @@ export default function AccountDetail() {
                                 <SelectItem value="on_hold">En pause</SelectItem>
                                 <SelectItem value="completed">Terminé</SelectItem>
                                 <SelectItem value="cancelled">Annulé</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={projectForm.control}
+                        name="vendorId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Sous-traitant (optionnel)</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value || ''}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-project-vendor">
+                                  <SelectValue placeholder="Sélectionner un sous-traitant" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="">Aucun</SelectItem>
+                                {allVendors.map((vendor) => (
+                                  <SelectItem key={vendor.id} value={vendor.id}>
+                                    {vendor.name} {vendor.company ? `(${vendor.company})` : ''}
+                                  </SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
                             <FormMessage />
