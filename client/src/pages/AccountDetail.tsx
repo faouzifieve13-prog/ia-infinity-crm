@@ -26,7 +26,9 @@ import {
   Send,
   Inbox,
   Sparkles,
-  SendHorizontal
+  SendHorizontal,
+  Plus,
+  FolderPlus
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,9 +52,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import type { Account, Deal, Project, Contact, Email } from '@/lib/types';
+
+const projectFormSchema = z.object({
+  name: z.string().min(1, 'Le nom est requis'),
+  description: z.string().optional(),
+  status: z.enum(['active', 'on_hold', 'completed', 'cancelled']).default('active'),
+});
+
+type ProjectFormValues = z.infer<typeof projectFormSchema>;
 
 const accountFormSchema = z.object({
   name: z.string().min(1, 'Le nom est requis'),
@@ -100,7 +118,42 @@ export default function AccountDetail() {
   const [, params] = useRoute('/accounts/:id');
   const accountId = params?.id;
   const [isEditing, setIsEditing] = useState(false);
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const { toast } = useToast();
+
+  const projectForm = useForm<ProjectFormValues>({
+    resolver: zodResolver(projectFormSchema),
+    defaultValues: {
+      name: '',
+      description: '',
+      status: 'active',
+    },
+  });
+
+  const createProjectMutation = useMutation({
+    mutationFn: async (data: ProjectFormValues) => {
+      return apiRequest('POST', '/api/projects', {
+        ...data,
+        accountId,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
+      setProjectDialogOpen(false);
+      projectForm.reset();
+      toast({
+        title: 'Projet créé',
+        description: 'Le projet a été créé avec succès.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de créer le projet.',
+        variant: 'destructive',
+      });
+    },
+  });
 
   const { data: account, isLoading: accountLoading } = useQuery<Account>({
     queryKey: ['/api/accounts', accountId],
@@ -941,12 +994,96 @@ export default function AccountDetail() {
           </Card>
 
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle className="text-base">Projets</CardTitle>
+              <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="ghost" data-testid="button-add-project-from-account">
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[500px]">
+                  <DialogHeader>
+                    <DialogTitle>Nouveau projet</DialogTitle>
+                    <DialogDescription>
+                      Créer un projet pour {account?.name}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <Form {...projectForm}>
+                    <form onSubmit={projectForm.handleSubmit((data) => createProjectMutation.mutate(data))} className="space-y-4">
+                      <FormField
+                        control={projectForm.control}
+                        name="name"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Nom du projet *</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Ex: Automatisation prospection" {...field} data-testid="input-project-name" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={projectForm.control}
+                        name="description"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Description</FormLabel>
+                            <FormControl>
+                              <Textarea placeholder="Description du projet..." {...field} data-testid="input-project-description" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={projectForm.control}
+                        name="status"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Statut</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-project-status">
+                                  <SelectValue placeholder="Statut" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="active">Actif</SelectItem>
+                                <SelectItem value="on_hold">En pause</SelectItem>
+                                <SelectItem value="completed">Terminé</SelectItem>
+                                <SelectItem value="cancelled">Annulé</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <div className="flex justify-end gap-2 pt-4">
+                        <Button type="button" variant="outline" onClick={() => setProjectDialogOpen(false)}>
+                          Annuler
+                        </Button>
+                        <Button type="submit" disabled={createProjectMutation.isPending} data-testid="button-submit-project">
+                          {createProjectMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Créer le projet
+                        </Button>
+                      </div>
+                    </form>
+                  </Form>
+                </DialogContent>
+              </Dialog>
             </CardHeader>
             <CardContent>
               {accountProjects.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Aucun projet</p>
+                <div className="text-center py-4">
+                  <FolderPlus className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground mb-2">Aucun projet</p>
+                  <Button size="sm" variant="outline" onClick={() => setProjectDialogOpen(true)}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    Créer un projet
+                  </Button>
+                </div>
               ) : (
                 <div className="space-y-3">
                   {accountProjects.slice(0, 5).map(project => (

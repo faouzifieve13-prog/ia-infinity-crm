@@ -36,7 +36,8 @@ import {
   MessageSquare,
   Sparkles,
   RefreshCw,
-  History
+  History,
+  Briefcase
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -77,7 +78,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
-import type { Deal, Account, Document, ProspectStatus } from '@/lib/types';
+import type { Deal, Account, Document, ProspectStatus, Project } from '@/lib/types';
 
 interface Quote {
   id: string;
@@ -182,6 +183,10 @@ export default function DealDetail() {
 
   const { data: allDocuments = [] } = useQuery<Document[]>({
     queryKey: ['/api/documents'],
+  });
+
+  const { data: allProjects = [] } = useQuery<Project[]>({
+    queryKey: ['/api/projects'],
   });
 
   // Fetch quotes for this deal
@@ -628,6 +633,7 @@ export default function DealDetail() {
 
   const account = accounts.find(a => a.id === deal.accountId);
   const dealDocuments = allDocuments.filter(d => d.dealId === dealId);
+  const dealProjects = allProjects.filter(p => p.dealId === dealId || p.accountId === deal.accountId);
   const stage = stageConfig[deal.stage];
   const amountNum = parseFloat(deal.amount || '0');
   const isWonOrLost = deal.stage === 'won' || deal.stage === 'lost';
@@ -1439,6 +1445,42 @@ export default function DealDetail() {
               <Link href="/documents">
                 <Button variant="outline" size="sm" className="w-full mt-4">
                   Gérer les documents
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Briefcase className="h-5 w-5" />
+                Projets ({dealProjects.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {dealProjects.length > 0 ? (
+                <div className="space-y-2">
+                  {dealProjects.map(project => (
+                    <Link key={project.id} href={`/projects/${project.id}`}>
+                      <div 
+                        className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 hover-elevate cursor-pointer"
+                        data-testid={`project-item-${project.id}`}
+                      >
+                        <Briefcase className="h-4 w-4 text-muted-foreground" />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium truncate block">{project.name}</span>
+                          <span className="text-xs text-muted-foreground">{project.status}</span>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm">Aucun projet</p>
+              )}
+              <Link href="/projects">
+                <Button variant="outline" size="sm" className="w-full mt-4">
+                  Gérer les projets
                 </Button>
               </Link>
             </CardContent>
