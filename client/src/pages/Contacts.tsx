@@ -66,12 +66,10 @@ const contactTypeLabels: Record<ContactType, { label: string; icon: typeof Build
 const contactFormSchema = z.object({
   name: z.string().min(1, 'Le nom est requis'),
   email: z.string().email('Email invalide'),
-  role: z.string().min(1, 'Le rôle est requis'),
   contactType: z.enum(['client', 'vendor', 'partner', 'prospect']).default('client'),
   phone: z.string().optional(),
-  linkedIn: z.string().optional(),
+  calendarUrl: z.string().optional(),
   accountId: z.string().optional(),
-  vendorId: z.string().optional(),
 });
 
 type ContactFormValues = z.infer<typeof contactFormSchema>;
@@ -87,12 +85,10 @@ export default function Contacts() {
     defaultValues: {
       name: '',
       email: '',
-      role: '',
       contactType: 'client',
       phone: '',
-      linkedIn: '',
+      calendarUrl: '',
       accountId: '',
-      vendorId: '',
     },
   });
 
@@ -115,9 +111,8 @@ export default function Contacts() {
       const payload = {
         ...data,
         accountId: data.contactType === 'client' && data.accountId ? data.accountId : null,
-        vendorId: data.contactType === 'vendor' && data.vendorId ? data.vendorId : null,
         phone: data.phone || null,
-        linkedIn: data.linkedIn || null,
+        calendarUrl: data.calendarUrl || null,
       };
       return apiRequest('POST', '/api/contacts', payload);
     },
@@ -263,24 +258,6 @@ export default function Contacts() {
 
                 <FormField
                   control={form.control}
-                  name="role"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Fonction *</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="Ex: Directeur Commercial" 
-                          {...field} 
-                          data-testid="input-contact-role"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
                   name="phone"
                   render={({ field }) => (
                     <FormItem>
@@ -300,15 +277,15 @@ export default function Contacts() {
 
                 <FormField
                   control={form.control}
-                  name="linkedIn"
+                  name="calendarUrl"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>LinkedIn</FormLabel>
+                      <FormLabel>Lien Calendrier</FormLabel>
                       <FormControl>
                         <Input 
-                          placeholder="Ex: https://linkedin.com/in/..." 
+                          placeholder="Ex: https://calendly.com/..." 
                           {...field} 
-                          data-testid="input-contact-linkedin"
+                          data-testid="input-contact-calendar"
                         />
                       </FormControl>
                       <FormMessage />
@@ -333,33 +310,6 @@ export default function Contacts() {
                             {accounts.map((account) => (
                               <SelectItem key={account.id} value={account.id}>
                                 {account.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
-
-                {selectedContactType === 'vendor' && (
-                  <FormField
-                    control={form.control}
-                    name="vendorId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Société de prestation</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger data-testid="select-contact-vendor">
-                              <SelectValue placeholder="Sélectionner un prestataire" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {vendors.map((vendor) => (
-                              <SelectItem key={vendor.id} value={vendor.id}>
-                                {vendor.name} - {vendor.company}
                               </SelectItem>
                             ))}
                           </SelectContent>
