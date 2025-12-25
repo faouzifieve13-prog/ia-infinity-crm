@@ -59,13 +59,12 @@ import type { Contact, Account, Vendor, ContactType } from '@/lib/types';
 const contactTypeLabels: Partial<Record<ContactType, { label: string; icon: typeof Building2; color: string }>> = {
   vendor: { label: 'Sous-traitant', icon: Wrench, color: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' },
   partner: { label: 'Partenaire', icon: Handshake, color: 'bg-amber-500/10 text-amber-500 border-amber-500/30' },
-  prospect: { label: 'Prospect', icon: UserPlus, color: 'bg-purple-500/10 text-purple-500 border-purple-500/30' },
 };
 
 const contactFormSchema = z.object({
   name: z.string().min(1, 'Le nom est requis'),
   email: z.string().email('Email invalide'),
-  contactType: z.enum(['vendor', 'partner', 'prospect']).default('vendor'),
+  contactType: z.enum(['vendor', 'partner']).default('vendor'),
   phone: z.string().optional(),
   calendarUrl: z.string().optional(),
 });
