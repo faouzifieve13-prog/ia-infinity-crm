@@ -21,6 +21,10 @@ import {
   Send,
   SkipForward,
   AlertCircle,
+  Pencil,
+  Trash2,
+  CalendarDays,
+  LayoutGrid,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -103,8 +107,19 @@ export default function Calendar() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'calendar' | 'rdv'>('calendar');
+  const [viewMode, setViewMode] = useState<'month' | 'day'>('month');
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [newEvent, setNewEvent] = useState({
+    title: '',
+    description: '',
+    start: '',
+    end: '',
+    location: '',
+  });
+  const [editEvent, setEditEvent] = useState({
+    id: '',
     title: '',
     description: '',
     start: '',
@@ -206,6 +221,35 @@ export default function Calendar() {
     },
   });
 
+  const updateEventMutation = useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; title?: string; description?: string; start?: string; end?: string; location?: string }) => {
+      return apiRequest('PATCH', `/api/calendar/events/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/events'] });
+      toast({ title: 'Événement modifié', description: 'L\'événement a été mis à jour' });
+      setIsEditOpen(false);
+      setEditEvent({ id: '', title: '', description: '', start: '', end: '', location: '' });
+    },
+    onError: () => {
+      toast({ title: 'Erreur', description: 'Échec de la modification de l\'événement', variant: 'destructive' });
+    },
+  });
+
+  const deleteEventMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest('DELETE', `/api/calendar/events/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/events'] });
+      toast({ title: 'Événement supprimé', description: 'L\'événement a été supprimé de votre calendrier' });
+      setIsEditOpen(false);
+    },
+    onError: () => {
+      toast({ title: 'Erreur', description: 'Échec de la suppression de l\'événement', variant: 'destructive' });
+    },
+  });
+
   const calendarStart = startOfWeek(monthStart, { locale: fr });
   const calendarEnd = endOfWeek(monthEnd, { locale: fr });
   const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
@@ -238,6 +282,39 @@ export default function Calendar() {
       return;
     }
     createEventMutation.mutate(newEvent);
+  };
+
+  const handleEditEvent = () => {
+    if (!editEvent.title || !editEvent.start || !editEvent.end) {
+      toast({ title: 'Erreur', description: 'Veuillez remplir tous les champs obligatoires', variant: 'destructive' });
+      return;
+    }
+    updateEventMutation.mutate(editEvent);
+  };
+
+  const openEditDialog = (event: CalendarEvent) => {
+    setEditEvent({
+      id: event.id,
+      title: event.title,
+      description: event.description || '',
+      start: event.start ? format(new Date(event.start), "yyyy-MM-dd'T'HH:mm") : '',
+      end: event.end ? format(new Date(event.end), "yyyy-MM-dd'T'HH:mm") : '',
+      location: event.location || '',
+    });
+    setIsEditOpen(true);
+  };
+
+  const goToPreviousDay = () => setSelectedDate(new Date(selectedDate.getTime() - 86400000));
+  const goToNextDay = () => setSelectedDate(new Date(selectedDate.getTime() + 86400000));
+
+  // Generate time slots for day view (6:00 - 22:00)
+  const timeSlots = Array.from({ length: 17 }, (_, i) => i + 6);
+
+  const getEventsAtHour = (hour: number) => {
+    return selectedDayEvents.filter(event => {
+      const eventStart = new Date(event.start);
+      return eventStart.getHours() === hour;
+    });
   };
 
   const getMessageStatusIcon = (status: string) => {
@@ -421,6 +498,26 @@ export default function Calendar() {
         <div className="flex items-center gap-2">
           {calendarStatus?.connected && (
             <>
+              <div className="flex items-center border rounded-lg p-1">
+                <Button
+                  variant={viewMode === 'month' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('month')}
+                  data-testid="button-view-month"
+                >
+                  <LayoutGrid className="h-4 w-4 mr-1" />
+                  Mois
+                </Button>
+                <Button
+                  variant={viewMode === 'day' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('day')}
+                  data-testid="button-view-day"
+                >
+                  <CalendarDays className="h-4 w-4 mr-1" />
+                  Jour
+                </Button>
+              </div>
               <Button
                 variant="outline"
                 size="sm"
@@ -550,79 +647,173 @@ export default function Calendar() {
         </Card>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-4">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={goToPreviousMonth}>
-                <ChevronLeft className="h-5 w-5" />
-              </Button>
-              <h2 className="text-xl font-semibold capitalize">
-                {format(currentMonth, 'MMMM yyyy', { locale: fr })}
-              </h2>
-              <Button variant="ghost" size="icon" onClick={goToNextMonth}>
-                <ChevronRight className="h-5 w-5" />
+      {/* Edit Event Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Modifier l'événement</DialogTitle>
+            <DialogDescription>Modifiez les détails de votre rendez-vous</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-title">Titre *</Label>
+              <Input 
+                id="edit-title" 
+                value={editEvent.title} 
+                onChange={(e) => setEditEvent(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Réunion client"
+                data-testid="input-edit-event-title"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-start">Début *</Label>
+                <Input 
+                  id="edit-start" 
+                  type="datetime-local"
+                  value={editEvent.start} 
+                  onChange={(e) => setEditEvent(prev => ({ ...prev, start: e.target.value }))}
+                  data-testid="input-edit-event-start"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-end">Fin *</Label>
+                <Input 
+                  id="edit-end" 
+                  type="datetime-local"
+                  value={editEvent.end} 
+                  onChange={(e) => setEditEvent(prev => ({ ...prev, end: e.target.value }))}
+                  data-testid="input-edit-event-end"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-location">Lieu</Label>
+              <Input 
+                id="edit-location" 
+                value={editEvent.location} 
+                onChange={(e) => setEditEvent(prev => ({ ...prev, location: e.target.value }))}
+                placeholder="Bureau, Google Meet, etc."
+                data-testid="input-edit-event-location"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Description</Label>
+              <Textarea 
+                id="edit-description" 
+                value={editEvent.description} 
+                onChange={(e) => setEditEvent(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Détails de l'événement..."
+                data-testid="input-edit-event-description"
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex justify-between gap-2">
+            <Button
+              variant="destructive"
+              onClick={() => deleteEventMutation.mutate(editEvent.id)}
+              disabled={deleteEventMutation.isPending}
+            >
+              {deleteEventMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+              Supprimer
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setIsEditOpen(false)}>Annuler</Button>
+              <Button onClick={handleEditEvent} disabled={updateEventMutation.isPending}>
+                {updateEventMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Pencil className="mr-2 h-4 w-4" />
+                )}
+                Enregistrer
               </Button>
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-7 gap-px bg-muted rounded-lg overflow-hidden">
-              {weekDays.map((day) => (
-                <div
-                  key={day}
-                  className="bg-background p-3 text-center text-sm font-medium text-muted-foreground"
-                >
-                  {day}
-                </div>
-              ))}
-              {calendarDays.map((day, index) => {
-                const dayEvents = getEventsForDay(day);
-                const isSelected = isSameDay(day, selectedDate);
-                const isCurrentMonth = isSameMonth(day, currentMonth);
-                const isDayToday = isToday(day);
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-                return (
-                  <button
-                    key={index}
-                    onClick={() => setSelectedDate(day)}
-                    className={`
-                      bg-background p-2 min-h-[80px] text-left transition-colors relative
-                      hover:bg-muted/50
-                      ${!isCurrentMonth ? 'text-muted-foreground/50' : ''}
-                      ${isSelected ? 'ring-2 ring-primary ring-inset' : ''}
-                    `}
+      <>
+      {viewMode === 'month' ? (
+        <div className="grid gap-6 lg:grid-cols-3">
+          <Card className="lg:col-span-2">
+            <CardHeader className="flex flex-row items-center justify-between gap-2 pb-4">
+              <div className="flex items-center gap-4">
+                <Button variant="ghost" size="icon" onClick={goToPreviousMonth}>
+                  <ChevronLeft className="h-5 w-5" />
+                </Button>
+                <h2 className="text-xl font-semibold capitalize">
+                  {format(currentMonth, 'MMMM yyyy', { locale: fr })}
+                </h2>
+                <Button variant="ghost" size="icon" onClick={goToNextMonth}>
+                  <ChevronRight className="h-5 w-5" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-7 gap-px bg-muted rounded-lg overflow-hidden">
+                {weekDays.map((day) => (
+                  <div
+                    key={day}
+                    className="bg-background p-3 text-center text-sm font-medium text-muted-foreground"
                   >
-                    <span
+                    {day}
+                  </div>
+                ))}
+                {calendarDays.map((day, index) => {
+                  const dayEvents = getEventsForDay(day);
+                  const isSelected = isSameDay(day, selectedDate);
+                  const isCurrentMonth = isSameMonth(day, currentMonth);
+                  const isDayToday = isToday(day);
+
+                  return (
+                    <button
+                      key={index}
+                      onClick={() => {
+                        setSelectedDate(day);
+                        setViewMode('day');
+                      }}
                       className={`
-                        inline-flex items-center justify-center w-7 h-7 rounded-full text-sm
-                        ${isDayToday ? 'bg-primary text-primary-foreground font-bold' : ''}
+                        bg-background p-2 min-h-[80px] text-left transition-colors relative
+                        hover:bg-muted/50
+                        ${!isCurrentMonth ? 'text-muted-foreground/50' : ''}
+                        ${isSelected ? 'ring-2 ring-primary ring-inset' : ''}
                       `}
                     >
-                      {format(day, 'd')}
-                    </span>
-                    {dayEvents.length > 0 && (
-                      <div className="mt-1 space-y-1">
-                        {dayEvents.slice(0, 2).map((event) => (
-                          <div
-                            key={event.id}
-                            className="text-xs p-1 rounded bg-primary/20 text-primary truncate"
-                          >
-                            {event.title}
-                          </div>
-                        ))}
-                        {dayEvents.length > 2 && (
-                          <div className="text-xs text-muted-foreground">
-                            +{dayEvents.length - 2} autre(s)
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
+                      <span
+                        className={`
+                          inline-flex items-center justify-center w-7 h-7 rounded-full text-sm
+                          ${isDayToday ? 'bg-primary text-primary-foreground font-bold' : ''}
+                        `}
+                      >
+                        {format(day, 'd')}
+                      </span>
+                      {dayEvents.length > 0 && (
+                        <div className="mt-1 space-y-1">
+                          {dayEvents.slice(0, 2).map((event) => (
+                            <div
+                              key={event.id}
+                              className="text-xs p-1 rounded bg-primary/20 text-primary truncate"
+                            >
+                              {event.title}
+                            </div>
+                          ))}
+                          {dayEvents.length > 2 && (
+                            <div className="text-xs text-muted-foreground">
+                              +{dayEvents.length - 2} autre(s)
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
 
         <Card>
           <CardHeader>
@@ -696,7 +887,108 @@ export default function Calendar() {
             )}
           </CardContent>
         </Card>
-      </div>
+        </div>
+      ) : (
+        /* Day View */
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-4">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={goToPreviousDay}>
+                <ChevronLeft className="h-5 w-5" />
+              </Button>
+              <div className="text-center">
+                <h2 className="text-xl font-semibold capitalize">
+                  {format(selectedDate, 'EEEE d MMMM yyyy', { locale: fr })}
+                </h2>
+                {isToday(selectedDate) && (
+                  <Badge variant="secondary" className="mt-1">Aujourd'hui</Badge>
+                )}
+              </div>
+              <Button variant="ghost" size="icon" onClick={goToNextDay}>
+                <ChevronRight className="h-5 w-5" />
+              </Button>
+            </div>
+            <Button variant="outline" size="sm" onClick={goToToday}>
+              Aujourd'hui
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1">
+              {timeSlots.map((hour) => {
+                const eventsAtHour = getEventsAtHour(hour);
+                return (
+                  <div key={hour} className="flex gap-4 min-h-[60px] border-t py-2">
+                    <div className="w-16 text-sm text-muted-foreground shrink-0">
+                      {String(hour).padStart(2, '0')}:00
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      {eventsAtHour.map((event) => (
+                        <div
+                          key={event.id}
+                          onClick={() => openEditDialog(event)}
+                          className="p-3 rounded-lg bg-primary/10 border border-primary/20 cursor-pointer hover:bg-primary/20 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-medium text-sm">{event.title}</h4>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                                <Clock className="h-3 w-3" />
+                                <span>
+                                  {format(new Date(event.start), 'HH:mm')} - {format(new Date(event.end), 'HH:mm')}
+                                </span>
+                              </div>
+                              {event.location && (
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                  <MapPin className="h-3 w-3" />
+                                  <span className="truncate">{event.location}</span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {isVideoCall(event) && (
+                                <Badge variant="secondary" className="text-xs">
+                                  <Video className="h-3 w-3" />
+                                </Badge>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditDialog(event);
+                                }}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {selectedDayEvents.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <CalendarIcon className="h-12 w-12 text-muted-foreground mb-2" />
+                <p className="text-muted-foreground">Aucun événement prévu ce jour</p>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="mt-4" 
+                  disabled={!calendarStatus?.connected}
+                  onClick={() => setIsCreateOpen(true)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Ajouter un RDV
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -819,6 +1111,7 @@ export default function Calendar() {
           </Card>
         </div>
       )}
+      </>
     </div>
   );
 }
