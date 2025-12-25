@@ -17,19 +17,19 @@ import type { Mission, Project, MissionStatus } from '@/lib/types';
 export default function Missions() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | MissionStatus>('all');
-  const { vendorContactId, currentSpace } = useSpace();
+  const { currentSpace } = useSpace();
 
-  const isVendorPortal = currentSpace === 'vendor' && vendorContactId;
+  const isVendorPortal = currentSpace === 'vendor';
 
   const { data: missions = [], isLoading } = useQuery<Mission[]>({
     queryKey: isVendorPortal 
-      ? ['/api/vendor/missions', { vendorContactId }] 
+      ? ['/api/vendor/missions'] 
       : ['/api/missions'],
     queryFn: async () => {
       const url = isVendorPortal 
-        ? `/api/vendor/missions?vendorContactId=${vendorContactId}`
+        ? '/api/vendor/missions'
         : '/api/missions';
-      const res = await fetch(url);
+      const res = await fetch(url, { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch missions');
       return res.json();
     },
@@ -37,13 +37,13 @@ export default function Missions() {
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: isVendorPortal 
-      ? ['/api/vendor/projects', { vendorContactId }] 
+      ? ['/api/vendor/projects'] 
       : ['/api/projects'],
     queryFn: async () => {
       const url = isVendorPortal 
-        ? `/api/vendor/projects?vendorContactId=${vendorContactId}`
+        ? '/api/vendor/projects'
         : '/api/projects';
-      const res = await fetch(url);
+      const res = await fetch(url, { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch projects');
       return res.json();
     },

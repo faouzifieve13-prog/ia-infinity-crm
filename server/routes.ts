@@ -13,6 +13,7 @@ import {
   type UserRole, type Space, type InvitationStatus
 } from "@shared/schema";
 import { sendInvitationEmail, sendClientWelcomeEmail, testGmailConnection, getInboxEmails } from "./gmail";
+import { isAuthenticated } from "./replit_integrations/auth";
 
 function generateToken(): string {
   return randomBytes(32).toString("hex");
@@ -4414,20 +4415,33 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
   });
 
   // ==========================================
-  // VENDOR PORTAL ROUTES (Filtered by vendorContactId)
+  // VENDOR PORTAL ROUTES (Secured with authentication)
   // ==========================================
 
-  // Get projects assigned to a specific vendor contact
-  app.get("/api/vendor/projects", async (req: Request, res: Response) => {
+  // Helper to get vendor contact ID from authenticated user (secure version - no auto-link)
+  async function getVendorContactFromAuth(req: Request, orgId: string): Promise<string | null> {
+    const user = req.user as any;
+    if (!user?.claims?.sub) return null;
+    
+    const authUserId = user.claims.sub;
+    const contacts = await storage.getContacts(orgId);
+    
+    // Only find by authUserId - no auto-linking for security
+    const vendorContact = contacts.find(c => c.authUserId === authUserId && c.contactType === 'vendor');
+    
+    return vendorContact?.id || null;
+  }
+
+  // Get projects assigned to authenticated vendor
+  app.get("/api/vendor/projects", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const vendorContactId = req.query.vendorContactId as string;
+      const vendorContactId = await getVendorContactFromAuth(req, orgId);
       
       if (!vendorContactId) {
-        return res.status(400).json({ error: "vendorContactId is required" });
+        return res.status(403).json({ error: "Not authorized as a vendor" });
       }
       
-      // Get all projects where this vendor contact is assigned
       const allProjects = await storage.getProjects(orgId);
       const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
       
@@ -4438,25 +4452,22 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     }
   });
 
-  // Get accounts/clients for projects assigned to a specific vendor contact
-  app.get("/api/vendor/accounts", async (req: Request, res: Response) => {
+  // Get accounts/clients for projects assigned to authenticated vendor
+  app.get("/api/vendor/accounts", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const vendorContactId = req.query.vendorContactId as string;
+      const vendorContactId = await getVendorContactFromAuth(req, orgId);
       
       if (!vendorContactId) {
-        return res.status(400).json({ error: "vendorContactId is required" });
+        return res.status(403).json({ error: "Not authorized as a vendor" });
       }
       
-      // Get all projects where this vendor contact is assigned
       const allProjects = await storage.getProjects(orgId);
       const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
       
-      // Get unique account IDs from vendor projects
       const accountIds = vendorProjects.map(p => p.accountId).filter((id): id is string => id !== null);
       const uniqueAccountIds = [...new Set(accountIds)];
       
-      // Fetch accounts for those IDs
       const allAccounts = await storage.getAccounts(orgId);
       const vendorAccounts = allAccounts.filter(a => uniqueAccountIds.includes(a.id));
       
@@ -4467,29 +4478,25 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     }
   });
 
-  // Get documents for projects assigned to a specific vendor contact
-  app.get("/api/vendor/documents", async (req: Request, res: Response) => {
+  // Get documents for projects assigned to authenticated vendor
+  app.get("/api/vendor/documents", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const vendorContactId = req.query.vendorContactId as string;
+      const vendorContactId = await getVendorContactFromAuth(req, orgId);
       
       if (!vendorContactId) {
-        return res.status(400).json({ error: "vendorContactId is required" });
+        return res.status(403).json({ error: "Not authorized as a vendor" });
       }
       
-      // Get all projects where this vendor contact is assigned
       const allProjects = await storage.getProjects(orgId);
       const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
       const vendorProjectIds = vendorProjects.map(p => p.id);
       
-      // Get unique account IDs from vendor projects
       const accountIdsList = vendorProjects.map(p => p.accountId).filter((id): id is string => id !== null);
       const uniqueAccountIds = [...new Set(accountIdsList)];
       
-      // Fetch all documents
       const allDocuments = await storage.getDocuments(orgId);
       
-      // Filter documents that belong to vendor's projects or accounts
       const vendorDocuments = allDocuments.filter(d => 
         (d.projectId && vendorProjectIds.includes(d.projectId)) ||
         (d.accountId && uniqueAccountIds.includes(d.accountId))
@@ -4502,22 +4509,20 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     }
   });
 
-  // Get missions for projects assigned to a specific vendor contact
-  app.get("/api/vendor/missions", async (req: Request, res: Response) => {
+  // Get missions for projects assigned to authenticated vendor
+  app.get("/api/vendor/missions", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const vendorContactId = req.query.vendorContactId as string;
+      const vendorContactId = await getVendorContactFromAuth(req, orgId);
       
       if (!vendorContactId) {
-        return res.status(400).json({ error: "vendorContactId is required" });
+        return res.status(403).json({ error: "Not authorized as a vendor" });
       }
       
-      // Get all projects where this vendor contact is assigned
       const allProjects = await storage.getProjects(orgId);
       const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
       const vendorProjectIds = vendorProjects.map(p => p.id);
       
-      // Get missions for those projects
       const allMissions = await storage.getMissions(orgId);
       const vendorMissions = allMissions.filter(m => m.projectId && vendorProjectIds.includes(m.projectId));
       
@@ -4528,22 +4533,20 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     }
   });
 
-  // Get tasks for projects assigned to a specific vendor contact
-  app.get("/api/vendor/tasks", async (req: Request, res: Response) => {
+  // Get tasks for projects assigned to authenticated vendor
+  app.get("/api/vendor/tasks", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const vendorContactId = req.query.vendorContactId as string;
+      const vendorContactId = await getVendorContactFromAuth(req, orgId);
       
       if (!vendorContactId) {
-        return res.status(400).json({ error: "vendorContactId is required" });
+        return res.status(403).json({ error: "Not authorized as a vendor" });
       }
       
-      // Get all projects where this vendor contact is assigned
       const allProjects = await storage.getProjects(orgId);
       const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
       const vendorProjectIds = vendorProjects.map(p => p.id);
       
-      // Get tasks for those projects
       const allTasks = await storage.getTasks(orgId);
       const vendorTasks = allTasks.filter(t => t.projectId && vendorProjectIds.includes(t.projectId));
       
@@ -4555,29 +4558,25 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
   });
 
   // Get vendor portal summary/dashboard stats
-  app.get("/api/vendor/dashboard", async (req: Request, res: Response) => {
+  app.get("/api/vendor/dashboard", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const vendorContactId = req.query.vendorContactId as string;
+      const vendorContactId = await getVendorContactFromAuth(req, orgId);
       
       if (!vendorContactId) {
-        return res.status(400).json({ error: "vendorContactId is required" });
+        return res.status(403).json({ error: "Not authorized as a vendor" });
       }
       
-      // Get all projects where this vendor contact is assigned
       const allProjects = await storage.getProjects(orgId);
       const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
       const vendorProjectIds = vendorProjects.map(p => p.id);
       
-      // Get missions for those projects
       const allMissions = await storage.getMissions(orgId);
       const vendorMissions = allMissions.filter(m => m.projectId && vendorProjectIds.includes(m.projectId));
       
-      // Get tasks for those projects
       const allTasks = await storage.getTasks(orgId);
       const vendorTasks = allTasks.filter(t => t.projectId && vendorProjectIds.includes(t.projectId));
       
-      // Calculate stats
       const activeProjects = vendorProjects.filter(p => p.status === 'active').length;
       const completedProjects = vendorProjects.filter(p => p.status === 'completed').length;
       const activeMissions = vendorMissions.filter(m => m.status === 'in_progress').length;
@@ -4605,6 +4604,128 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     } catch (error) {
       console.error("Get vendor dashboard error:", error);
       res.status(500).json({ error: "Failed to get vendor dashboard" });
+    }
+  });
+
+  // Get current authenticated vendor's profile
+  app.get("/api/vendor/me", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const user = req.user as any;
+      
+      if (!user?.claims?.sub) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const authUserId = user.claims.sub;
+      const contacts = await storage.getContacts(orgId);
+      
+      // Only find by authUserId - no auto-linking for security
+      const vendorContact = contacts.find(c => c.authUserId === authUserId && c.contactType === 'vendor');
+      
+      if (!vendorContact) {
+        return res.status(403).json({ 
+          error: "Not authorized as a vendor",
+          needsLinking: true,
+          message: "Please use your invitation link to connect your account"
+        });
+      }
+      
+      res.json({
+        id: vendorContact.id,
+        name: vendorContact.name,
+        email: vendorContact.email,
+        role: vendorContact.role,
+        phone: vendorContact.phone,
+        authUserId: vendorContact.authUserId,
+      });
+    } catch (error) {
+      console.error("Get vendor profile error:", error);
+      res.status(500).json({ error: "Failed to get vendor profile" });
+    }
+  });
+
+  // Link authenticated user to vendor contact using invitation token (secure)
+  app.post("/api/vendor/link", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const user = req.user as any;
+      const { token } = req.body;
+      
+      if (!user?.claims?.sub) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      if (!token) {
+        return res.status(400).json({ error: "Invitation token is required" });
+      }
+      
+      const authUserId = user.claims.sub;
+      
+      const contacts = await storage.getContacts(orgId);
+      
+      // Check if already linked to another vendor contact
+      const existingLink = contacts.find(c => c.authUserId === authUserId && c.contactType === 'vendor');
+      if (existingLink) {
+        return res.json({ 
+          success: true, 
+          message: "Already linked",
+          contact: {
+            id: existingLink.id,
+            name: existingLink.name,
+            email: existingLink.email,
+          }
+        });
+      }
+      
+      // Validate the invitation token
+      const tokenHash = hashToken(token);
+      const invitation = await storage.getInvitationByToken(tokenHash);
+      
+      if (!invitation) {
+        return res.status(404).json({ error: "Invalid invitation token" });
+      }
+      
+      if (invitation.status !== 'pending') {
+        return res.status(400).json({ error: `Invitation is ${invitation.status}` });
+      }
+      
+      if (new Date(invitation.expiresAt) < new Date()) {
+        await storage.updateInvitation(invitation.id, invitation.orgId, { status: 'expired' });
+        return res.status(400).json({ error: "Invitation has expired" });
+      }
+      
+      // Find the vendor contact by email from the invitation
+      const vendorContact = contacts.find(c => 
+        c.email.toLowerCase() === invitation.email.toLowerCase() && 
+        c.contactType === 'vendor'
+      );
+      
+      if (!vendorContact) {
+        return res.status(404).json({ error: "Vendor contact not found for this invitation" });
+      }
+      
+      // Ensure the contact is not already linked to another user
+      if (vendorContact.authUserId && vendorContact.authUserId !== authUserId) {
+        return res.status(400).json({ error: "This vendor account is already linked to another user" });
+      }
+      
+      // Link the contact and mark invitation as accepted
+      await storage.updateContact(vendorContact.id, orgId, { authUserId });
+      await storage.acceptInvitation(invitation.id);
+      
+      res.json({
+        success: true,
+        message: "Account linked successfully",
+        contact: {
+          id: vendorContact.id,
+          name: vendorContact.name,
+          email: vendorContact.email,
+        }
+      });
+    } catch (error) {
+      console.error("Link vendor account error:", error);
+      res.status(500).json({ error: "Failed to link vendor account" });
     }
   });
 

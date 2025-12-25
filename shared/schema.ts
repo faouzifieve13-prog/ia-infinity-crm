@@ -86,6 +86,7 @@ export const contacts = pgTable("contacts", {
   orgId: varchar("org_id").notNull().references(() => organizations.id),
   accountId: varchar("account_id").references(() => accounts.id),
   vendorId: varchar("vendor_id"),
+  authUserId: varchar("auth_user_id"),
   name: text("name").notNull(),
   email: text("email").notNull(),
   role: text("role"),
@@ -101,6 +102,7 @@ export const contacts = pgTable("contacts", {
   index("contacts_account_idx").on(table.orgId, table.accountId),
   index("contacts_type_idx").on(table.orgId, table.contactType),
   index("contacts_notion_idx").on(table.notionPageId),
+  index("contacts_auth_user_idx").on(table.authUserId),
 ]);
 
 export const deals = pgTable("deals", {
@@ -886,3 +888,6 @@ export type Conversation = typeof conversations.$inferSelect;
 export type InsertConversation = z.infer<typeof insertConversationSchema>;
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
+
+// Auth schema export
+export * from "./models/auth";
