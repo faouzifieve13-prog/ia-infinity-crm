@@ -319,3 +319,178 @@ export async function getQontoQuoteById(quoteId: string): Promise<QontoQuoteResp
 
   return await response.json();
 }
+
+// Finance/Banking interfaces
+interface QontoBankAccount {
+  slug: string;
+  iban: string;
+  bic: string;
+  currency: string;
+  balance: number;
+  balance_cents: number;
+  authorized_balance: number;
+  authorized_balance_cents: number;
+  name?: string;
+}
+
+interface QontoOrganization {
+  slug: string;
+  legal_name?: string;
+  name?: string;
+  bank_accounts: QontoBankAccount[];
+}
+
+interface QontoTransaction {
+  transaction_id: string;
+  amount: number;
+  amount_cents: number;
+  side: 'debit' | 'credit';
+  operation_type: string;
+  currency: string;
+  label: string;
+  settled_at: string;
+  emitted_at: string;
+  status: string;
+  note?: string;
+  reference?: string;
+  category?: string;
+}
+
+interface QontoTransactionsResponse {
+  transactions: QontoTransaction[];
+  meta: {
+    current_page: number;
+    next_page: number | null;
+    prev_page: number | null;
+    total_pages: number;
+    total_count: number;
+    per_page: number;
+  };
+}
+
+export interface QontoFinanceOverview {
+  balance: number;
+  authorizedBalance: number;
+  currency: string;
+  iban: string;
+  monthlyIncome: number;
+  monthlyExpenses: number;
+  monthName: string;
+  organizationName: string;
+  transactionCount: number;
+}
+
+export async function getQontoOrganization(): Promise<QontoOrganization> {
+  const login = process.env.QONTO_LOGIN;
+  
+  const response = await fetch(`${QONTO_API_BASE}/organizations/${login}`, {
+    method: 'GET',
+    headers: getQontoHeaders()
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `Erreur récupération organisation: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.organization;
+}
+
+export async function getQontoTransactions(bankAccountId: string, options?: {
+  settledAtFrom?: string;
+  settledAtTo?: string;
+  status?: string[];
+  side?: ('debit' | 'credit')[];
+  perPage?: number;
+  currentPage?: number;
+}): Promise<QontoTransactionsResponse> {
+  const params = new URLSearchParams();
+  params.append('bank_account_id', bankAccountId);
+  
+  if (options?.settledAtFrom) {
+    params.append('settled_at_from', options.settledAtFrom);
+  }
+  if (options?.settledAtTo) {
+    params.append('settled_at_to', options.settledAtTo);
+  }
+  if (options?.status) {
+    options.status.forEach(s => params.append('status[]', s));
+  }
+  if (options?.side) {
+    options.side.forEach(s => params.append('side[]', s));
+  }
+  params.append('per_page', (options?.perPage || 100).toString());
+  params.append('current_page', (options?.currentPage || 1).toString());
+  params.append('sort_by', 'settled_at:desc');
+
+  const response = await fetch(`${QONTO_API_BASE}/transactions?${params.toString()}`, {
+    method: 'GET',
+    headers: getQontoHeaders()
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `Erreur récupération transactions: ${response.status}`);
+  }
+
+  return await response.json();
+}
+
+export async function getQontoFinanceOverview(): Promise<QontoFinanceOverview> {
+  // Get organization with bank accounts
+  const org = await getQontoOrganization();
+  
+  if (!org.bank_accounts || org.bank_accounts.length === 0) {
+    throw new Error('Aucun compte bancaire trouvé');
+  }
+
+  const mainAccount = org.bank_accounts[0];
+  
+  // Get current month date range
+  const now = new Date();
+  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  
+  const settledAtFrom = firstDayOfMonth.toISOString().split('T')[0];
+  const settledAtTo = lastDayOfMonth.toISOString().split('T')[0];
+
+  // Fetch all completed transactions for the month
+  const transactionsData = await getQontoTransactions(mainAccount.slug, {
+    settledAtFrom,
+    settledAtTo,
+    status: ['completed'],
+    perPage: 100
+  });
+
+  // Calculate income and expenses
+  let monthlyIncome = 0;
+  let monthlyExpenses = 0;
+
+  for (const txn of transactionsData.transactions) {
+    if (txn.side === 'credit') {
+      monthlyIncome += txn.amount;
+    } else if (txn.side === 'debit') {
+      monthlyExpenses += txn.amount;
+    }
+  }
+
+  // Get month name in French
+  const monthNames = [
+    'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+    'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+  ];
+  const monthName = monthNames[now.getMonth()];
+
+  return {
+    balance: mainAccount.balance,
+    authorizedBalance: mainAccount.authorized_balance,
+    currency: mainAccount.currency,
+    iban: mainAccount.iban,
+    monthlyIncome,
+    monthlyExpenses,
+    monthName,
+    organizationName: org.legal_name || org.name || 'Organisation',
+    transactionCount: transactionsData.meta.total_count
+  };
+}

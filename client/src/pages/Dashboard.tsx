@@ -11,6 +11,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { MetricCard } from '@/components/dashboard/MetricCard';
+import { FinanceWidget } from '@/components/dashboard/FinanceWidget';
 import { ActivityFeed } from '@/components/ActivityFeed';
 import { WorkflowList } from '@/components/WorkflowList';
 import { ProjectCard } from '@/components/projects/ProjectCard';
@@ -169,6 +170,7 @@ function InternalDashboard() {
         </div>
 
         <div className="space-y-6">
+          <FinanceWidget />
           <ActivityFeed activities={activities.slice(0, 10).map(a => ({
             id: a.id,
             type: a.type,

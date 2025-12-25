@@ -4186,6 +4186,18 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
+  // Qonto Finance Overview (balance, income, expenses)
+  app.get("/api/qonto/finance/overview", async (req: Request, res: Response) => {
+    try {
+      const { getQontoFinanceOverview } = await import("./qonto");
+      const overview = await getQontoFinanceOverview();
+      res.json(overview);
+    } catch (error: any) {
+      console.error("Get Qonto finance overview error:", error);
+      res.status(500).json({ error: error.message || "Failed to get finance overview" });
+    }
+  });
+
   // Generate follow-up messages with AI
   app.post("/api/deals/:id/follow-up/generate", async (req: Request, res: Response) => {
     try {
