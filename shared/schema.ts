@@ -199,6 +199,7 @@ export const projects = pgTable("projects", {
   orgId: varchar("org_id").notNull().references(() => organizations.id),
   accountId: varchar("account_id").references(() => accounts.id),
   dealId: varchar("deal_id").references(() => deals.id),
+  vendorContactId: varchar("vendor_contact_id").references(() => contacts.id),
   name: text("name").notNull(),
   description: text("description"),
   status: projectStatusEnum("status").notNull().default('active'),

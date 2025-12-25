@@ -44,13 +44,14 @@ import {
 import { ProjectCard } from '@/components/projects/ProjectCard';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient, apiRequest } from '@/lib/queryClient';
-import type { Project, Account, ProjectStatus } from '@/lib/types';
+import type { Project, Account, ProjectStatus, Contact } from '@/lib/types';
 
 const projectFormSchema = z.object({
   name: z.string().min(1, 'Le nom est requis'),
   description: z.string().optional(),
   status: z.enum(['active', 'on_hold', 'completed', 'cancelled', 'archived']).default('active'),
   accountId: z.string().optional(),
+  vendorContactId: z.string().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
 });
@@ -75,6 +76,7 @@ export default function Projects() {
       description: '',
       status: 'active',
       accountId: '',
+      vendorContactId: '',
       startDate: '',
       endDate: '',
     },
@@ -87,6 +89,7 @@ export default function Projects() {
       description: '',
       status: 'active',
       accountId: '',
+      vendorContactId: '',
       startDate: '',
       endDate: '',
     },
@@ -100,6 +103,12 @@ export default function Projects() {
     queryKey: ['/api/accounts'],
   });
 
+  const { data: contacts = [] } = useQuery<Contact[]>({
+    queryKey: ['/api/contacts'],
+  });
+
+  const vendorContacts = contacts.filter(c => c.contactType === 'vendor');
+
   const createMutation = useMutation({
     mutationFn: async (data: ProjectFormValues) => {
       const parseDate = (dateStr: string | undefined) => {
@@ -112,6 +121,7 @@ export default function Projects() {
       const payload = {
         ...data,
         accountId: data.accountId || null,
+        vendorContactId: data.vendorContactId || null,
         startDate: parseDate(data.startDate),
         endDate: parseDate(data.endDate),
       };
@@ -147,6 +157,7 @@ export default function Projects() {
       const payload = {
         ...data,
         accountId: data.accountId || null,
+        vendorContactId: data.vendorContactId || null,
         startDate: data.startDate ? parseDate(data.startDate) : undefined,
         endDate: data.endDate ? parseDate(data.endDate) : undefined,
       };
@@ -237,6 +248,7 @@ export default function Projects() {
       description: project.description || '',
       status: project.status,
       accountId: project.accountId || '',
+      vendorContactId: project.vendorContactId || '',
       startDate: formatDate(project.startDate),
       endDate: formatDate(project.endDate),
     });
@@ -365,6 +377,31 @@ export default function Projects() {
                           {accounts.map((account) => (
                             <SelectItem key={account.id} value={account.id}>
                               {account.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="vendorContactId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Sous-traitant assigné</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-project-vendor">
+                            <SelectValue placeholder="Sélectionner un sous-traitant" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {vendorContacts.map((contact) => (
+                            <SelectItem key={contact.id} value={contact.id}>
+                              {contact.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -594,6 +631,31 @@ export default function Projects() {
                         {accounts.map((account) => (
                           <SelectItem key={account.id} value={account.id}>
                             {account.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="vendorContactId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Sous-traitant assigné</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-edit-project-vendor">
+                          <SelectValue placeholder="Sélectionner un sous-traitant" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {vendorContacts.map((contact) => (
+                          <SelectItem key={contact.id} value={contact.id}>
+                            {contact.name}
                           </SelectItem>
                         ))}
                       </SelectContent>

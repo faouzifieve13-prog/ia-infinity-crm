@@ -109,6 +109,7 @@ export interface Project {
   orgId: string;
   accountId: string;
   dealId?: string | null;
+  vendorContactId?: string | null;
   name: string;
   description?: string | null;
   status: ProjectStatus;
