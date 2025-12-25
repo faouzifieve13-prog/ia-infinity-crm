@@ -50,6 +50,13 @@ Preferred communication style: Simple, everyday language.
 
 - **Functionality**: Generates quotes (devis) directly in the Qonto banking platform, supporting "Audit IA" and "Automatisation IA" types. Includes automatic client creation in Qonto if not existing and direct links to generated quotes.
 
+### Electronic Signature System
+
+- **Functionality**: Dual signature system for Qonto quotes enabling admin + client signatures.
+- **Flow**: Admin signs first → generates token-based secure link (SHA-256, 30-day expiration) → client signs via public page → both signatures trigger PDF generation.
+- **PDF Storage**: Signed quote PDFs with embedded signatures uploaded to Google Drive folder "IA Infinity - Devis Signés".
+- **Client Portal**: Clients can view and sign pending quotes from their portal (/client/quotes).
+
 ### Visual Design System
 
 - **Styling**: Portal-specific styling with distinct color gradients and icons for Admin, Client, and Vendor portals.
