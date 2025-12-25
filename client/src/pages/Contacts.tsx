@@ -56,8 +56,7 @@ import { useToast } from '@/hooks/use-toast';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import type { Contact, Account, Vendor, ContactType } from '@/lib/types';
 
-const contactTypeLabels: Record<ContactType, { label: string; icon: typeof Building2; color: string }> = {
-  client: { label: 'Client', icon: Building2, color: 'bg-blue-500/10 text-blue-500 border-blue-500/30' },
+const contactTypeLabels: Partial<Record<ContactType, { label: string; icon: typeof Building2; color: string }>> = {
   vendor: { label: 'Sous-traitant', icon: Wrench, color: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' },
   partner: { label: 'Partenaire', icon: Handshake, color: 'bg-amber-500/10 text-amber-500 border-amber-500/30' },
   prospect: { label: 'Prospect', icon: UserPlus, color: 'bg-purple-500/10 text-purple-500 border-purple-500/30' },
@@ -66,10 +65,9 @@ const contactTypeLabels: Record<ContactType, { label: string; icon: typeof Build
 const contactFormSchema = z.object({
   name: z.string().min(1, 'Le nom est requis'),
   email: z.string().email('Email invalide'),
-  contactType: z.enum(['client', 'vendor', 'partner', 'prospect']).default('client'),
+  contactType: z.enum(['vendor', 'partner', 'prospect']).default('vendor'),
   phone: z.string().optional(),
   calendarUrl: z.string().optional(),
-  accountId: z.string().optional(),
 });
 
 type ContactFormValues = z.infer<typeof contactFormSchema>;
@@ -85,10 +83,9 @@ export default function Contacts() {
     defaultValues: {
       name: '',
       email: '',
-      contactType: 'client',
+      contactType: 'vendor',
       phone: '',
       calendarUrl: '',
-      accountId: '',
     },
   });
 
@@ -110,7 +107,6 @@ export default function Contacts() {
     mutationFn: async (data: ContactFormValues) => {
       const payload = {
         ...data,
-        accountId: data.contactType === 'client' && data.accountId ? data.accountId : null,
         phone: data.phone || null,
         calendarUrl: data.calendarUrl || null,
       };
@@ -293,33 +289,6 @@ export default function Contacts() {
                   )}
                 />
 
-                {selectedContactType === 'client' && (
-                  <FormField
-                    control={form.control}
-                    name="accountId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Entreprise cliente</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger data-testid="select-contact-account">
-                              <SelectValue placeholder="Sélectionner une entreprise" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {accounts.map((account) => (
-                              <SelectItem key={account.id} value={account.id}>
-                                {account.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
-
                 <div className="flex justify-end gap-3 pt-4">
                   <Button 
                     type="button" 
@@ -399,7 +368,7 @@ export default function Contacts() {
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <p className="text-muted-foreground mb-4">
             {typeFilter !== 'all' 
-              ? `Aucun contact de type "${contactTypeLabels[typeFilter].label}" trouvé`
+              ? `Aucun contact de type "${contactTypeLabels[typeFilter]?.label || typeFilter}" trouvé`
               : 'Aucun contact trouvé'
             }
           </p>
@@ -417,8 +386,8 @@ export default function Contacts() {
               .join('')
               .toUpperCase();
 
-            const typeInfo = contactTypeLabels[contact.contactType || 'client'];
-            const TypeIcon = typeInfo.icon;
+            const typeInfo = contactTypeLabels[contact.contactType || 'vendor'];
+            const TypeIcon = typeInfo?.icon || Wrench;
 
             return (
               <Card key={contact.id} className="hover-elevate" data-testid={`contact-card-${contact.id}`}>
@@ -449,9 +418,9 @@ export default function Contacts() {
                 <CardContent>
                   <div className="space-y-2">
                     <div className="flex flex-wrap gap-2">
-                      <Badge variant="outline" className={`text-xs ${typeInfo.color}`}>
+                      <Badge variant="outline" className={`text-xs ${typeInfo?.color || ''}`}>
                         <TypeIcon className="h-3 w-3 mr-1" />
-                        {typeInfo.label}
+                        {typeInfo?.label || contact.contactType}
                       </Badge>
                       {contact.contactType === 'client' && contact.accountId && (
                         <Badge variant="outline" className="text-xs">
