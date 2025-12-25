@@ -1343,6 +1343,170 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
+  // Admin sign a quote
+  app.post("/api/quotes/:id/sign-admin", isAuthenticated, requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const user = req.user as any;
+      const { signature } = req.body;
+      
+      if (!signature) {
+        return res.status(400).json({ error: "Signature requise" });
+      }
+      
+      const quote = await storage.getQuote(req.params.id, orgId);
+      if (!quote) {
+        return res.status(404).json({ error: "Devis non trouvé" });
+      }
+      
+      const updatedQuote = await storage.updateQuote(quote.id, orgId, {
+        adminSignature: signature,
+        adminSignedAt: new Date(),
+        adminSignedBy: user?.claims?.email || user?.claims?.name || 'Admin'
+      });
+      
+      // Check if both signatures are present to update status
+      if (updatedQuote?.clientSignature && updatedQuote?.adminSignature) {
+        await storage.updateQuote(quote.id, orgId, { status: 'signed' });
+      }
+      
+      res.json({ success: true, quote: updatedQuote });
+    } catch (error: any) {
+      console.error("Admin sign quote error:", error);
+      res.status(500).json({ error: error.message || "Erreur lors de la signature" });
+    }
+  });
+
+  // Client sign a quote (via token)
+  app.post("/api/quotes/:id/sign-client", async (req: Request, res: Response) => {
+    try {
+      const { signature, clientName, token } = req.body;
+      
+      if (!signature || !clientName) {
+        return res.status(400).json({ error: "Signature et nom requis" });
+      }
+      
+      // Find quote by ID (token verification optional for simpler flow)
+      const orgId = getOrgId(req);
+      const quote = await storage.getQuote(req.params.id, orgId);
+      
+      if (!quote) {
+        return res.status(404).json({ error: "Devis non trouvé" });
+      }
+      
+      // Verify token if provided
+      if (quote.signatureToken && token) {
+        const hashedToken = hashToken(token);
+        if (hashedToken !== quote.signatureToken) {
+          return res.status(403).json({ error: "Token de signature invalide" });
+        }
+        if (quote.signatureTokenExpiresAt && new Date() > quote.signatureTokenExpiresAt) {
+          return res.status(403).json({ error: "Token de signature expiré" });
+        }
+      }
+      
+      const updatedQuote = await storage.updateQuote(quote.id, orgId, {
+        clientSignature: signature,
+        clientSignedAt: new Date(),
+        clientSignedBy: clientName
+      });
+      
+      // Check if both signatures are present to update status
+      if (updatedQuote?.clientSignature && updatedQuote?.adminSignature) {
+        await storage.updateQuote(quote.id, orgId, { status: 'signed' });
+      }
+      
+      res.json({ success: true, quote: updatedQuote });
+    } catch (error: any) {
+      console.error("Client sign quote error:", error);
+      res.status(500).json({ error: error.message || "Erreur lors de la signature" });
+    }
+  });
+
+  // Generate signature token for client
+  app.post("/api/quotes/:id/generate-signature-token", isAuthenticated, requireAdminRole, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const quote = await storage.getQuote(req.params.id, orgId);
+      
+      if (!quote) {
+        return res.status(404).json({ error: "Devis non trouvé" });
+      }
+      
+      const token = generateToken();
+      const hashedToken = hashToken(token);
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30); // 30 days validity
+      
+      await storage.updateQuote(quote.id, orgId, {
+        signatureToken: hashedToken,
+        signatureTokenExpiresAt: expiresAt
+      });
+      
+      // Return the raw token (only time it's visible)
+      const signatureUrl = `/sign-quote/${quote.id}?token=${token}`;
+      
+      res.json({ success: true, token, signatureUrl, expiresAt });
+    } catch (error: any) {
+      console.error("Generate signature token error:", error);
+      res.status(500).json({ error: error.message || "Erreur lors de la génération du token" });
+    }
+  });
+
+  // Get quote for signing (public route with token)
+  app.get("/api/quotes/:id/public", async (req: Request, res: Response) => {
+    try {
+      const { token } = req.query;
+      const orgId = getOrgId(req);
+      const quote = await storage.getQuote(req.params.id, orgId);
+      
+      if (!quote) {
+        return res.status(404).json({ error: "Devis non trouvé" });
+      }
+      
+      // Verify token
+      if (quote.signatureToken && token) {
+        const hashedToken = hashToken(token as string);
+        if (hashedToken !== quote.signatureToken) {
+          return res.status(403).json({ error: "Accès non autorisé" });
+        }
+        if (quote.signatureTokenExpiresAt && new Date() > quote.signatureTokenExpiresAt) {
+          return res.status(403).json({ error: "Lien de signature expiré" });
+        }
+      } else if (!req.user) {
+        // No token and not authenticated
+        return res.status(403).json({ error: "Accès non autorisé" });
+      }
+      
+      // Get deal and account info
+      const deal = await storage.getDeal(quote.dealId, orgId);
+      const account = deal?.accountId ? await storage.getAccount(deal.accountId, orgId) : null;
+      
+      // Return public quote info (hide sensitive data)
+      res.json({
+        id: quote.id,
+        number: quote.number,
+        title: quote.title,
+        amount: quote.amount,
+        status: quote.status,
+        quoteUrl: quote.quoteUrl,
+        pdfUrl: quote.pdfUrl,
+        driveFileUrl: quote.driveFileUrl,
+        adminSignature: quote.adminSignature ? true : false, // Only indicate presence
+        adminSignedAt: quote.adminSignedAt,
+        adminSignedBy: quote.adminSignedBy,
+        clientSignature: quote.clientSignature ? true : false,
+        clientSignedAt: quote.clientSignedAt,
+        clientSignedBy: quote.clientSignedBy,
+        accountName: account?.name,
+        createdAt: quote.createdAt
+      });
+    } catch (error: any) {
+      console.error("Get public quote error:", error);
+      res.status(500).json({ error: error.message || "Erreur" });
+    }
+  });
+
   app.post("/api/contracts/generate", async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
