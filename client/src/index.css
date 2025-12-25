@@ -2,51 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
-/* LIGHT MODE - IA Infinity Design System */
+/* LIGHT MODE - IA Infinity Design System (Purple/Violet theme) */
 :root {
   --button-outline: rgba(0,0,0, .10);
   --badge-outline: rgba(0,0,0, .05);
   --opaque-button-border-intensity: -8;
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
-  --background: 220 20% 98%;
-  --foreground: 222 47% 11%;
-  --border: 220 13% 91%;
+  --background: 270 15% 98%;
+  --foreground: 270 30% 11%;
+  --border: 270 10% 91%;
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  --card-border: 220 13% 94%;
-  --sidebar: 222 47% 11%;
-  --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 222 47% 15%;
-  --sidebar-primary: 217 91% 60%;
-  --sidebar-primary-foreground: 210 40% 98%;
-  --sidebar-accent: 222 47% 18%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-ring: 217 91% 60%;
+  --card-foreground: 270 30% 11%;
+  --card-border: 270 10% 94%;
+  --sidebar: 270 30% 11%;
+  --sidebar-foreground: 270 20% 98%;
+  --sidebar-border: 270 30% 15%;
+  --sidebar-primary: 275 70% 55%;
+  --sidebar-primary-foreground: 270 20% 98%;
+  --sidebar-accent: 270 30% 18%;
+  --sidebar-accent-foreground: 270 20% 98%;
+  --sidebar-ring: 275 70% 55%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  --popover-border: 220 13% 91%;
-  --primary: 217 91% 55%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 220 14% 96%;
-  --secondary-foreground: 222 47% 11%;
-  --muted: 220 14% 96%;
-  --muted-foreground: 220 9% 46%;
-  --accent: 217 91% 95%;
-  --accent-foreground: 217 91% 35%;
+  --popover-foreground: 270 30% 11%;
+  --popover-border: 270 10% 91%;
+  --primary: 275 70% 50%;
+  --primary-foreground: 270 20% 98%;
+  --secondary: 270 10% 96%;
+  --secondary-foreground: 270 30% 11%;
+  --muted: 270 10% 96%;
+  --muted-foreground: 270 8% 46%;
+  --accent: 275 70% 95%;
+  --accent-foreground: 275 70% 35%;
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 98%;
-  --input: 220 13% 91%;
-  --ring: 217 91% 55%;
-  --chart-1: 217 91% 55%;
+  --input: 270 10% 91%;
+  --ring: 275 70% 50%;
+  --chart-1: 275 70% 55%;
   --chart-2: 160 84% 39%;
-  --chart-3: 270 76% 55%;
+  --chart-3: 320 70% 55%;
   --chart-4: 38 92% 50%;
-  --chart-5: 340 82% 52%;
+  --chart-5: 200 82% 52%;
   
   /* Portal-specific accent colors */
-  --portal-admin: 217 91% 55%;
-  --portal-admin-foreground: 210 40% 98%;
+  --portal-admin: 275 70% 50%;
+  --portal-admin-foreground: 270 20% 98%;
   --portal-client: 210 100% 50%;
   --portal-client-foreground: 210 40% 98%;
   --portal-vendor: 160 84% 39%;
@@ -108,44 +108,44 @@
   --opaque-button-border-intensity: 9;
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
-  --background: 222 47% 6%;
-  --foreground: 210 40% 98%;
-  --border: 222 47% 14%;
-  --card: 222 47% 9%;
-  --card-foreground: 210 40% 98%;
-  --card-border: 222 47% 12%;
-  --sidebar: 222 47% 7%;
-  --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 222 47% 12%;
-  --sidebar-primary: 217 91% 60%;
-  --sidebar-primary-foreground: 210 40% 98%;
-  --sidebar-accent: 222 47% 14%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-ring: 217 91% 60%;
-  --popover: 222 47% 11%;
-  --popover-foreground: 210 40% 98%;
-  --popover-border: 222 47% 14%;
-  --primary: 217 91% 55%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 222 47% 15%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 222 47% 13%;
-  --muted-foreground: 215 20% 65%;
-  --accent: 217 91% 15%;
-  --accent-foreground: 217 91% 80%;
+  --background: 270 30% 6%;
+  --foreground: 270 20% 98%;
+  --border: 270 30% 14%;
+  --card: 270 30% 9%;
+  --card-foreground: 270 20% 98%;
+  --card-border: 270 30% 12%;
+  --sidebar: 270 30% 7%;
+  --sidebar-foreground: 270 20% 98%;
+  --sidebar-border: 270 30% 12%;
+  --sidebar-primary: 275 70% 60%;
+  --sidebar-primary-foreground: 270 20% 98%;
+  --sidebar-accent: 270 30% 14%;
+  --sidebar-accent-foreground: 270 20% 98%;
+  --sidebar-ring: 275 70% 60%;
+  --popover: 270 30% 11%;
+  --popover-foreground: 270 20% 98%;
+  --popover-border: 270 30% 14%;
+  --primary: 275 70% 55%;
+  --primary-foreground: 270 20% 98%;
+  --secondary: 270 30% 15%;
+  --secondary-foreground: 270 20% 98%;
+  --muted: 270 30% 13%;
+  --muted-foreground: 270 15% 65%;
+  --accent: 275 70% 15%;
+  --accent-foreground: 275 70% 80%;
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 98%;
-  --input: 222 47% 20%;
-  --ring: 217 91% 55%;
-  --chart-1: 217 91% 65%;
+  --input: 270 30% 20%;
+  --ring: 275 70% 55%;
+  --chart-1: 275 70% 65%;
   --chart-2: 160 84% 50%;
-  --chart-3: 270 76% 68%;
+  --chart-3: 320 70% 68%;
   --chart-4: 38 92% 60%;
-  --chart-5: 340 82% 65%;
+  --chart-5: 200 82% 65%;
   
   /* Portal-specific accent colors - Dark mode */
-  --portal-admin: 217 91% 60%;
-  --portal-admin-foreground: 210 40% 98%;
+  --portal-admin: 275 70% 60%;
+  --portal-admin-foreground: 270 20% 98%;
   --portal-client: 210 100% 55%;
   --portal-client-foreground: 210 40% 98%;
   --portal-vendor: 160 84% 50%;
@@ -155,7 +155,7 @@
   --status-success: 160 84% 50%;
   --status-warning: 38 92% 55%;
   --status-error: 0 72% 55%;
-  --status-info: 217 91% 60%;
+  --status-info: 275 70% 60%;
   --status-online: 160 84% 50%;
   --shadow-2xs: 0px 2px 0px 0px hsl(0 0% 0% / 0.00);
   --shadow-xs: 0px 2px 0px 0px hsl(0 0% 0% / 0.00);
@@ -425,7 +425,7 @@
   
   /* Gradient backgrounds for portal themes */
   .gradient-admin {
-    background: linear-gradient(135deg, hsl(var(--portal-admin)) 0%, hsl(217 91% 45%) 100%);
+    background: linear-gradient(135deg, hsl(var(--portal-admin)) 0%, hsl(275 70% 40%) 100%);
   }
   
   .gradient-client {
