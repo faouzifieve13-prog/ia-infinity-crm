@@ -33,8 +33,12 @@ async function getConnectionSettings() {
 async function getAccessToken() {
   const connectionSettings = await getConnectionSettings();
   
+  // Debug: log connection settings status
+  console.log('Calendar connection status:', connectionSettings?.status, 'has settings:', !!connectionSettings?.settings);
+  
   // Check if connection has an error status (e.g., token revoked)
   if (connectionSettings?.status === 'error') {
+    console.log('Calendar connection error details:', JSON.stringify(connectionSettings, null, 2));
     throw new Error('Token has been revoked - please reconnect Google Calendar in Replit integrations panel');
   }
 
