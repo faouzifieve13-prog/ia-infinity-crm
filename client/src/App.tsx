@@ -37,6 +37,7 @@ import VendorAcceptInvite from "@/pages/VendorAcceptInvite";
 import ContractSign from "@/pages/ContractSign";
 import ContractPreview from "@/pages/ContractPreview";
 import SignQuote from "@/pages/SignQuote";
+import ClientQuotes from "@/pages/ClientQuotes";
 import Settings from "@/pages/Settings";
 import { LandingPage } from "@/pages/LandingPage";
 import NotFound from "@/pages/not-found";
@@ -144,6 +145,7 @@ function AppContent() {
             <Route path="/client/projects/:id" component={ProjectDetail} />
             <Route path="/client/documents" component={Documents} />
             <Route path="/client/tasks" component={Tasks} />
+            <Route path="/client/quotes" component={ClientQuotes} />
             <Route component={NotFound} />
           </Switch>
         </AppLayout>

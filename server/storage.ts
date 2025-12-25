@@ -63,6 +63,7 @@ export interface IStorage {
   deleteDeal(id: string, orgId: string): Promise<boolean>;
   updateDealStage(id: string, orgId: string, stage: DealStage, position: number): Promise<Deal | undefined>;
   
+  getQuotes(orgId: string): Promise<Quote[]>;
   getQuotesByDeal(dealId: string, orgId: string): Promise<Quote[]>;
   getQuote(id: string, orgId: string): Promise<Quote | undefined>;
   createQuote(quote: InsertQuote): Promise<Quote>;
@@ -417,6 +418,12 @@ export class DatabaseStorage implements IStorage {
       .set({ stage, position, daysInStage: 0, updatedAt: new Date() })
       .where(and(eq(deals.id, id), eq(deals.orgId, orgId))).returning();
     return updated;
+  }
+
+  async getQuotes(orgId: string): Promise<Quote[]> {
+    return db.select().from(quotes)
+      .where(eq(quotes.orgId, orgId))
+      .orderBy(desc(quotes.createdAt));
   }
 
   async getQuotesByDeal(dealId: string, orgId: string): Promise<Quote[]> {

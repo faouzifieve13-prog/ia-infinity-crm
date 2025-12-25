@@ -204,7 +204,7 @@ const navCategories: NavCategory[] = [
     spaces: ['internal', 'client', 'vendor'],
     items: [
       { title: 'Tous les documents', url: '/documents', icon: FileText, spaces: ['internal', 'client', 'vendor'] },
-      { title: 'Devis', url: '/quotes', icon: Receipt, spaces: ['internal'] },
+      { title: 'Devis', url: '/quotes', icon: Receipt, spaces: ['internal', 'client'] },
       { title: 'Contrats', url: '/contracts', icon: FileSignature, spaces: ['internal', 'client'] },
     ],
   },

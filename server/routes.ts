@@ -1242,6 +1242,18 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
+  // Quotes API - get all quotes
+  app.get("/api/quotes/all", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const quotes = await storage.getQuotes(orgId);
+      res.json(quotes);
+    } catch (error) {
+      console.error("Get all quotes error:", error);
+      res.status(500).json({ error: "Failed to get quotes" });
+    }
+  });
+
   // Quotes API - get quotes for a deal
   app.get("/api/deals/:dealId/quotes", async (req: Request, res: Response) => {
     try {
@@ -4810,6 +4822,26 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     } catch (error) {
       console.error("Get client documents error:", error);
       res.status(500).json({ error: "Failed to get client documents" });
+    }
+  });
+
+  // Get quotes for client's account
+  app.get("/api/client/quotes", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const clientInfo = await getClientContactFromAuth(req, orgId);
+      
+      if (!clientInfo || !clientInfo.accountId) {
+        return res.status(403).json({ error: "Not authorized as a client" });
+      }
+      
+      const allQuotes = await storage.getQuotes(orgId);
+      const clientQuotes = allQuotes.filter(q => q.accountId === clientInfo.accountId);
+      
+      res.json(clientQuotes);
+    } catch (error) {
+      console.error("Get client quotes error:", error);
+      res.status(500).json({ error: "Failed to get client quotes" });
     }
   });
 
