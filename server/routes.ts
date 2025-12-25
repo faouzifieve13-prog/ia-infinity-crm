@@ -880,7 +880,7 @@ ${cr.replace(/\n/g, '<br>')}
           const baseUrl = process.env.REPLIT_DEV_DOMAIN 
             ? `https://${process.env.REPLIT_DEV_DOMAIN}`
             : 'http://localhost:5000';
-          const portalLink = `${baseUrl}/auth/vendor/accept-invite?token=${token}`;
+          const portalLink = `${baseUrl}/auth/accept-invite?token=${token}`;
           
           const { sendVendorWelcomeEmail } = await import("./gmail");
           await sendVendorWelcomeEmail({
