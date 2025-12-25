@@ -7,7 +7,7 @@ import { relations } from "drizzle-orm";
 export const userRoleEnum = pgEnum('user_role', ['admin', 'sales', 'delivery', 'finance', 'client_admin', 'client_member', 'vendor']);
 export const spaceEnum = pgEnum('space', ['internal', 'client', 'vendor']);
 export const dealStageEnum = pgEnum('deal_stage', ['prospect', 'meeting', 'proposal', 'audit', 'negotiation', 'won', 'lost']);
-export const projectStatusEnum = pgEnum('project_status', ['active', 'on_hold', 'completed', 'cancelled']);
+export const projectStatusEnum = pgEnum('project_status', ['active', 'on_hold', 'completed', 'cancelled', 'archived']);
 export const taskStatusEnum = pgEnum('task_status', ['pending', 'in_progress', 'review', 'completed']);
 export const taskPriorityEnum = pgEnum('task_priority', ['low', 'medium', 'high', 'urgent']);
 export const invoiceStatusEnum = pgEnum('invoice_status', ['draft', 'sent', 'paid', 'overdue', 'cancelled']);

@@ -1,7 +1,7 @@
 export type UserRole = 'admin' | 'sales' | 'delivery' | 'finance' | 'client_admin' | 'client_member' | 'vendor';
 export type Space = 'internal' | 'client' | 'vendor';
 export type DealStage = 'prospect' | 'meeting' | 'proposal' | 'audit' | 'negotiation' | 'won' | 'lost';
-export type ProjectStatus = 'active' | 'on_hold' | 'completed' | 'cancelled';
+export type ProjectStatus = 'active' | 'on_hold' | 'completed' | 'cancelled' | 'archived';
 export type TaskStatus = 'pending' | 'in_progress' | 'review' | 'completed';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';

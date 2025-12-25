@@ -24,6 +24,16 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Form,
   FormControl,
   FormField,
@@ -39,7 +49,7 @@ import type { Project, Account, ProjectStatus } from '@/lib/types';
 const projectFormSchema = z.object({
   name: z.string().min(1, 'Le nom est requis'),
   description: z.string().optional(),
-  status: z.enum(['active', 'on_hold', 'completed', 'cancelled']).default('active'),
+  status: z.enum(['active', 'on_hold', 'completed', 'cancelled', 'archived']).default('active'),
   accountId: z.string().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
@@ -53,9 +63,24 @@ export default function Projects() {
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | 'all'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const { toast } = useToast();
 
   const form = useForm<ProjectFormValues>({
+    resolver: zodResolver(projectFormSchema),
+    defaultValues: {
+      name: '',
+      description: '',
+      status: 'active',
+      accountId: '',
+      startDate: '',
+      endDate: '',
+    },
+  });
+
+  const editForm = useForm<ProjectFormValues>({
     resolver: zodResolver(projectFormSchema),
     defaultValues: {
       name: '',
@@ -110,8 +135,127 @@ export default function Projects() {
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<ProjectFormValues> }) => {
+      const parseDate = (dateStr: string | undefined) => {
+        if (!dateStr) return null;
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const date = new Date(year, month - 1, day, 12, 0, 0);
+        return date.toISOString();
+      };
+      
+      const payload = {
+        ...data,
+        accountId: data.accountId || null,
+        startDate: data.startDate ? parseDate(data.startDate) : undefined,
+        endDate: data.endDate ? parseDate(data.endDate) : undefined,
+      };
+      return apiRequest('PATCH', `/api/projects/${id}`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
+      setEditDialogOpen(false);
+      setSelectedProject(null);
+      editForm.reset();
+      toast({
+        title: 'Projet modifié',
+        description: 'Le projet a été modifié avec succès.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de modifier le projet.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: async ({ id, archived }: { id: string; archived: boolean }) => {
+      return apiRequest('PATCH', `/api/projects/${id}`, {
+        status: archived ? 'completed' : 'archived',
+      });
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
+      toast({
+        title: variables.archived ? 'Projet désarchivé' : 'Projet archivé',
+        description: variables.archived ? 'Le projet a été désarchivé.' : 'Le projet a été archivé.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible d\'archiver le projet.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest('DELETE', `/api/projects/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
+      setDeleteDialogOpen(false);
+      setSelectedProject(null);
+      toast({
+        title: 'Projet supprimé',
+        description: 'Le projet a été supprimé avec succès.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de supprimer le projet.',
+        variant: 'destructive',
+      });
+    },
+  });
+
   const onSubmit = (data: ProjectFormValues) => {
     createMutation.mutate(data);
+  };
+
+  const onEditSubmit = (data: ProjectFormValues) => {
+    if (selectedProject) {
+      updateMutation.mutate({ id: selectedProject.id, data });
+    }
+  };
+
+  const handleEdit = (project: Project) => {
+    setSelectedProject(project);
+    const formatDate = (dateStr: string | null | undefined) => {
+      if (!dateStr) return '';
+      const date = new Date(dateStr);
+      return date.toISOString().split('T')[0];
+    };
+    editForm.reset({
+      name: project.name,
+      description: project.description || '',
+      status: project.status,
+      accountId: project.accountId || '',
+      startDate: formatDate(project.startDate),
+      endDate: formatDate(project.endDate),
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleArchive = (project: Project) => {
+    archiveMutation.mutate({ id: project.id, archived: project.status === 'archived' });
+  };
+
+  const handleDelete = (project: Project) => {
+    setSelectedProject(project);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (selectedProject) {
+      deleteMutation.mutate(selectedProject.id);
+    }
   };
 
   const getAccountName = (accountId: string) => {
@@ -130,7 +274,9 @@ export default function Projects() {
     const matchesSearch =
       project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       project.accountName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || project.status === statusFilter;
+    const matchesStatus = statusFilter === 'all' 
+      ? project.status !== 'archived'
+      : project.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
@@ -336,6 +482,7 @@ export default function Projects() {
             <SelectItem value="on_hold">En pause</SelectItem>
             <SelectItem value="completed">Terminé</SelectItem>
             <SelectItem value="cancelled">Annulé</SelectItem>
+            <SelectItem value="archived">Archivé</SelectItem>
           </SelectContent>
         </Select>
 
@@ -376,10 +523,193 @@ export default function Projects() {
               key={project.id}
               project={project}
               onClick={() => navigate(`/projects/${project.id}`)}
+              onEdit={() => handleEdit(project)}
+              onArchive={() => handleArchive(project)}
+              onDelete={() => handleDelete(project)}
             />
           ))}
         </div>
       )}
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Modifier le projet</DialogTitle>
+            <DialogDescription>
+              Modifiez les informations du projet.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
+              <FormField
+                control={editForm.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Nom du projet *</FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="Ex: Automatisation CRM" 
+                        {...field} 
+                        data-testid="input-edit-project-name"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        placeholder="Décrivez le projet..." 
+                        className="resize-none" 
+                        {...field} 
+                        data-testid="input-edit-project-description"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="accountId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Client</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-edit-project-account">
+                          <SelectValue placeholder="Sélectionner un client" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {accounts.map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="status"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Statut</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-edit-project-status">
+                          <SelectValue placeholder="Sélectionner un statut" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="active">Actif</SelectItem>
+                        <SelectItem value="on_hold">En pause</SelectItem>
+                        <SelectItem value="completed">Terminé</SelectItem>
+                        <SelectItem value="cancelled">Annulé</SelectItem>
+                        <SelectItem value="archived">Archivé</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={editForm.control}
+                  name="startDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Date de début</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="date" 
+                          {...field} 
+                          data-testid="input-edit-project-start-date"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={editForm.control}
+                  name="endDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Date de fin</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="date" 
+                          {...field} 
+                          data-testid="input-edit-project-end-date"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setEditDialogOpen(false)}
+                  data-testid="button-edit-cancel"
+                >
+                  Annuler
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={updateMutation.isPending}
+                  data-testid="button-edit-submit"
+                >
+                  {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Enregistrer
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer le projet</AlertDialogTitle>
+            <AlertDialogDescription>
+              Êtes-vous sûr de vouloir supprimer le projet "{selectedProject?.name}" ? Cette action est irréversible.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-delete-cancel">Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-delete-confirm"
+            >
+              {deleteMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

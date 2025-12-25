@@ -1,8 +1,15 @@
-import { Calendar, CheckCircle2, FolderKanban, ArrowRight } from 'lucide-react';
+import { Calendar, CheckCircle2, FolderKanban, ArrowRight, MoreHorizontal, Edit2, Archive, Trash2, ArchiveRestore } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { ProjectStatus } from '@/lib/types';
 
 interface ProjectCardProject {
@@ -20,6 +27,9 @@ interface ProjectCardProject {
 interface ProjectCardProps {
   project: ProjectCardProject;
   onClick?: () => void;
+  onEdit?: () => void;
+  onArchive?: () => void;
+  onDelete?: () => void;
   index?: number;
 }
 
@@ -28,10 +38,12 @@ const statusConfig: Record<ProjectStatus, { label: string; variant: 'default' | 
   on_hold: { label: 'En pause', variant: 'secondary', color: 'bg-amber-500' },
   completed: { label: 'Terminé', variant: 'outline', color: 'bg-blue-500' },
   cancelled: { label: 'Annulé', variant: 'destructive', color: 'bg-red-500' },
+  archived: { label: 'Archivé', variant: 'secondary', color: 'bg-gray-500' },
 };
 
-export function ProjectCard({ project, onClick, index = 0 }: ProjectCardProps) {
+export function ProjectCard({ project, onClick, onEdit, onArchive, onDelete, index = 0 }: ProjectCardProps) {
   const status = statusConfig[project.status];
+  const isArchived = project.status === 'archived';
 
   return (
     <motion.div
@@ -60,7 +72,50 @@ export function ProjectCard({ project, onClick, index = 0 }: ProjectCardProps) {
                 <p className="text-sm text-muted-foreground truncate pl-8">{project.accountName}</p>
               )}
             </div>
-            <Badge variant={status.variant} className="shrink-0">{status.label}</Badge>
+            <div className="flex items-center gap-1">
+              <Badge variant={status.variant} className="shrink-0">{status.label}</Badge>
+              {(onEdit || onArchive || onDelete) && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity" data-testid={`button-project-actions-${project.id}`}>
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                    {onEdit && (
+                      <DropdownMenuItem onClick={onEdit} data-testid={`button-edit-project-${project.id}`}>
+                        <Edit2 className="h-4 w-4 mr-2" />
+                        Modifier
+                      </DropdownMenuItem>
+                    )}
+                    {onArchive && (
+                      <DropdownMenuItem onClick={onArchive} data-testid={`button-archive-project-${project.id}`}>
+                        {isArchived ? (
+                          <>
+                            <ArchiveRestore className="h-4 w-4 mr-2" />
+                            Désarchiver
+                          </>
+                        ) : (
+                          <>
+                            <Archive className="h-4 w-4 mr-2" />
+                            Archiver
+                          </>
+                        )}
+                      </DropdownMenuItem>
+                    )}
+                    {onDelete && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={onDelete} className="text-destructive" data-testid={`button-delete-project-${project.id}`}>
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Supprimer
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
