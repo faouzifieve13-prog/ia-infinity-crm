@@ -25,6 +25,21 @@ function hashToken(token: string): string {
 
 const DEFAULT_ORG_ID = "default-org";
 
+// Middleware to check if user has admin/internal role (not client or vendor)
+function requireAdminRole(req: Request, res: Response, next: NextFunction) {
+  const user = req.user as any;
+  if (!user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  
+  const restrictedRoles = ['client_admin', 'client_member', 'vendor'];
+  if (restrictedRoles.includes(user.role)) {
+    return res.status(403).json({ error: "Forbidden: This action requires admin privileges" });
+  }
+  
+  next();
+}
+
 async function ensureDefaultOrg() {
   let org = await storage.getOrganization(DEFAULT_ORG_ID);
   if (!org) {
@@ -574,7 +589,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.post("/api/projects", async (req: Request, res: Response) => {
+  app.post("/api/projects", isAuthenticated, requireAdminRole, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const data = insertProjectSchema.parse({ ...req.body, orgId });
@@ -614,7 +629,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.patch("/api/projects/:id", async (req: Request, res: Response) => {
+  app.patch("/api/projects/:id", isAuthenticated, requireAdminRole, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const updateSchema = insertProjectSchema.partial().omit({ orgId: true });
@@ -664,7 +679,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.delete("/api/projects/:id", async (req: Request, res: Response) => {
+  app.delete("/api/projects/:id", isAuthenticated, requireAdminRole, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       await storage.deleteProject(req.params.id, orgId);
@@ -702,7 +717,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.post("/api/tasks", async (req: Request, res: Response) => {
+  app.post("/api/tasks", isAuthenticated, requireAdminRole, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const data = insertTaskSchema.parse({ ...req.body, orgId });
@@ -717,7 +732,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.patch("/api/tasks/:id", async (req: Request, res: Response) => {
+  app.patch("/api/tasks/:id", isAuthenticated, requireAdminRole, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const task = await storage.updateTask(req.params.id, orgId, req.body);
@@ -731,7 +746,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.delete("/api/tasks/:id", async (req: Request, res: Response) => {
+  app.delete("/api/tasks/:id", isAuthenticated, requireAdminRole, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       await storage.deleteTask(req.params.id, orgId);
@@ -1027,7 +1042,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.post("/api/documents", async (req: Request, res: Response) => {
+  app.post("/api/documents", isAuthenticated, requireAdminRole, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const data = insertDocumentSchema.parse({ ...req.body, orgId });
@@ -1042,7 +1057,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.delete("/api/documents/:id", async (req: Request, res: Response) => {
+  app.delete("/api/documents/:id", isAuthenticated, requireAdminRole, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       await storage.deleteDocument(req.params.id, orgId);
@@ -4504,6 +4519,290 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     } catch (error: any) {
       console.error("Update follow-up history error:", error);
       res.status(500).json({ error: error.message || "Failed to update follow-up history" });
+    }
+  });
+
+  // ==========================================
+  // CLIENT PORTAL ROUTES (Secured with authentication)
+  // ==========================================
+
+  // Helper to get client contact from authenticated user
+  async function getClientContactFromAuth(req: Request, orgId: string): Promise<{ contactId: string; accountId: string | null } | null> {
+    const user = req.user as any;
+    if (!user?.claims?.sub) return null;
+    
+    const authUserId = user.claims.sub;
+    const contacts = await storage.getContacts(orgId);
+    
+    // Find client contact by authUserId
+    const clientContact = contacts.find(c => c.authUserId === authUserId && c.contactType === 'client');
+    
+    if (!clientContact) return null;
+    return { contactId: clientContact.id, accountId: clientContact.accountId };
+  }
+
+  // Get current authenticated client's profile
+  app.get("/api/client/me", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const clientInfo = await getClientContactFromAuth(req, orgId);
+      
+      if (!clientInfo) {
+        return res.status(403).json({ 
+          error: "Not authorized as a client",
+          needsLinking: true,
+          message: "Please use your invitation link to connect your account"
+        });
+      }
+      
+      const contacts = await storage.getContacts(orgId);
+      const clientContact = contacts.find(c => c.id === clientInfo.contactId);
+      
+      if (!clientContact) {
+        return res.status(404).json({ error: "Client contact not found" });
+      }
+      
+      res.json({
+        id: clientContact.id,
+        name: clientContact.name,
+        email: clientContact.email,
+        role: clientContact.role,
+        phone: clientContact.phone,
+        accountId: clientContact.accountId,
+        authUserId: clientContact.authUserId,
+      });
+    } catch (error) {
+      console.error("Get client profile error:", error);
+      res.status(500).json({ error: "Failed to get client profile" });
+    }
+  });
+
+  // Get client's account information
+  app.get("/api/client/account", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const clientInfo = await getClientContactFromAuth(req, orgId);
+      
+      if (!clientInfo || !clientInfo.accountId) {
+        return res.status(403).json({ error: "Not authorized as a client or no account linked" });
+      }
+      
+      const accounts = await storage.getAccounts(orgId);
+      const account = accounts.find(a => a.id === clientInfo.accountId);
+      
+      if (!account) {
+        return res.status(404).json({ error: "Account not found" });
+      }
+      
+      res.json(account);
+    } catch (error) {
+      console.error("Get client account error:", error);
+      res.status(500).json({ error: "Failed to get client account" });
+    }
+  });
+
+  // Get projects for client's account only
+  app.get("/api/client/projects", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const clientInfo = await getClientContactFromAuth(req, orgId);
+      
+      if (!clientInfo || !clientInfo.accountId) {
+        return res.status(403).json({ error: "Not authorized as a client" });
+      }
+      
+      const allProjects = await storage.getProjects(orgId);
+      const clientProjects = allProjects.filter(p => p.accountId === clientInfo.accountId);
+      
+      res.json(clientProjects);
+    } catch (error) {
+      console.error("Get client projects error:", error);
+      res.status(500).json({ error: "Failed to get client projects" });
+    }
+  });
+
+  // Get documents for client's account and projects only
+  app.get("/api/client/documents", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const clientInfo = await getClientContactFromAuth(req, orgId);
+      
+      if (!clientInfo || !clientInfo.accountId) {
+        return res.status(403).json({ error: "Not authorized as a client" });
+      }
+      
+      const allProjects = await storage.getProjects(orgId);
+      const clientProjects = allProjects.filter(p => p.accountId === clientInfo.accountId);
+      const clientProjectIds = clientProjects.map(p => p.id);
+      
+      const allDocuments = await storage.getDocuments(orgId);
+      
+      const clientDocuments = allDocuments.filter(d => 
+        (d.accountId === clientInfo.accountId) ||
+        (d.projectId && clientProjectIds.includes(d.projectId))
+      );
+      
+      res.json(clientDocuments);
+    } catch (error) {
+      console.error("Get client documents error:", error);
+      res.status(500).json({ error: "Failed to get client documents" });
+    }
+  });
+
+  // Get tasks for client's projects only
+  app.get("/api/client/tasks", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const clientInfo = await getClientContactFromAuth(req, orgId);
+      
+      if (!clientInfo || !clientInfo.accountId) {
+        return res.status(403).json({ error: "Not authorized as a client" });
+      }
+      
+      const allProjects = await storage.getProjects(orgId);
+      const clientProjects = allProjects.filter(p => p.accountId === clientInfo.accountId);
+      const clientProjectIds = clientProjects.map(p => p.id);
+      
+      const allTasks = await storage.getTasks(orgId);
+      const clientTasks = allTasks.filter(t => t.projectId && clientProjectIds.includes(t.projectId));
+      
+      res.json(clientTasks);
+    } catch (error) {
+      console.error("Get client tasks error:", error);
+      res.status(500).json({ error: "Failed to get client tasks" });
+    }
+  });
+
+  // Get dashboard stats for client
+  app.get("/api/client/dashboard", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const clientInfo = await getClientContactFromAuth(req, orgId);
+      
+      if (!clientInfo || !clientInfo.accountId) {
+        return res.status(403).json({ error: "Not authorized as a client" });
+      }
+      
+      const allProjects = await storage.getProjects(orgId);
+      const clientProjects = allProjects.filter(p => p.accountId === clientInfo.accountId);
+      
+      const clientProjectIds = clientProjects.map(p => p.id);
+      const allTasks = await storage.getTasks(orgId);
+      const clientTasks = allTasks.filter(t => t.projectId && clientProjectIds.includes(t.projectId));
+      
+      const activeProjects = clientProjects.filter(p => p.status === 'active').length;
+      const completedProjects = clientProjects.filter(p => p.status === 'completed').length;
+      const completedTasks = clientTasks.filter(t => t.status === 'completed').length;
+      const totalTasks = clientTasks.length;
+      
+      // Calculate average project progress
+      const projectsWithProgress = clientProjects.filter(p => typeof p.progress === 'number');
+      const avgProgress = projectsWithProgress.length > 0 
+        ? Math.round(projectsWithProgress.reduce((sum, p) => sum + (p.progress || 0), 0) / projectsWithProgress.length)
+        : 0;
+      
+      res.json({
+        projects: {
+          total: clientProjects.length,
+          active: activeProjects,
+          completed: completedProjects,
+        },
+        tasks: {
+          total: totalTasks,
+          completed: completedTasks,
+          progress: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
+        },
+        averageProgress: avgProgress,
+      });
+    } catch (error) {
+      console.error("Get client dashboard error:", error);
+      res.status(500).json({ error: "Failed to get client dashboard" });
+    }
+  });
+
+  // Link authenticated user to client contact using invitation token
+  app.post("/api/client/link", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const user = req.user as any;
+      const { token } = req.body;
+      
+      if (!user?.claims?.sub) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      if (!token) {
+        return res.status(400).json({ error: "Invitation token is required" });
+      }
+      
+      const authUserId = user.claims.sub;
+      
+      const contacts = await storage.getContacts(orgId);
+      
+      // Check if already linked to a client contact
+      const existingLink = contacts.find(c => c.authUserId === authUserId && c.contactType === 'client');
+      if (existingLink) {
+        return res.json({ 
+          success: true, 
+          message: "Already linked",
+          contact: {
+            id: existingLink.id,
+            name: existingLink.name,
+            email: existingLink.email,
+            accountId: existingLink.accountId,
+          }
+        });
+      }
+      
+      // Validate the invitation token
+      const tokenHash = hashToken(token);
+      const invitation = await storage.getInvitationByToken(tokenHash);
+      
+      if (!invitation) {
+        return res.status(404).json({ error: "Invalid invitation token" });
+      }
+      
+      if (invitation.status !== 'pending') {
+        return res.status(400).json({ error: `Invitation is ${invitation.status}` });
+      }
+      
+      if (new Date(invitation.expiresAt) < new Date()) {
+        await storage.updateInvitation(invitation.id, invitation.orgId, { status: 'expired' });
+        return res.status(400).json({ error: "Invitation has expired" });
+      }
+      
+      // Find the client contact by email from the invitation
+      const clientContact = contacts.find(c => 
+        c.email.toLowerCase() === invitation.email.toLowerCase() && 
+        c.contactType === 'client'
+      );
+      
+      if (!clientContact) {
+        return res.status(404).json({ error: "Client contact not found for this invitation" });
+      }
+      
+      // Ensure the contact is not already linked to another user
+      if (clientContact.authUserId && clientContact.authUserId !== authUserId) {
+        return res.status(400).json({ error: "This client account is already linked to another user" });
+      }
+      
+      // Link the contact and mark invitation as accepted
+      await storage.updateContact(clientContact.id, orgId, { authUserId });
+      await storage.acceptInvitation(invitation.id);
+      
+      res.json({
+        success: true,
+        message: "Account linked successfully",
+        contact: {
+          id: clientContact.id,
+          name: clientContact.name,
+          email: clientContact.email,
+          accountId: clientContact.accountId,
+        }
+      });
+    } catch (error) {
+      console.error("Link client account error:", error);
+      res.status(500).json({ error: "Failed to link client account" });
     }
   });
 

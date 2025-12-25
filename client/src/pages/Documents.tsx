@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Plus, Search, FileText, File, Download, Eye, MoreHorizontal, Upload, FolderOpen, Loader2 } from 'lucide-react';
+import { useSpace } from '@/hooks/use-space';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,6 +64,15 @@ export default function Documents() {
   const [typeFilter, setTypeFilter] = useState<'all' | 'proposal' | 'audit' | 'contract' | 'other'>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const { toast } = useToast();
+  const { currentSpace } = useSpace();
+  
+  // Determine API endpoints based on portal
+  const documentsApiEndpoint = currentSpace === 'client' ? '/api/client/documents' 
+    : currentSpace === 'vendor' ? '/api/vendor/documents' 
+    : '/api/documents';
+  
+  // Clients and vendors can only view, not create/edit/delete
+  const isReadOnly = currentSpace === 'client' || currentSpace === 'vendor';
 
   const form = useForm<DocumentFormValues>({
     resolver: zodResolver(documentFormSchema),
@@ -76,15 +86,18 @@ export default function Documents() {
   });
 
   const { data: documents = [], isLoading } = useQuery<Document[]>({
-    queryKey: ['/api/documents'],
+    queryKey: [documentsApiEndpoint],
   });
 
+  // Only fetch accounts and projects when user can create/edit (not read-only)
   const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: ['/api/accounts'],
+    enabled: !isReadOnly,
   });
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ['/api/projects'],
+    enabled: !isReadOnly,
   });
 
   const createMutation = useMutation({
@@ -169,14 +182,15 @@ export default function Documents() {
           <p className="text-muted-foreground">Gérez vos propositions, contrats et rapports</p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button data-testid="button-create-document">
-                <Plus className="mr-2 h-4 w-4" />
-                Nouveau document
-              </Button>
-            </DialogTrigger>
+        {!isReadOnly && (
+          <div className="flex items-center gap-2">
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button data-testid="button-create-document">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nouveau document
+                </Button>
+              </DialogTrigger>
             <DialogContent className="sm:max-w-[500px]">
               <DialogHeader>
                 <DialogTitle>Créer un document</DialogTitle>
@@ -322,6 +336,7 @@ export default function Documents() {
             </DialogContent>
           </Dialog>
         </div>
+        )}
       </div>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -354,10 +369,12 @@ export default function Documents() {
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <File className="h-12 w-12 text-muted-foreground mb-4" />
           <p className="text-muted-foreground mb-4">Aucun document trouvé</p>
-          <Button onClick={() => setDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nouveau document
-          </Button>
+          {!isReadOnly && (
+            <Button onClick={() => setDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nouveau document
+            </Button>
+          )}
         </div>
       ) : (
         <Card>
@@ -404,19 +421,21 @@ export default function Documents() {
                       </Button>
                     )}
 
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem>Modifier</DropdownMenuItem>
-                        <DropdownMenuItem>Partager</DropdownMenuItem>
-                        <DropdownMenuItem>Dupliquer</DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive">Supprimer</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    {!isReadOnly && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem>Modifier</DropdownMenuItem>
+                          <DropdownMenuItem>Partager</DropdownMenuItem>
+                          <DropdownMenuItem>Dupliquer</DropdownMenuItem>
+                          <DropdownMenuItem className="text-destructive">Supprimer</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
                 );
               })}

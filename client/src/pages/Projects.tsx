@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useLocation } from 'wouter';
+import { useSpace } from '@/hooks/use-space';
 import { Plus, Search, Grid3X3, List, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,8 +78,17 @@ export default function Projects() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { currentSpace } = useSpace();
   
   const canSeePricing = user?.role === 'admin' || user?.role === 'vendor';
+  
+  // Determine API endpoint based on portal
+  const projectsApiEndpoint = currentSpace === 'client' ? '/api/client/projects' 
+    : currentSpace === 'vendor' ? '/api/vendor/projects' 
+    : '/api/projects';
+  
+  // Clients and vendors can only view, not create/edit/delete
+  const isReadOnly = currentSpace === 'client' || currentSpace === 'vendor';
 
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(projectFormSchema),
@@ -109,15 +119,18 @@ export default function Projects() {
   });
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
-    queryKey: ['/api/projects'],
+    queryKey: [projectsApiEndpoint],
   });
 
+  // Only fetch accounts and contacts when user can create/edit (not read-only)
   const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: ['/api/accounts'],
+    enabled: !isReadOnly,
   });
 
   const { data: contacts = [] } = useQuery<Contact[]>({
     queryKey: ['/api/contacts'],
+    enabled: !isReadOnly,
   });
 
   const vendorContacts = contacts.filter(c => c.contactType === 'vendor');
@@ -324,13 +337,14 @@ export default function Projects() {
           <p className="text-muted-foreground">Gérez vos projets et livrables</p>
         </div>
 
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-add-project">
-              <Plus className="mr-2 h-4 w-4" />
-              Nouveau Projet
-            </Button>
-          </DialogTrigger>
+        {!isReadOnly && (
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-add-project">
+                <Plus className="mr-2 h-4 w-4" />
+                Nouveau Projet
+              </Button>
+            </DialogTrigger>
           <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
               <DialogTitle>Créer un projet</DialogTitle>
@@ -536,6 +550,7 @@ export default function Projects() {
             </Form>
           </DialogContent>
         </Dialog>
+        )}
       </div>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -589,10 +604,12 @@ export default function Projects() {
       {filteredProjects.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <p className="text-muted-foreground mb-4">Aucun projet trouvé</p>
-          <Button onClick={() => setDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Créer un projet
-          </Button>
+          {!isReadOnly && (
+            <Button onClick={() => setDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Créer un projet
+            </Button>
+          )}
         </div>
       ) : (
         <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'space-y-4'}>
@@ -601,23 +618,24 @@ export default function Projects() {
               key={project.id}
               project={project}
               onClick={() => navigate(`/projects/${project.id}`)}
-              onEdit={() => handleEdit(project)}
-              onArchive={() => handleArchive(project)}
-              onDelete={() => handleDelete(project)}
+              onEdit={isReadOnly ? undefined : () => handleEdit(project)}
+              onArchive={isReadOnly ? undefined : () => handleArchive(project)}
+              onDelete={isReadOnly ? undefined : () => handleDelete(project)}
               showPricing={canSeePricing}
             />
           ))}
         </div>
       )}
 
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Modifier le projet</DialogTitle>
-            <DialogDescription>
-              Modifiez les informations du projet.
-            </DialogDescription>
-          </DialogHeader>
+      {!isReadOnly && (
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>Modifier le projet</DialogTitle>
+              <DialogDescription>
+                Modifiez les informations du projet.
+              </DialogDescription>
+            </DialogHeader>
           <Form {...editForm}>
             <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
               <FormField
@@ -815,30 +833,33 @@ export default function Projects() {
               </div>
             </form>
           </Form>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
 
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Supprimer le projet</AlertDialogTitle>
-            <AlertDialogDescription>
-              Êtes-vous sûr de vouloir supprimer le projet "{selectedProject?.name}" ? Cette action est irréversible.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-delete-cancel">Annuler</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              data-testid="button-delete-confirm"
-            >
-              {deleteMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Supprimer
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {!isReadOnly && (
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Supprimer le projet</AlertDialogTitle>
+              <AlertDialogDescription>
+                Êtes-vous sûr de vouloir supprimer le projet "{selectedProject?.name}" ? Cette action est irréversible.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-delete-cancel">Annuler</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmDelete}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                data-testid="button-delete-confirm"
+              >
+                {deleteMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Supprimer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }

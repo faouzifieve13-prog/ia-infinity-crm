@@ -236,6 +236,21 @@ export function AppSidebar() {
     );
   };
 
+  // Helper to get the correct URL based on current portal
+  const getPortalUrl = (baseUrl: string): string => {
+    if (currentSpace === 'client') {
+      // For client portal, prefix with /client
+      if (baseUrl === '/') return '/client';
+      return `/client${baseUrl}`;
+    }
+    if (currentSpace === 'vendor') {
+      // For vendor portal, prefix with /vendor
+      if (baseUrl === '/') return '/vendor';
+      return `/vendor${baseUrl}`;
+    }
+    return baseUrl;
+  };
+
   const filteredCategories = navCategories
     .filter(cat => cat.spaces.includes(currentSpace))
     .map(cat => ({
@@ -249,13 +264,16 @@ export function AppSidebar() {
   const portal = portalConfig[currentSpace];
   const PortalIcon = portal.icon;
 
-  const isItemActive = (url: string) => location === url;
+  const isItemActive = (url: string) => {
+    const portalUrl = getPortalUrl(url);
+    return location === portalUrl || location === url;
+  };
   const isCategoryActive = (items: NavItem[]) => items.some(item => isItemActive(item.url));
 
   return (
     <Sidebar className="border-r-0">
       <SidebarHeader className="p-4 border-b border-sidebar-border/50">
-        <Link href="/" className="flex items-center gap-3 group">
+        <Link href={getPortalUrl('/')} className="flex items-center gap-3 group">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-background shadow-lg transition-transform hover:scale-105 active:scale-95 overflow-hidden">
             <img src={logoIaInfinity} alt="IA Infinity" className="h-9 w-9 object-contain" />
           </div>
@@ -282,16 +300,16 @@ export function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={location === '/'}
-                  className={`relative group/item transition-all duration-200 ${location === '/' ? 'bg-sidebar-accent' : ''}`}
+                  isActive={isItemActive('/')}
+                  className={`relative group/item transition-all duration-200 ${isItemActive('/') ? 'bg-sidebar-accent' : ''}`}
                   data-testid="nav-tableau-de-bord"
                 >
-                  <Link href="/">
-                    {location === '/' && (
+                  <Link href={getPortalUrl('/')}>
+                    {isItemActive('/') && (
                       <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-sidebar-primary" />
                     )}
-                    <LayoutDashboard className={`h-4 w-4 transition-all duration-200 ${location === '/' ? 'text-sidebar-primary' : ''} group-hover/item:scale-110`} />
-                    <span className={location === '/' ? 'font-medium' : ''}>Tableau de bord</span>
+                    <LayoutDashboard className={`h-4 w-4 transition-all duration-200 ${isItemActive('/') ? 'text-sidebar-primary' : ''} group-hover/item:scale-110`} />
+                    <span className={isItemActive('/') ? 'font-medium' : ''}>Tableau de bord</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -331,7 +349,7 @@ export function AppSidebar() {
                             className={`relative group/item transition-all duration-200 ml-2 ${isActive ? 'bg-sidebar-accent' : ''}`}
                             data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
                           >
-                            <Link href={item.url}>
+                            <Link href={getPortalUrl(item.url)}>
                               {isActive && (
                                 <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-sidebar-primary" />
                               )}
@@ -368,7 +386,7 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               {filteredSecondaryItems.map((item) => {
-                const isActive = location === item.url;
+                const isActive = isItemActive(item.url);
                 return (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton
@@ -377,7 +395,7 @@ export function AppSidebar() {
                       className={`relative transition-all duration-200 ${isActive ? 'bg-sidebar-accent' : ''}`}
                       data-testid={`nav-${item.title.toLowerCase()}`}
                     >
-                      <Link href={item.url}>
+                      <Link href={getPortalUrl(item.url)}>
                         {isActive && (
                           <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-sidebar-primary" />
                         )}

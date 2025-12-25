@@ -11,14 +11,24 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { TaskList } from '@/components/projects/TaskList';
+import { useSpace } from '@/hooks/use-space';
 import type { Task, TaskStatus } from '@/lib/types';
 
 export default function Tasks() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
+  const { currentSpace } = useSpace();
+  
+  // Determine API endpoint based on portal
+  const tasksApiEndpoint = currentSpace === 'client' ? '/api/client/tasks' 
+    : currentSpace === 'vendor' ? '/api/vendor/tasks' 
+    : '/api/tasks';
+  
+  // Clients and vendors can only view, not create/edit/delete
+  const isReadOnly = currentSpace === 'client' || currentSpace === 'vendor';
 
   const { data: tasks = [], isLoading } = useQuery<Task[]>({
-    queryKey: ['/api/tasks'],
+    queryKey: [tasksApiEndpoint],
   });
 
   const filteredTasks = tasks.filter((task) => {
@@ -43,10 +53,12 @@ export default function Tasks() {
           <p className="text-muted-foreground">Track and manage your tasks</p>
         </div>
 
-        <Button data-testid="button-add-task">
-          <Plus className="mr-2 h-4 w-4" />
-          Add Task
-        </Button>
+        {!isReadOnly && (
+          <Button data-testid="button-add-task">
+            <Plus className="mr-2 h-4 w-4" />
+            Add Task
+          </Button>
+        )}
       </div>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -82,10 +94,12 @@ export default function Tasks() {
       {tasks.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <p className="text-muted-foreground mb-4">No tasks found</p>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Create Task
-          </Button>
+          {!isReadOnly && (
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              Create Task
+            </Button>
+          )}
         </div>
       ) : (
         <TaskList tasks={filteredTasks} />

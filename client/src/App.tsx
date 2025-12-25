@@ -1,9 +1,13 @@
 import { useEffect } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { FolderKanban, TrendingUp, CheckCircle, Briefcase } from "lucide-react";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { SpaceProvider } from "@/hooks/use-space";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -118,12 +122,31 @@ function AppContent() {
     );
   }
   
+  // Client portal routes
+  if (location.startsWith("/client/")) {
+    return (
+      <SpaceProvider defaultSpace="client">
+        <AppLayout>
+          <Switch>
+            <Route path="/client" component={() => <ClientDashboard />} />
+            <Route path="/client/projects" component={Projects} />
+            <Route path="/client/projects/:id" component={ProjectDetail} />
+            <Route path="/client/documents" component={Documents} />
+            <Route path="/client/tasks" component={Tasks} />
+            <Route component={NotFound} />
+          </Switch>
+        </AppLayout>
+      </SpaceProvider>
+    );
+  }
+
   // Vendor portal routes
   if (location.startsWith("/vendor/")) {
     return (
       <SpaceProvider defaultSpace="vendor">
         <AppLayout>
           <Switch>
+            <Route path="/vendor" component={() => <VendorDashboard />} />
             <Route path="/vendor/missions" component={Missions} />
             <Route path="/vendor/projects" component={Projects} />
             <Route path="/vendor/projects/:id" component={ProjectDetail} />
@@ -141,6 +164,202 @@ function AppContent() {
         <Router />
       </AppLayout>
     </SpaceProvider>
+  );
+}
+
+// Client Dashboard Component
+function ClientDashboard() {
+  const { data: dashboard, isLoading } = useQuery<{
+    projects: { total: number; active: number; completed: number };
+    tasks: { total: number; completed: number; progress: number };
+    averageProgress: number;
+  }>({ queryKey: ['/api/client/dashboard'] });
+
+  const { data: projects } = useQuery<any[]>({ queryKey: ['/api/client/projects'] });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6" data-testid="client-dashboard">
+      <div>
+        <h1 className="text-2xl font-semibold">Votre Espace Client</h1>
+        <p className="text-muted-foreground">Bienvenue sur votre portail de suivi de projets</p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Projets Actifs</CardTitle>
+            <FolderKanban className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{dashboard?.projects.active || 0}</div>
+            <p className="text-xs text-muted-foreground">
+              sur {dashboard?.projects.total || 0} projets au total
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Progression Moyenne</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{dashboard?.averageProgress || 0}%</div>
+            <Progress value={dashboard?.averageProgress || 0} className="h-2 mt-2" />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Tâches Complétées</CardTitle>
+            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{dashboard?.tasks.completed || 0}</div>
+            <p className="text-xs text-muted-foreground">
+              sur {dashboard?.tasks.total || 0} tâches au total
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Vos Projets</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {projects && projects.length > 0 ? (
+            <div className="space-y-4">
+              {projects.map((project: any) => (
+                <div key={project.id} className="flex items-center justify-between p-4 border rounded-lg">
+                  <div>
+                    <h3 className="font-medium">{project.name}</h3>
+                    <p className="text-sm text-muted-foreground">{project.description || 'Pas de description'}</p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <div className="text-sm font-medium">{project.progress || 0}%</div>
+                      <Progress value={project.progress || 0} className="h-2 w-24" />
+                    </div>
+                    <Badge variant={project.status === 'active' ? 'default' : 'secondary'}>
+                      {project.status === 'active' ? 'En cours' : project.status === 'completed' ? 'Terminé' : project.status}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-center py-8">Aucun projet pour le moment</p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Vendor Dashboard Component
+function VendorDashboard() {
+  const { data: dashboard, isLoading } = useQuery<{
+    projects: { total: number; active: number; completed: number };
+    missions: { total: number; active: number; pending: number };
+    tasks: { total: number; completed: number; progress: number };
+  }>({ queryKey: ['/api/vendor/dashboard'] });
+
+  const { data: projects } = useQuery<any[]>({ queryKey: ['/api/vendor/projects'] });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6" data-testid="vendor-dashboard">
+      <div>
+        <h1 className="text-2xl font-semibold">Espace Sous-traitant</h1>
+        <p className="text-muted-foreground">Gérez vos projets et missions assignés</p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Projets Assignés</CardTitle>
+            <FolderKanban className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{dashboard?.projects.active || 0}</div>
+            <p className="text-xs text-muted-foreground">
+              {dashboard?.projects.completed || 0} terminés
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Missions</CardTitle>
+            <Briefcase className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{dashboard?.missions.active || 0}</div>
+            <p className="text-xs text-muted-foreground">
+              {dashboard?.missions.pending || 0} en attente
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Tâches</CardTitle>
+            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{dashboard?.tasks.completed || 0}/{dashboard?.tasks.total || 0}</div>
+            <Progress value={dashboard?.tasks.progress || 0} className="h-2 mt-2" />
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Projets Assignés</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {projects && projects.length > 0 ? (
+            <div className="space-y-4">
+              {projects.map((project: any) => (
+                <div key={project.id} className="flex items-center justify-between p-4 border rounded-lg">
+                  <div>
+                    <h3 className="font-medium">{project.name}</h3>
+                    <p className="text-sm text-muted-foreground">{project.description || 'Pas de description'}</p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <div className="text-sm font-medium">{project.progress || 0}%</div>
+                      <Progress value={project.progress || 0} className="h-2 w-24" />
+                    </div>
+                    <Badge variant={project.status === 'active' ? 'default' : 'secondary'}>
+                      {project.status === 'active' ? 'En cours' : project.status === 'completed' ? 'Terminé' : project.status}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-center py-8">Aucun projet assigné pour le moment</p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
