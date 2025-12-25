@@ -298,33 +298,33 @@ function VendorDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-semibold" data-testid="text-page-title">Vendor Portal</h1>
-        <p className="text-muted-foreground">Your missions and time tracking</p>
+        <h1 className="text-3xl font-semibold" data-testid="text-page-title">Espace Sous-traitant</h1>
+        <p className="text-muted-foreground">Vos missions et suivi du temps</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <MetricCard
-          title="Active Missions"
+          title="Missions actives"
           value={activeMissions.length}
           icon={CheckCircle2}
         />
         <MetricCard
-          title="Total Missions"
+          title="Total missions"
           value={missions.length}
           icon={Users}
         />
         <MetricCard
-          title="Vendors"
+          title="Sous-traitants"
           value={vendors.length}
           icon={DollarSign}
         />
       </div>
 
       <div>
-        <h2 className="text-xl font-semibold mb-4">Your Missions</h2>
+        <h2 className="text-xl font-semibold mb-4">Vos Missions</h2>
         {missionsWithProject.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            No missions assigned yet.
+            Aucune mission assignée.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

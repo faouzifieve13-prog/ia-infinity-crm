@@ -11,9 +11,9 @@ import { useSpace } from '@/hooks/use-space';
 import type { Space } from '@/lib/types';
 
 const spaceConfig: Record<Space, { label: string; icon: typeof Building2 }> = {
-  internal: { label: 'Internal', icon: Building2 },
-  client: { label: 'Client Portal', icon: Users },
-  vendor: { label: 'Vendor Space', icon: Briefcase },
+  internal: { label: 'Admin', icon: Building2 },
+  client: { label: 'Espace Client', icon: Users },
+  vendor: { label: 'Espace Sous-traitant', icon: Briefcase },
 };
 
 export function SpaceSwitcher() {

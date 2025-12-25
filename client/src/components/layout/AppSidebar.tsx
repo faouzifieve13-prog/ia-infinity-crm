@@ -122,7 +122,7 @@ const portalConfig: Record<Space, { label: string; icon: typeof Shield; gradient
     badge: 'bg-blue-500/20 text-blue-400 border-blue-500/30'
   },
   vendor: { 
-    label: 'Prestataire', 
+    label: 'Sous-traitant', 
     icon: Wrench, 
     gradient: 'gradient-vendor',
     badge: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
@@ -178,7 +178,7 @@ const navCategories: NavCategory[] = [
       { title: 'Finance globale', url: '/finance', icon: PieChart, spaces: ['internal'] },
       { title: 'Factures Clients', url: '/invoices', icon: Receipt, spaces: ['internal', 'client'] },
       { title: 'Dépenses', url: '/expenses', icon: Wallet, spaces: ['internal'] },
-      { title: 'Prestataires', url: '/vendors', icon: Briefcase, spaces: ['internal'] },
+      { title: 'Sous-traitants', url: '/vendors', icon: Briefcase, spaces: ['internal'] },
     ],
   },
   {
