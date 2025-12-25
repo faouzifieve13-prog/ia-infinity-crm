@@ -397,7 +397,7 @@ export async function getQontoOrganization(): Promise<QontoOrganization> {
   return data.organization;
 }
 
-export async function getQontoTransactions(bankAccountId: string, options?: {
+export async function getQontoTransactions(iban: string, options?: {
   settledAtFrom?: string;
   settledAtTo?: string;
   status?: string[];
@@ -406,7 +406,7 @@ export async function getQontoTransactions(bankAccountId: string, options?: {
   currentPage?: number;
 }): Promise<QontoTransactionsResponse> {
   const params = new URLSearchParams();
-  params.append('bank_account_id', bankAccountId);
+  params.append('iban', iban);
   
   if (options?.settledAtFrom) {
     params.append('settled_at_from', options.settledAtFrom);
@@ -431,6 +431,7 @@ export async function getQontoTransactions(bankAccountId: string, options?: {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
+    console.error('Qonto transactions error:', response.status, errorData);
     throw new Error(errorData.message || `Erreur récupération transactions: ${response.status}`);
   }
 
@@ -455,8 +456,8 @@ export async function getQontoFinanceOverview(): Promise<QontoFinanceOverview> {
   const settledAtFrom = firstDayOfMonth.toISOString().split('T')[0];
   const settledAtTo = lastDayOfMonth.toISOString().split('T')[0];
 
-  // Fetch all completed transactions for the month
-  const transactionsData = await getQontoTransactions(mainAccount.slug, {
+  // Fetch all completed transactions for the month using IBAN
+  const transactionsData = await getQontoTransactions(mainAccount.iban, {
     settledAtFrom,
     settledAtTo,
     status: ['completed'],
