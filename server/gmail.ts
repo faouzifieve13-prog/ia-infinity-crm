@@ -79,7 +79,7 @@ function formatRole(role: string): string {
     finance: 'Finance',
     client_admin: 'Administrateur Client',
     client_member: 'Membre Client',
-    vendor: 'Prestataire'
+    vendor: 'Sous-traitant'
   };
   return roleNames[role] || role;
 }
@@ -88,7 +88,7 @@ function formatSpace(space: string): string {
   const spaceNames: Record<string, string> = {
     internal: 'Portail Admin',
     client: 'Portail Client',
-    vendor: 'Portail Prestataire'
+    vendor: 'Portail Sous-traitant'
   };
   return spaceNames[space] || space;
 }
