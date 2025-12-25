@@ -28,6 +28,7 @@ export const emailDirectionEnum = pgEnum('email_direction', ['inbound', 'outboun
 export const quoteStatusEnum = pgEnum('quote_status', ['draft', 'sent', 'signed', 'rejected', 'expired']);
 export const prospectStatusEnum = pgEnum('prospect_status', ['active', 'draft', 'follow_up', 'abandoned']);
 export const followUpTypeEnum = pgEnum('follow_up_type', ['email', 'whatsapp', 'call', 'meeting', 'visio', 'sms']);
+export const pricingTierEnum = pgEnum('pricing_tier', ['simple', 'intermediate', 'expert']);
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -206,6 +207,7 @@ export const projects = pgTable("projects", {
   name: text("name").notNull(),
   description: text("description"),
   status: projectStatusEnum("status").notNull().default('active'),
+  pricingTier: pricingTierEnum("pricing_tier"),
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   progress: integer("progress").notNull().default(0),
