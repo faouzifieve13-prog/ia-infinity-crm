@@ -535,6 +535,30 @@ ${cr.replace(/\n/g, '<br>')}
       const orgId = getOrgId(req);
       const data = insertProjectSchema.parse({ ...req.body, orgId });
       const project = await storage.createProject(data);
+      
+      // Send email to vendor if assigned
+      if (data.vendorContactId) {
+        try {
+          const vendorContact = await storage.getContact(data.vendorContactId, orgId);
+          const account = data.accountId ? await storage.getAccount(data.accountId, orgId) : null;
+          
+          if (vendorContact?.email) {
+            const { sendVendorProjectAssignmentEmail } = await import("./gmail");
+            await sendVendorProjectAssignmentEmail({
+              to: vendorContact.email,
+              vendorName: vendorContact.name,
+              projectName: project.name,
+              projectDescription: project.description,
+              clientName: account?.name || 'Client non spécifié',
+              startDate: project.startDate?.toISOString() || null,
+              endDate: project.endDate?.toISOString() || null,
+            });
+          }
+        } catch (emailError) {
+          console.error("Failed to send vendor assignment email:", emailError);
+        }
+      }
+      
       res.status(201).json(project);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -550,10 +574,40 @@ ${cr.replace(/\n/g, '<br>')}
       const orgId = getOrgId(req);
       const updateSchema = insertProjectSchema.partial().omit({ orgId: true });
       const validatedData = updateSchema.parse(req.body);
+      
+      // Get existing project to check if vendor changed
+      const existingProject = await storage.getProject(req.params.id, orgId);
+      const vendorChanged = validatedData.vendorContactId && 
+        validatedData.vendorContactId !== existingProject?.vendorContactId;
+      
       const project = await storage.updateProject(req.params.id, orgId, validatedData);
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
+      
+      // Send email to new vendor if vendor changed
+      if (vendorChanged && validatedData.vendorContactId) {
+        try {
+          const vendorContact = await storage.getContact(validatedData.vendorContactId, orgId);
+          const account = project.accountId ? await storage.getAccount(project.accountId, orgId) : null;
+          
+          if (vendorContact?.email) {
+            const { sendVendorProjectAssignmentEmail } = await import("./gmail");
+            await sendVendorProjectAssignmentEmail({
+              to: vendorContact.email,
+              vendorName: vendorContact.name,
+              projectName: project.name,
+              projectDescription: project.description,
+              clientName: account?.name || 'Client non spécifié',
+              startDate: project.startDate?.toISOString() || null,
+              endDate: project.endDate?.toISOString() || null,
+            });
+          }
+        } catch (emailError) {
+          console.error("Failed to send vendor assignment email:", emailError);
+        }
+      }
+      
       res.json(project);
     } catch (error) {
       if (error instanceof z.ZodError) {

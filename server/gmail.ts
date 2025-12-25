@@ -977,3 +977,141 @@ ${message.body.replace(/</g, '&lt;').replace(/>/g, '&gt;')}
     return false;
   }
 }
+
+export interface VendorProjectAssignmentEmailParams {
+  to: string;
+  vendorName: string;
+  projectName: string;
+  projectDescription?: string | null;
+  clientName: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  organizationName?: string;
+}
+
+function formatProjectDate(date: string | null | undefined): string {
+  if (!date) return 'Non définie';
+  return new Intl.DateTimeFormat('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  }).format(new Date(date));
+}
+
+export async function sendVendorProjectAssignmentEmail(params: VendorProjectAssignmentEmailParams): Promise<boolean> {
+  try {
+    const gmail = await getUncachableGmailClient();
+    
+    const orgName = params.organizationName || 'IA Infinity';
+    
+    const subject = `Nouvelle mission : ${params.projectName} | ${orgName}`;
+    
+    const htmlBody = `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); padding: 32px 40px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">
+                ${orgName}
+              </h1>
+              <p style="margin: 8px 0 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">
+                Nouvelle mission assignée
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <h2 style="margin: 0 0 16px 0; color: #18181b; font-size: 20px; font-weight: 600;">
+                Bonjour ${params.vendorName},
+              </h2>
+              
+              <p style="margin: 0 0 24px 0; color: #52525b; font-size: 16px; line-height: 1.6;">
+                Une nouvelle mission vous a été assignée. Voici les détails du projet :
+              </p>
+              
+              <!-- Project Details Card -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px; border: 1px solid #e4e4e7; border-radius: 8px; overflow: hidden;">
+                <tr>
+                  <td style="background-color: #fff7ed; padding: 16px; border-bottom: 1px solid #fed7aa;">
+                    <h3 style="margin: 0; color: #c2410c; font-size: 18px; font-weight: 600;">
+                      ${params.projectName}
+                    </h3>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 16px;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="color: #71717a; font-size: 14px; padding-bottom: 12px; width: 40%;">Client</td>
+                        <td style="color: #18181b; font-size: 14px; font-weight: 500; text-align: right; padding-bottom: 12px;">${params.clientName}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #71717a; font-size: 14px; padding-bottom: 12px;">Date de début</td>
+                        <td style="color: #18181b; font-size: 14px; text-align: right; padding-bottom: 12px;">${formatProjectDate(params.startDate)}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #71717a; font-size: 14px;">Date de fin</td>
+                        <td style="color: #18181b; font-size: 14px; text-align: right;">${formatProjectDate(params.endDate)}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              ${params.projectDescription ? `
+              <div style="margin-bottom: 24px;">
+                <h4 style="margin: 0 0 8px 0; color: #18181b; font-size: 14px; font-weight: 600;">Description</h4>
+                <p style="margin: 0; color: #52525b; font-size: 14px; line-height: 1.6; background-color: #f4f4f5; padding: 12px; border-radius: 6px;">${params.projectDescription}</p>
+              </div>
+              ` : ''}
+              
+              <p style="margin: 0; color: #a1a1aa; font-size: 12px; line-height: 1.6;">
+                Nous vous contacterons prochainement pour les détails de la mission. Pour toute question, n'hésitez pas à nous répondre directement à cet email.
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #fafafa; padding: 24px 40px; text-align: center; border-top: 1px solid #e4e4e7;">
+              <p style="margin: 0; color: #a1a1aa; font-size: 12px;">
+                © ${new Date().getFullYear()} ${orgName}. Tous droits réservés.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim();
+    
+    const encodedMessage = createEmailMessage(params.to, subject, htmlBody);
+    
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage
+      }
+    });
+    
+    console.log(`Vendor project assignment email sent to ${params.to} for project ${params.projectName}`);
+    return true;
+  } catch (error) {
+    console.error('Failed to send vendor project assignment email:', error);
+    return false;
+  }
+}
