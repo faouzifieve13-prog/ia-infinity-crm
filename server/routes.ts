@@ -26,14 +26,70 @@ function hashToken(token: string): string {
 const DEFAULT_ORG_ID = "default-org";
 
 // Middleware to check if user has admin/internal role (not client or vendor)
-function requireAdminRole(req: Request, res: Response, next: NextFunction) {
+async function requireAdminRole(req: Request, res: Response, next: NextFunction) {
   const user = req.user as any;
   if (!user) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   
+  // Get user email from claims to find internal user record
+  const email = user.claims?.email?.toLowerCase();
+  if (!email) {
+    return res.status(401).json({ error: "User email not found" });
+  }
+  
+  const orgId = DEFAULT_ORG_ID;
+  
+  // Find internal user by email (case-insensitive)
+  const internalUser = await storage.getUserByEmail(email);
+  
+  if (!internalUser) {
+    // No internal user record - user hasn't accepted an invitation
+    // Only allow initial admin setup if no users, no memberships, and no pending invitations exist
+    const allMemberships = await storage.getMembershipsByOrg(orgId);
+    const allUsers = await storage.getUsers();
+    const allInvitations = await storage.getInvitations(orgId);
+    
+    if (allMemberships.length === 0 && allUsers.length === 0 && allInvitations.length === 0) {
+      // True initial setup - create user and admin membership atomically
+      try {
+        const newUser = await storage.createUser({
+          email: email,
+          name: user.claims?.name || email.split('@')[0],
+          avatar: user.claims?.profile_image_url || null,
+        });
+        await storage.createMembership({
+          userId: newUser.id,
+          orgId: orgId,
+          role: 'admin',
+          space: 'internal',
+        });
+        (user as any).role = 'admin';
+        (user as any).space = 'internal';
+        console.log(`Created initial admin user and membership for ${email}`);
+        return next();
+      } catch (err) {
+        console.error('Failed to create initial admin:', err);
+        return res.status(500).json({ error: "Failed to initialize admin access" });
+      }
+    }
+    return res.status(403).json({ error: "No access - please use your invitation link to join" });
+  }
+  
+  // Find membership using internal user ID
+  const membership = await storage.getMembershipByUserAndOrg(internalUser.id, orgId);
+  
+  if (!membership) {
+    // User exists but no membership for this org
+    return res.status(403).json({ error: "No access to this organization" });
+  }
+  
+  // Store role on user object for other middleware/handlers
+  (user as any).role = membership.role;
+  (user as any).space = membership.space;
+  
   const restrictedRoles = ['client_admin', 'client_member', 'vendor'];
-  if (restrictedRoles.includes(user.role)) {
+  if (restrictedRoles.includes(membership.role)) {
     return res.status(403).json({ error: "Forbidden: This action requires admin privileges" });
   }
   
