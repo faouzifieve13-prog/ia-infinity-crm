@@ -78,6 +78,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import type { Deal, Account, Document, ProspectStatus, Project } from '@/lib/types';
 
 interface Quote {
@@ -1157,7 +1158,9 @@ export default function DealDetail() {
               {deal.followUpNotes && (
                 <div className="text-sm">
                   <span className="text-muted-foreground block mb-1">Notes de suivi</span>
-                  <p className="bg-muted/50 rounded-md p-2 text-sm">{deal.followUpNotes}</p>
+                  <div className="bg-muted/50 rounded-md p-2">
+                    <MarkdownRenderer content={deal.followUpNotes} className="text-sm" />
+                  </div>
                 </div>
               )}
 

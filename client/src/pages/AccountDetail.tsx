@@ -52,6 +52,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import {
   Dialog,
   DialogContent,
@@ -865,14 +866,12 @@ export default function AccountDetail() {
                     </div>
                   </div>
                   <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
-                    <p className="whitespace-pre-wrap text-sm" data-testid="text-generated-cr">{generatedCR}</p>
+                    <MarkdownRenderer content={generatedCR} className="text-sm" />
                   </div>
                 </div>
               )}
               {account.notes ? (
-                <div className="prose prose-sm dark:prose-invert max-w-none">
-                  <p className="whitespace-pre-wrap" data-testid="text-notes">{account.notes}</p>
-                </div>
+                <MarkdownRenderer content={account.notes} />
               ) : !generatedCR && (
                 <p className="text-sm text-muted-foreground">
                   Aucune note enregistrée. Utilisez le bouton "Générer CR (IA)" pour créer un compte-rendu automatique ou cliquez sur "Modifier" pour ajouter des notes manuellement.
