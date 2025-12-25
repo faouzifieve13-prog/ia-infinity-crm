@@ -4358,20 +4358,39 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
 
       const { sendGenericEmail } = await import("./gmail");
       
+      // Clean markdown formatting from body (remove ** bold markers)
+      let cleanBody = parsed.body
+        .replace(/\*\*([^*]+)\*\*/g, '$1')  // Remove **bold** markers
+        .replace(/\*([^*]+)\*/g, '$1')      // Remove *italic* markers
+        .replace(/_{2}([^_]+)_{2}/g, '$1')  // Remove __bold__ markers
+        .replace(/_([^_]+)_/g, '$1');       // Remove _italic_ markers
+      
+      // Clean subject too
+      const cleanSubject = parsed.subject
+        .replace(/\*\*([^*]+)\*\*/g, '$1')
+        .replace(/\*([^*]+)\*/g, '$1');
+      
+      // Check if body already contains a signature (to avoid duplicate)
+      const hasSignature = cleanBody.toLowerCase().includes('cordialement') || 
+                          cleanBody.toLowerCase().includes('ia infinity') ||
+                          cleanBody.includes('i-a-infinity.com');
+      
       const htmlBody = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; line-height: 1.6;">
-          ${parsed.body.split('\n').map(line => `<p>${line}</p>`).join('')}
+          ${cleanBody.split('\n').map(line => line.trim() ? `<p style="margin: 0 0 10px 0;">${line}</p>` : '<br>').join('')}
+          ${!hasSignature ? `
           <br>
           <p style="color: #666; font-size: 14px;">--<br>
           Ismaël Le Pennec<br>
           IA Infinity<br>
           <a href="https://i-a-infinity.com">i-a-infinity.com</a></p>
+          ` : ''}
         </div>
       `;
       
       const result = await sendGenericEmail({
         to: parsed.to,
-        subject: parsed.subject,
+        subject: cleanSubject,
         htmlBody,
       });
 
@@ -4384,8 +4403,8 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
         orgId,
         dealId,
         type: 'email',
-        subject: parsed.subject,
-        content: parsed.body,
+        subject: cleanSubject,
+        content: cleanBody,
         recipientEmail: parsed.to,
         sentAt: new Date(),
       });
