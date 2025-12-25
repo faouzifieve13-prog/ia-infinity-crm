@@ -36,6 +36,7 @@ import AcceptInvite from "@/pages/AcceptInvite";
 import VendorAcceptInvite from "@/pages/VendorAcceptInvite";
 import ContractSign from "@/pages/ContractSign";
 import ContractPreview from "@/pages/ContractPreview";
+import SignQuote from "@/pages/SignQuote";
 import Settings from "@/pages/Settings";
 import { LandingPage } from "@/pages/LandingPage";
 import NotFound from "@/pages/not-found";
@@ -117,6 +118,16 @@ function AppContent() {
     return (
       <Switch>
         <Route path="/contracts/:id/sign" component={ContractSign} />
+        <Route component={NotFound} />
+      </Switch>
+    );
+  }
+  
+  // Public quote signing page
+  if (location.startsWith("/sign-quote/")) {
+    return (
+      <Switch>
+        <Route path="/sign-quote/:id" component={SignQuote} />
         <Route component={NotFound} />
       </Switch>
     );
