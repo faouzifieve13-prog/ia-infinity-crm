@@ -351,7 +351,7 @@ ${cr.replace(/\n/g, '<br>')}
       const data = insertContactSchema.parse({ ...req.body, orgId });
       const contact = await storage.createContact(data);
       
-      // Send welcome email if creating a vendor contact
+      // Send welcome email with invitation if creating a vendor contact
       if (data.contactType === 'vendor' && contact.email) {
         try {
           const { sendVendorWelcomeEmail } = await import("./gmail");
@@ -361,13 +361,32 @@ ${cr.replace(/\n/g, '<br>')}
               ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
               : 'https://ia-infinity.replit.app';
           
+          // Create invitation for vendor portal access
+          const token = generateToken();
+          const tokenHash = hashToken(token);
+          const expiresAt = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000); // 6 months
+          
+          await storage.createInvitation({
+            orgId,
+            email: contact.email,
+            role: 'vendor' as UserRole,
+            space: 'vendor' as Space,
+            tokenHash,
+            expiresAt,
+            status: 'pending',
+            accountId: null,
+            vendorId: contact.id,
+          });
+          
+          const portalLink = `${baseUrl}/auth/vendor-invite?token=${token}`;
+          
           await sendVendorWelcomeEmail({
             to: contact.email,
             vendorName: contact.name,
-            portalLink: `${baseUrl}/vendor`,
+            portalLink,
             organizationName: 'IA Infinity'
           });
-          console.log(`Welcome email sent to new vendor: ${contact.email}`);
+          console.log(`Welcome email with invitation sent to new vendor: ${contact.email}`);
         } catch (emailError) {
           console.error("Failed to send vendor welcome email:", emailError);
           // Continue even if email fails - contact was created successfully
@@ -3333,7 +3352,8 @@ Génère un contrat complet et professionnel adapté à ce client.`;
       const baseUrl = process.env.REPLIT_DEV_DOMAIN 
         ? `https://${process.env.REPLIT_DEV_DOMAIN}`
         : 'http://localhost:5000';
-      const inviteLink = `${baseUrl}/auth/accept-invite?token=${token}`;
+      const invitePath = parsed.space === 'vendor' ? '/auth/vendor-invite' : '/auth/accept-invite';
+      const inviteLink = `${baseUrl}${invitePath}?token=${token}`;
       
       let emailSent = false;
       if (parsed.sendEmail) {

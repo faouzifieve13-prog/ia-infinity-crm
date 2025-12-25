@@ -22,8 +22,13 @@ const spaceAccessByRole: Record<UserRole, Space[]> = {
   vendor: ['vendor'],
 };
 
-export function SpaceProvider({ children }: { children: React.ReactNode }) {
-  const [currentSpace, setCurrentSpace] = useState<Space>('internal');
+interface SpaceProviderProps {
+  children: React.ReactNode;
+  defaultSpace?: Space;
+}
+
+export function SpaceProvider({ children, defaultSpace = 'internal' }: SpaceProviderProps) {
+  const [currentSpace, setCurrentSpace] = useState<Space>(defaultSpace);
   const [currentUser, setCurrentUser] = useState<User | null>({
     id: '1',
     name: 'Alice Martin',

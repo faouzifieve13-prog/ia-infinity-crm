@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -28,6 +29,7 @@ import Calendar from "@/pages/Calendar";
 import NotionSync from "@/pages/NotionSync";
 import Invitations from "@/pages/Invitations";
 import AcceptInvite from "@/pages/AcceptInvite";
+import VendorAcceptInvite from "@/pages/VendorAcceptInvite";
 import ContractSign from "@/pages/ContractSign";
 import ContractPreview from "@/pages/ContractPreview";
 import Settings from "@/pages/Settings";
@@ -73,7 +75,22 @@ function Router() {
 }
 
 function AppContent() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
+  
+  // Check for vendor invite return after login - must run synchronously before render
+  useEffect(() => {
+    const storedUrl = sessionStorage.getItem("vendor_invite_return");
+    if (storedUrl) {
+      sessionStorage.removeItem("vendor_invite_return");
+      try {
+        const url = new URL(storedUrl);
+        // Redirect to the stored invite URL
+        setLocation(url.pathname + url.search);
+      } catch (e) {
+        console.error("Invalid stored URL:", storedUrl);
+      }
+    }
+  }, []); // Run only once on mount
   
   // Public landing page route
   if (location === "/landing" || location === "/welcome") {
@@ -85,6 +102,7 @@ function AppContent() {
     return (
       <Switch>
         <Route path="/auth/accept-invite" component={AcceptInvite} />
+        <Route path="/auth/vendor-invite" component={VendorAcceptInvite} />
         <Route component={NotFound} />
       </Switch>
     );
@@ -97,6 +115,23 @@ function AppContent() {
         <Route path="/contracts/:id/sign" component={ContractSign} />
         <Route component={NotFound} />
       </Switch>
+    );
+  }
+  
+  // Vendor portal routes
+  if (location.startsWith("/vendor/")) {
+    return (
+      <SpaceProvider defaultSpace="vendor">
+        <AppLayout>
+          <Switch>
+            <Route path="/vendor/missions" component={Missions} />
+            <Route path="/vendor/projects" component={Projects} />
+            <Route path="/vendor/projects/:id" component={ProjectDetail} />
+            <Route path="/vendor/documents" component={Documents} />
+            <Route component={NotFound} />
+          </Switch>
+        </AppLayout>
+      </SpaceProvider>
     );
   }
   
