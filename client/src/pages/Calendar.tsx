@@ -42,6 +42,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   format,
   startOfMonth,
   endOfMonth,
@@ -117,6 +124,8 @@ export default function Calendar() {
     start: '',
     end: '',
     location: '',
+    attendeeEmail: '',
+    accountId: '',
   });
   const [editEvent, setEditEvent] = useState({
     id: '',
@@ -129,6 +138,18 @@ export default function Calendar() {
 
   const { data: calendarStatus, isLoading: isStatusLoading } = useQuery<CalendarStatus>({
     queryKey: ['/api/calendar/status'],
+  });
+
+  // Accounts (clients & prospects)
+  interface Account {
+    id: string;
+    name: string;
+    status: string;
+    contactEmail: string | null;
+    contactName: string | null;
+  }
+  const { data: accounts = [] } = useQuery<Account[]>({
+    queryKey: ['/api/accounts'],
   });
 
   // DB synced events
@@ -208,13 +229,18 @@ export default function Calendar() {
 
   const createEventMutation = useMutation({
     mutationFn: async (event: typeof newEvent) => {
-      return apiRequest('POST', '/api/calendar/events', event);
+      const { attendeeEmail, accountId, ...rest } = event;
+      const payload = {
+        ...rest,
+        attendees: attendeeEmail ? [attendeeEmail] : [],
+      };
+      return apiRequest('POST', '/api/calendar/events', payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/calendar/events'] });
       toast({ title: 'Événement créé', description: 'L\'événement a été ajouté à votre calendrier' });
       setIsCreateOpen(false);
-      setNewEvent({ title: '', description: '', start: '', end: '', location: '' });
+      setNewEvent({ title: '', description: '', start: '', end: '', location: '', attendeeEmail: '', accountId: '' });
     },
     onError: () => {
       toast({ title: 'Erreur', description: 'Échec de la création de l\'événement', variant: 'destructive' });
@@ -577,6 +603,55 @@ export default function Calendar() {
                       data-testid="input-event-end"
                     />
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="account">Client / Prospect</Label>
+                  <Select 
+                    value={newEvent.accountId} 
+                    onValueChange={(value) => {
+                      const selectedAccount = accounts.find(a => a.id === value);
+                      setNewEvent(prev => ({ 
+                        ...prev, 
+                        accountId: value,
+                        attendeeEmail: selectedAccount?.contactEmail || prev.attendeeEmail
+                      }));
+                    }}
+                  >
+                    <SelectTrigger data-testid="select-event-account">
+                      <SelectValue placeholder="Sélectionner un client ou prospect" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts.filter(a => a.status === 'active').map((account) => (
+                        <SelectItem key={account.id} value={account.id}>
+                          <div className="flex items-center gap-2">
+                            <Building2 className="h-4 w-4 text-primary" />
+                            <span>{account.name}</span>
+                            <Badge variant="outline" className="text-xs ml-1">Client</Badge>
+                          </div>
+                        </SelectItem>
+                      ))}
+                      {accounts.filter(a => a.status === 'prospect').map((account) => (
+                        <SelectItem key={account.id} value={account.id}>
+                          <div className="flex items-center gap-2">
+                            <User className="h-4 w-4 text-muted-foreground" />
+                            <span>{account.name}</span>
+                            <Badge variant="secondary" className="text-xs ml-1">Prospect</Badge>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="attendeeEmail">Email du participant</Label>
+                  <Input 
+                    id="attendeeEmail" 
+                    type="email"
+                    value={newEvent.attendeeEmail} 
+                    onChange={(e) => setNewEvent(prev => ({ ...prev, attendeeEmail: e.target.value }))}
+                    placeholder="participant@email.com"
+                    data-testid="input-event-attendee-email"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="location">Lieu</Label>
