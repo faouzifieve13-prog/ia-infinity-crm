@@ -538,8 +538,30 @@ export default function DealDetail() {
       return response.json();
     },
     onSuccess: (data: { email: { to: string; subject: string; body: string }; whatsapp: { message: string; phone: string; url: string | null } }) => {
-      setFollowUpEmail(data.email);
-      setFollowUpWhatsapp({ message: data.whatsapp.message, phone: data.whatsapp.phone, url: data.whatsapp.url || '' });
+      // Clean markdown formatting from generated content
+      const cleanMarkdown = (text: string) => text
+        .replace(/\*\*([^*]+)\*\*/g, '$1')  // Remove **bold**
+        .replace(/\*([^*]+)\*/g, '$1')      // Remove *italic*
+        .replace(/_{2}([^_]+)_{2}/g, '$1')  // Remove __bold__
+        .replace(/_([^_]+)_/g, '$1');       // Remove _italic_
+      
+      // Ensure proper spacing before signature (Cordialement, Bien à vous, etc.)
+      const ensureSignatureSpacing = (text: string) => {
+        return text
+          .replace(/([.!?])\n(Cordialement|Bien à vous|Bien cordialement|Sincèrement)/g, '$1\n\n$2')
+          .replace(/([.!?])\r\n(Cordialement|Bien à vous|Bien cordialement|Sincèrement)/g, '$1\r\n\r\n$2');
+      };
+      
+      setFollowUpEmail({
+        to: data.email.to,
+        subject: cleanMarkdown(data.email.subject),
+        body: ensureSignatureSpacing(cleanMarkdown(data.email.body)),
+      });
+      setFollowUpWhatsapp({ 
+        message: cleanMarkdown(data.whatsapp.message), 
+        phone: data.whatsapp.phone, 
+        url: data.whatsapp.url || '' 
+      });
       setShowFollowUpPanel(true);
       toast({
         title: 'Messages générés',
