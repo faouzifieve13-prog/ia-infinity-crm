@@ -16,6 +16,9 @@ import {
   UserPlus,
   Filter,
   X,
+  Pencil,
+  Trash2,
+  Calendar,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,7 +38,18 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Form,
   FormControl,
@@ -74,10 +88,24 @@ type ContactFormValues = z.infer<typeof contactFormSchema>;
 export default function Contacts() {
   const [searchQuery, setSearchQuery] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [typeFilter, setTypeFilter] = useState<ContactType | 'all'>('all');
   const { toast } = useToast();
 
   const form = useForm<ContactFormValues>({
+    resolver: zodResolver(contactFormSchema),
+    defaultValues: {
+      name: '',
+      email: '',
+      contactType: 'vendor',
+      phone: '',
+      calendarUrl: '',
+    },
+  });
+
+  const editForm = useForm<ContactFormValues>({
     resolver: zodResolver(contactFormSchema),
     defaultValues: {
       name: '',
@@ -129,8 +157,87 @@ export default function Contacts() {
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: ContactFormValues }) => {
+      const payload = {
+        ...data,
+        phone: data.phone || null,
+        calendarUrl: data.calendarUrl || null,
+      };
+      return apiRequest('PATCH', `/api/contacts/${id}`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
+      setEditDialogOpen(false);
+      setSelectedContact(null);
+      editForm.reset();
+      toast({
+        title: 'Contact modifié',
+        description: 'Le contact a été modifié avec succès.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de modifier le contact.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest('DELETE', `/api/contacts/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
+      setDeleteDialogOpen(false);
+      setSelectedContact(null);
+      toast({
+        title: 'Contact supprimé',
+        description: 'Le contact a été supprimé avec succès.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de supprimer le contact.',
+        variant: 'destructive',
+      });
+    },
+  });
+
   const onSubmit = (data: ContactFormValues) => {
     createMutation.mutate(data);
+  };
+
+  const onEditSubmit = (data: ContactFormValues) => {
+    if (selectedContact) {
+      updateMutation.mutate({ id: selectedContact.id, data });
+    }
+  };
+
+  const handleEdit = (contact: Contact) => {
+    setSelectedContact(contact);
+    editForm.reset({
+      name: contact.name,
+      email: contact.email,
+      contactType: (contact.contactType as 'vendor' | 'partner') || 'vendor',
+      phone: contact.phone || '',
+      calendarUrl: contact.calendarUrl || '',
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleDelete = (contact: Contact) => {
+    setSelectedContact(contact);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (selectedContact) {
+      deleteMutation.mutate(selectedContact.id);
+    }
   };
 
   const filteredContacts = contacts.filter((contact) => {
@@ -408,8 +515,18 @@ export default function Contacts() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>Modifier</DropdownMenuItem>
-                        <DropdownMenuItem>Voir les détails</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleEdit(contact)} data-testid={`button-edit-contact-${contact.id}`}>
+                          <Pencil className="h-4 w-4 mr-2" />
+                          Modifier
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          onClick={() => handleDelete(contact)} 
+                          className="text-destructive"
+                          data-testid={`button-delete-contact-${contact.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Supprimer
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -451,6 +568,130 @@ export default function Contacts() {
           })}
         </div>
       )}
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Modifier le contact</DialogTitle>
+            <DialogDescription>
+              Modifiez les informations du contact
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
+              <FormField
+                control={editForm.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Nom complet</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Jean Dupont" {...field} data-testid="input-edit-contact-name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input type="email" placeholder="jean@exemple.com" {...field} data-testid="input-edit-contact-email" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="contactType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Type de contact</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-edit-contact-type">
+                          <SelectValue placeholder="Sélectionner un type" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="vendor">Sous-traitant</SelectItem>
+                        <SelectItem value="partner">Partenaire</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="phone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Téléphone</FormLabel>
+                    <FormControl>
+                      <Input type="tel" placeholder="+33 6 00 00 00 00" {...field} data-testid="input-edit-contact-phone" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="calendarUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>URL Calendrier</FormLabel>
+                    <FormControl>
+                      <Input placeholder="https://calendly.com/..." {...field} data-testid="input-edit-contact-calendar" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>
+                  Annuler
+                </Button>
+                <Button type="submit" disabled={updateMutation.isPending} data-testid="button-submit-edit-contact">
+                  {updateMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Enregistrer
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer le contact</AlertDialogTitle>
+            <AlertDialogDescription>
+              Êtes-vous sûr de vouloir supprimer {selectedContact?.name} ? Cette action est irréversible.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-contact"
+            >
+              {deleteMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
