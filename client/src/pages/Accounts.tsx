@@ -50,6 +50,8 @@ const accountFormSchema = z.object({
   name: z.string().min(1, 'Le nom est requis'),
   contactName: z.string().optional(),
   contactEmail: z.string().email('Email invalide').optional().or(z.literal('')),
+  contactPhone: z.string().optional(),
+  contactLinkedIn: z.string().optional(),
   domain: z.string().optional(),
   plan: z.enum(['audit', 'automatisation']).default('audit'),
   status: z.enum(['active', 'inactive', 'churned']).default('active'),
@@ -81,6 +83,8 @@ export default function Accounts() {
       name: '',
       contactName: '',
       contactEmail: '',
+      contactPhone: '',
+      contactLinkedIn: '',
       domain: '',
       plan: 'audit',
       status: 'active',
@@ -97,6 +101,8 @@ export default function Accounts() {
         name: data.name,
         contactName: data.contactName || null,
         contactEmail: data.contactEmail || null,
+        contactPhone: data.contactPhone || null,
+        contactLinkedIn: data.contactLinkedIn || null,
         domain: data.domain || null,
         plan: data.plan,
         status: data.status,
@@ -232,6 +238,44 @@ export default function Accounts() {
                             type="email"
                             placeholder="email@example.com" 
                             data-testid="input-account-email"
+                            {...field} 
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="contactPhone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Téléphone</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="tel"
+                            placeholder="+33 6 12 34 56 78" 
+                            data-testid="input-account-phone"
+                            {...field} 
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="contactLinkedIn"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>LinkedIn</FormLabel>
+                        <FormControl>
+                          <Input 
+                            placeholder="https://linkedin.com/in/..." 
+                            data-testid="input-account-linkedin"
                             {...field} 
                           />
                         </FormControl>

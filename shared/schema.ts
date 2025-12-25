@@ -67,6 +67,7 @@ export const accounts = pgTable("accounts", {
   contactName: text("contact_name"),
   contactEmail: text("contact_email"),
   contactPhone: text("contact_phone"),
+  contactLinkedIn: text("contact_linkedin"),
   notes: text("notes"),
   loomVideoUrl: text("loom_video_url"),
   followUpSteps: text("follow_up_steps"),
