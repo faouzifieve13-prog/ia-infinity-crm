@@ -1,4 +1,5 @@
 import { useLocation, Link } from 'wouter';
+import logoIaInfinity from "@assets/logo_iA_Infinity_1766693283199.png";
 import {
   LayoutDashboard,
   Target,
@@ -255,8 +256,8 @@ export function AppSidebar() {
     <Sidebar className="border-r-0">
       <SidebarHeader className="p-4 border-b border-sidebar-border/50">
         <Link href="/" className="flex items-center gap-3 group">
-          <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${portal.gradient} text-white shadow-lg transition-transform hover:scale-105 active:scale-95`}>
-            <PortalIcon className="h-5 w-5" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-background shadow-lg transition-transform hover:scale-105 active:scale-95 overflow-hidden">
+            <img src={logoIaInfinity} alt="IA Infinity" className="h-9 w-9 object-contain" />
           </div>
           <div className="flex flex-col">
             <span className="font-bold text-lg tracking-tight text-sidebar-foreground group-hover:text-sidebar-primary transition-colors">
