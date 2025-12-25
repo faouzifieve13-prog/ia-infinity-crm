@@ -163,6 +163,7 @@ export const quotes = pgTable("quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
   dealId: varchar("deal_id").notNull().references(() => deals.id),
+  accountId: varchar("account_id").references(() => accounts.id),
   qontoQuoteId: varchar("qonto_quote_id"),
   number: text("number").notNull(),
   title: text("title").notNull(),
@@ -173,15 +174,21 @@ export const quotes = pgTable("quotes", {
   driveFileId: text("drive_file_id"),
   driveFileUrl: text("drive_file_url"),
   sentAt: timestamp("sent_at"),
-  signedAt: timestamp("signed_at"),
-  signedBy: text("signed_by"),
-  signatureData: text("signature_data"),
+  adminSignature: text("admin_signature"),
+  adminSignedAt: timestamp("admin_signed_at"),
+  adminSignedBy: text("admin_signed_by"),
+  clientSignature: text("client_signature"),
+  clientSignedAt: timestamp("client_signed_at"),
+  clientSignedBy: text("client_signed_by"),
+  signedPdfUrl: text("signed_pdf_url"),
+  signedPdfDriveId: text("signed_pdf_drive_id"),
   signatureToken: text("signature_token"),
   signatureTokenExpiresAt: timestamp("signature_token_expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("quotes_org_idx").on(table.orgId),
   index("quotes_deal_idx").on(table.dealId),
+  index("quotes_account_idx").on(table.accountId),
 ]);
 
 export const activities = pgTable("activities", {
