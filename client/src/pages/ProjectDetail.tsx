@@ -1,5 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { useRoute, Link } from 'wouter';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { 
   ArrowLeft, 
   Calendar, 
@@ -18,16 +22,54 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { DeliveryWorkflow } from '@/components/projects/DeliveryWorkflow';
-import { queryClient } from '@/lib/queryClient';
-import type { Project, Account, Task, Document } from '@/lib/types';
+import { queryClient, apiRequest } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
+import type { Project, Account, Task, Document, Contact } from '@/lib/types';
 
 const statusConfig = {
   active: { label: 'Actif', variant: 'default' as const, color: 'bg-emerald-500' },
   on_hold: { label: 'En pause', variant: 'secondary' as const, color: 'bg-amber-500' },
   completed: { label: 'Terminé', variant: 'outline' as const, color: 'bg-blue-500' },
   cancelled: { label: 'Annulé', variant: 'destructive' as const, color: 'bg-red-500' },
+  archived: { label: 'Archivé', variant: 'secondary' as const, color: 'bg-slate-500' },
 };
+
+const projectFormSchema = z.object({
+  name: z.string().min(1, 'Le nom est requis'),
+  description: z.string().optional(),
+  status: z.enum(['active', 'on_hold', 'completed', 'cancelled', 'archived']).default('active'),
+  accountId: z.string().optional(),
+  vendorContactId: z.string().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+});
+
+type ProjectFormValues = z.infer<typeof projectFormSchema>;
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return 'Non définie';
@@ -43,6 +85,21 @@ function formatDate(dateStr: string | null | undefined): string {
 export default function ProjectDetail() {
   const [, params] = useRoute('/projects/:id');
   const projectId = params?.id;
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const { toast } = useToast();
+
+  const editForm = useForm<ProjectFormValues>({
+    resolver: zodResolver(projectFormSchema),
+    defaultValues: {
+      name: '',
+      description: '',
+      status: 'active',
+      accountId: '',
+      vendorContactId: '',
+      startDate: '',
+      endDate: '',
+    },
+  });
 
   const { data: project, isLoading: projectLoading } = useQuery<Project>({
     queryKey: ['/api/projects', projectId],
@@ -53,6 +110,10 @@ export default function ProjectDetail() {
     queryKey: ['/api/accounts'],
   });
 
+  const { data: contacts = [] } = useQuery<Contact[]>({
+    queryKey: ['/api/contacts'],
+  });
+
   const { data: allTasks = [] } = useQuery<Task[]>({
     queryKey: ['/api/tasks'],
   });
@@ -60,6 +121,70 @@ export default function ProjectDetail() {
   const { data: allDocuments = [] } = useQuery<Document[]>({
     queryKey: ['/api/documents'],
   });
+
+  const vendorContacts = contacts.filter(c => c.contactType === 'vendor');
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: ProjectFormValues) => {
+      const parseDate = (dateStr: string | undefined) => {
+        if (!dateStr) return null;
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const date = new Date(year, month - 1, day, 12, 0, 0);
+        return date.toISOString();
+      };
+      
+      const payload = {
+        ...data,
+        accountId: data.accountId || null,
+        vendorContactId: data.vendorContactId || null,
+        startDate: data.startDate ? parseDate(data.startDate) : undefined,
+        endDate: data.endDate ? parseDate(data.endDate) : undefined,
+      };
+      return apiRequest('PATCH', `/api/projects/${projectId}`, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId] });
+      setEditDialogOpen(false);
+      toast({
+        title: 'Projet modifié',
+        description: 'Le projet a été modifié avec succès.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de modifier le projet.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const handleOpenEditDialog = () => {
+    if (project) {
+      const formatDateForInput = (dateStr: string | null | undefined) => {
+        if (!dateStr) return '';
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return '';
+        return date.toISOString().split('T')[0];
+      };
+
+      editForm.reset({
+        name: project.name,
+        description: project.description || '',
+        status: project.status,
+        accountId: project.accountId || '',
+        vendorContactId: project.vendorContactId || '',
+        startDate: formatDateForInput(project.startDate),
+        endDate: formatDateForInput(project.endDate),
+      });
+      setEditDialogOpen(true);
+    }
+  };
+
+  const onEditSubmit = (data: ProjectFormValues) => {
+    updateMutation.mutate(data);
+  };
 
   if (projectLoading) {
     return (
@@ -108,7 +233,7 @@ export default function ProjectDetail() {
             {account?.name || 'Aucun client associé'}
           </p>
         </div>
-        <Button variant="outline" data-testid="button-edit-project">
+        <Button variant="outline" onClick={handleOpenEditDialog} data-testid="button-edit-project">
           <Edit2 className="mr-2 h-4 w-4" />
           Modifier
         </Button>
@@ -341,6 +466,184 @@ export default function ProjectDetail() {
           </Card>
         </div>
       </div>
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Modifier le projet</DialogTitle>
+            <DialogDescription>
+              Modifiez les informations du projet.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
+              <FormField
+                control={editForm.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Nom du projet *</FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="Ex: Automatisation CRM" 
+                        {...field} 
+                        data-testid="input-edit-project-name"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        placeholder="Décrivez le projet..." 
+                        className="resize-none" 
+                        {...field} 
+                        data-testid="input-edit-project-description"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="accountId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Client</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-edit-project-account">
+                          <SelectValue placeholder="Sélectionner un client" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {accounts.map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="vendorContactId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Sous-traitant assigné</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-edit-project-vendor">
+                          <SelectValue placeholder="Sélectionner un sous-traitant" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {vendorContacts.map((contact) => (
+                          <SelectItem key={contact.id} value={contact.id}>
+                            {contact.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="status"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Statut</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-edit-project-status">
+                          <SelectValue placeholder="Sélectionner un statut" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="active">Actif</SelectItem>
+                        <SelectItem value="on_hold">En pause</SelectItem>
+                        <SelectItem value="completed">Terminé</SelectItem>
+                        <SelectItem value="cancelled">Annulé</SelectItem>
+                        <SelectItem value="archived">Archivé</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={editForm.control}
+                  name="startDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Date de début</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="date" 
+                          {...field} 
+                          data-testid="input-edit-project-start-date"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={editForm.control}
+                  name="endDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Date de fin</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="date" 
+                          {...field} 
+                          data-testid="input-edit-project-end-date"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4">
+                <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>
+                  Annuler
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={updateMutation.isPending}
+                  data-testid="button-edit-submit"
+                >
+                  {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Enregistrer
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
