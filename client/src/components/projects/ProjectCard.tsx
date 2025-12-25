@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { ProjectStatus } from '@/lib/types';
+import type { ProjectStatus, PricingTier } from '@/lib/types';
 
 interface ProjectCardProject {
   id: string;
@@ -22,7 +22,14 @@ interface ProjectCardProject {
   totalTasks?: number;
   startDate?: string | null;
   endDate?: string | null;
+  pricingTier?: PricingTier | null;
 }
+
+const PRICING_TIERS: Record<string, { label: string; price: number }> = {
+  simple: { label: 'Simple', price: 150 },
+  intermediate: { label: 'Intermédiaire', price: 250 },
+  expert: { label: 'Expert', price: 350 },
+};
 
 interface ProjectCardProps {
   project: ProjectCardProject;
@@ -31,6 +38,7 @@ interface ProjectCardProps {
   onArchive?: () => void;
   onDelete?: () => void;
   index?: number;
+  showPricing?: boolean;
 }
 
 const statusConfig: Record<ProjectStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; color: string }> = {
@@ -41,9 +49,10 @@ const statusConfig: Record<ProjectStatus, { label: string; variant: 'default' | 
   archived: { label: 'Archivé', variant: 'secondary', color: 'bg-gray-500' },
 };
 
-export function ProjectCard({ project, onClick, onEdit, onArchive, onDelete, index = 0 }: ProjectCardProps) {
+export function ProjectCard({ project, onClick, onEdit, onArchive, onDelete, index = 0, showPricing = false }: ProjectCardProps) {
   const status = statusConfig[project.status];
   const isArchived = project.status === 'archived';
+  const pricingInfo = project.pricingTier ? PRICING_TIERS[project.pricingTier] : null;
 
   return (
     <motion.div
@@ -72,8 +81,13 @@ export function ProjectCard({ project, onClick, onEdit, onArchive, onDelete, ind
                 <p className="text-sm text-muted-foreground truncate pl-8">{project.accountName}</p>
               )}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 flex-wrap">
               <Badge variant={status.variant} className="shrink-0">{status.label}</Badge>
+              {showPricing && pricingInfo && (
+                <Badge variant="outline" className="shrink-0 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800">
+                  {pricingInfo.price}€
+                </Badge>
+              )}
               {(onEdit || onArchive || onDelete) && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>

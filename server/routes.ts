@@ -596,6 +596,7 @@ ${cr.replace(/\n/g, '<br>')}
               clientName: account?.name || 'Client non spécifié',
               startDate: project.startDate?.toISOString() || null,
               endDate: project.endDate?.toISOString() || null,
+              pricingTier: project.pricingTier || null,
             });
           }
         } catch (emailError) {
@@ -645,6 +646,7 @@ ${cr.replace(/\n/g, '<br>')}
               clientName: account?.name || 'Client non spécifié',
               startDate: project.startDate?.toISOString() || null,
               endDate: project.endDate?.toISOString() || null,
+              pricingTier: project.pricingTier || null,
             });
           }
         } catch (emailError) {

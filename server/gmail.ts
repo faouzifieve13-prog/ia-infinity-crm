@@ -986,8 +986,15 @@ export interface VendorProjectAssignmentEmailParams {
   clientName: string;
   startDate?: string | null;
   endDate?: string | null;
+  pricingTier?: string | null;
   organizationName?: string;
 }
+
+const PRICING_TIER_INFO: Record<string, { label: string; price: number }> = {
+  simple: { label: 'Automatisation Simple', price: 150 },
+  intermediate: { label: 'Automatisation Intermédiaire', price: 250 },
+  expert: { label: 'Automatisation Expert', price: 350 },
+};
 
 function formatProjectDate(date: string | null | undefined): string {
   if (!date) return 'Non définie';
@@ -1182,9 +1189,15 @@ export async function sendVendorProjectAssignmentEmail(params: VendorProjectAssi
                         <td style="color: #18181b; font-size: 14px; text-align: right; padding-bottom: 12px;">${formatProjectDate(params.startDate)}</td>
                       </tr>
                       <tr>
-                        <td style="color: #71717a; font-size: 14px;">Date de fin</td>
-                        <td style="color: #18181b; font-size: 14px; text-align: right;">${formatProjectDate(params.endDate)}</td>
+                        <td style="color: #71717a; font-size: 14px; padding-bottom: 12px;">Date de fin</td>
+                        <td style="color: #18181b; font-size: 14px; text-align: right; padding-bottom: 12px;">${formatProjectDate(params.endDate)}</td>
                       </tr>
+                      ${params.pricingTier && PRICING_TIER_INFO[params.pricingTier] ? `
+                      <tr>
+                        <td style="color: #71717a; font-size: 14px;">Tarif</td>
+                        <td style="color: #059669; font-size: 14px; font-weight: 600; text-align: right;">${PRICING_TIER_INFO[params.pricingTier].label} - ${PRICING_TIER_INFO[params.pricingTier].price}€</td>
+                      </tr>
+                      ` : ''}
                     </table>
                   </td>
                 </tr>

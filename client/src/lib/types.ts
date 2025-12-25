@@ -14,6 +14,7 @@ export type ContractType = 'audit' | 'prestation' | 'formation' | 'suivi' | 'sou
 export type ContractStatus = 'draft' | 'sent' | 'signed' | 'active' | 'completed' | 'cancelled';
 export type ContactType = 'client' | 'vendor' | 'partner' | 'prospect';
 export type ProspectStatus = 'active' | 'draft' | 'follow_up' | 'abandoned';
+export type PricingTier = 'simple' | 'intermediate' | 'expert';
 
 export interface User {
   id: string;
@@ -116,6 +117,7 @@ export interface Project {
   name: string;
   description?: string | null;
   status: ProjectStatus;
+  pricingTier?: PricingTier | null;
   startDate?: string | null;
   endDate?: string | null;
   progress: number;

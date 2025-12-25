@@ -43,6 +43,7 @@ import {
 } from '@/components/ui/form';
 import { ProjectCard } from '@/components/projects/ProjectCard';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import type { Project, Account, ProjectStatus, Contact } from '@/lib/types';
 
@@ -52,9 +53,16 @@ const projectFormSchema = z.object({
   status: z.enum(['active', 'on_hold', 'completed', 'cancelled', 'archived']).default('active'),
   accountId: z.string().optional(),
   vendorContactId: z.string().optional(),
+  pricingTier: z.enum(['simple', 'intermediate', 'expert']).optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
 });
+
+const PRICING_TIERS = {
+  simple: { label: 'Automatisation Simple', price: 150 },
+  intermediate: { label: 'Automatisation Intermédiaire', price: 250 },
+  expert: { label: 'Automatisation Expert', price: 350 },
+} as const;
 
 type ProjectFormValues = z.infer<typeof projectFormSchema>;
 
@@ -68,6 +76,9 @@ export default function Projects() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
+  
+  const canSeePricing = user?.role === 'admin' || user?.role === 'vendor';
 
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(projectFormSchema),
@@ -77,6 +88,7 @@ export default function Projects() {
       status: 'active',
       accountId: '',
       vendorContactId: '',
+      pricingTier: undefined,
       startDate: '',
       endDate: '',
     },
@@ -90,6 +102,7 @@ export default function Projects() {
       status: 'active',
       accountId: '',
       vendorContactId: '',
+      pricingTier: undefined,
       startDate: '',
       endDate: '',
     },
@@ -122,6 +135,7 @@ export default function Projects() {
         ...data,
         accountId: data.accountId || null,
         vendorContactId: data.vendorContactId || null,
+        pricingTier: data.pricingTier || null,
         startDate: parseDate(data.startDate),
         endDate: parseDate(data.endDate),
       };
@@ -158,6 +172,7 @@ export default function Projects() {
         ...data,
         accountId: data.accountId || null,
         vendorContactId: data.vendorContactId || null,
+        pricingTier: data.pricingTier || null,
         startDate: data.startDate ? parseDate(data.startDate) : undefined,
         endDate: data.endDate ? parseDate(data.endDate) : undefined,
       };
@@ -249,6 +264,7 @@ export default function Projects() {
       status: project.status,
       accountId: project.accountId || '',
       vendorContactId: project.vendorContactId || '',
+      pricingTier: project.pricingTier || undefined,
       startDate: formatDate(project.startDate),
       endDate: formatDate(project.endDate),
     });
@@ -413,6 +429,31 @@ export default function Projects() {
 
                 <FormField
                   control={form.control}
+                  name="pricingTier"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tarif sous-traitant</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-project-pricing">
+                            <SelectValue placeholder="Sélectionner un tarif" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {Object.entries(PRICING_TIERS).map(([key, tier]) => (
+                            <SelectItem key={key} value={key}>
+                              {tier.label} - {tier.price}€
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
                   name="status"
                   render={({ field }) => (
                     <FormItem>
@@ -563,6 +604,7 @@ export default function Projects() {
               onEdit={() => handleEdit(project)}
               onArchive={() => handleArchive(project)}
               onDelete={() => handleDelete(project)}
+              showPricing={canSeePricing}
             />
           ))}
         </div>
@@ -656,6 +698,31 @@ export default function Projects() {
                         {vendorContacts.map((contact) => (
                           <SelectItem key={contact.id} value={contact.id}>
                             {contact.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={editForm.control}
+                name="pricingTier"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tarif sous-traitant</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-edit-project-pricing">
+                          <SelectValue placeholder="Sélectionner un tarif" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {Object.entries(PRICING_TIERS).map(([key, tier]) => (
+                          <SelectItem key={key} value={key}>
+                            {tier.label} - {tier.price}€
                           </SelectItem>
                         ))}
                       </SelectContent>
