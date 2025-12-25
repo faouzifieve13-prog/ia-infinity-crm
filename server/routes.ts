@@ -856,6 +856,46 @@ ${cr.replace(/\n/g, '<br>')}
       const orgId = getOrgId(req);
       const data = insertVendorSchema.parse({ ...req.body, orgId });
       const vendor = await storage.createVendor(data);
+      
+      // Send welcome email with portal access if email is provided
+      if (data.email) {
+        try {
+          // Create an invitation for vendor portal access
+          const token = generateToken();
+          const tokenHash = hashToken(token);
+          const expiresAt = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000); // 6 months
+          
+          await storage.createInvitation({
+            orgId,
+            email: data.email,
+            role: 'vendor' as UserRole,
+            space: 'vendor' as Space,
+            tokenHash,
+            expiresAt,
+            status: 'pending',
+            accountId: null,
+            vendorId: vendor.id,
+          });
+          
+          const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+            ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+            : 'http://localhost:5000';
+          const portalLink = `${baseUrl}/auth/vendor/accept-invite?token=${token}`;
+          
+          const { sendVendorWelcomeEmail } = await import("./gmail");
+          await sendVendorWelcomeEmail({
+            to: data.email,
+            vendorName: data.name,
+            portalLink,
+          });
+          
+          console.log(`Vendor welcome email sent to ${data.email}`);
+        } catch (emailError) {
+          console.error("Failed to send vendor welcome email:", emailError);
+          // Don't fail the vendor creation if email fails
+        }
+      }
+      
       res.status(201).json(vendor);
     } catch (error) {
       if (error instanceof z.ZodError) {
