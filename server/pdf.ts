@@ -447,3 +447,181 @@ export async function embedSignatureInPdf(
   console.log(`Signature by ${signerName} recorded`);
   return pdfBuffer;
 }
+
+export interface SignedQuotePDFParams {
+  quoteNumber: string;
+  title: string;
+  amount: string;
+  accountName: string;
+  contactEmail: string;
+  adminSignature: string;
+  adminSignedBy: string;
+  adminSignedAt: string;
+  clientSignature: string;
+  clientSignedBy: string;
+  clientSignedAt: string;
+  organizationName?: string;
+}
+
+export async function generateSignedQuotePDF(params: SignedQuotePDFParams): Promise<Buffer> {
+  const { organizationName = 'IA Infinity' } = params;
+  
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const doc = new PDFDocument({ 
+      size: 'A4',
+      margin: 50,
+      info: {
+        Title: `Devis Signé - ${params.quoteNumber}`,
+        Author: organizationName,
+      }
+    });
+    
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    
+    const primaryColor = '#7c3aed';
+    const textColor = '#18181b';
+    const mutedColor = '#71717a';
+    const successColor = '#16a34a';
+    const leftMargin = 50;
+    const contentWidth = doc.page.width - 100;
+    
+    doc.rect(0, 0, doc.page.width, 110).fill(primaryColor);
+    
+    const logoPath = path.join(process.cwd(), 'attached_assets', 'logo_iA_Infinity_1766415032734.png');
+    let textStartX = leftMargin;
+    
+    if (fs.existsSync(logoPath)) {
+      try {
+        doc.image(logoPath, leftMargin, 20, { height: 65 });
+        textStartX = leftMargin + 85;
+      } catch (err) {
+        console.warn('Could not load logo for PDF:', err);
+      }
+    }
+    
+    doc
+      .fontSize(24)
+      .fillColor('#ffffff')
+      .text(organizationName, textStartX, 25);
+    
+    doc
+      .fontSize(14)
+      .fillColor('#ffffff')
+      .opacity(0.95)
+      .text('DEVIS SIGNÉ', textStartX, 55);
+    
+    doc
+      .fontSize(10)
+      .opacity(1)
+      .text(`N° ${params.quoteNumber}`, textStartX, 78);
+    
+    let yPos = 140;
+    
+    doc
+      .fontSize(18)
+      .fillColor(textColor)
+      .text(params.title, leftMargin, yPos, { width: contentWidth });
+    yPos += doc.heightOfString(params.title, { width: contentWidth }) + 25;
+    
+    doc.rect(leftMargin, yPos, contentWidth, 30).fill('#dcfce7');
+    doc
+      .fontSize(12)
+      .fillColor(successColor)
+      .text('DOCUMENT SIGNÉ PAR LES DEUX PARTIES', leftMargin + 15, yPos + 8);
+    yPos += 50;
+    
+    doc
+      .fontSize(14)
+      .fillColor(primaryColor)
+      .text('CLIENT', leftMargin, yPos);
+    yPos += 25;
+    
+    doc.fontSize(10).fillColor(textColor);
+    doc.text(`Société: ${params.accountName}`, leftMargin, yPos);
+    yPos += 15;
+    doc.text(`Email: ${params.contactEmail}`, leftMargin, yPos);
+    yPos += 35;
+    
+    doc
+      .fontSize(14)
+      .fillColor(primaryColor)
+      .text('MONTANT DU DEVIS', leftMargin, yPos);
+    yPos += 25;
+    
+    doc
+      .fontSize(20)
+      .fillColor(textColor)
+      .text(formatCurrency(params.amount), leftMargin, yPos);
+    yPos += 45;
+    
+    doc
+      .fontSize(14)
+      .fillColor(primaryColor)
+      .text('SIGNATURES ÉLECTRONIQUES', leftMargin, yPos);
+    yPos += 30;
+    
+    const signatureWidth = (contentWidth - 40) / 2;
+    const rightColumnX = leftMargin + signatureWidth + 40;
+    
+    doc.rect(leftMargin, yPos, signatureWidth, 130).stroke(mutedColor);
+    doc.rect(rightColumnX, yPos, signatureWidth, 130).stroke(mutedColor);
+    
+    doc.fontSize(10).fillColor(primaryColor);
+    doc.text('Prestataire', leftMargin + 10, yPos + 10);
+    doc.text('Client', rightColumnX + 10, yPos + 10);
+    
+    doc.fontSize(9).fillColor(textColor);
+    doc.text(params.adminSignedBy, leftMargin + 10, yPos + 28);
+    doc.text(params.clientSignedBy, rightColumnX + 10, yPos + 28);
+    
+    doc.fontSize(8).fillColor(mutedColor);
+    doc.text(`Signé le: ${formatDate(new Date(params.adminSignedAt))}`, leftMargin + 10, yPos + 45);
+    doc.text(`Signé le: ${formatDate(new Date(params.clientSignedAt))}`, rightColumnX + 10, yPos + 45);
+    
+    if (params.adminSignature && params.adminSignature.startsWith('data:image')) {
+      try {
+        const base64Data = params.adminSignature.split(',')[1];
+        const imgBuffer = Buffer.from(base64Data, 'base64');
+        doc.image(imgBuffer, leftMargin + 10, yPos + 60, { 
+          fit: [signatureWidth - 30, 55],
+          align: 'center'
+        });
+      } catch (err) {
+        doc.fontSize(8).fillColor(mutedColor);
+        doc.text('[Signature numérique enregistrée]', leftMargin + 10, yPos + 80);
+      }
+    }
+    
+    if (params.clientSignature && params.clientSignature.startsWith('data:image')) {
+      try {
+        const base64Data = params.clientSignature.split(',')[1];
+        const imgBuffer = Buffer.from(base64Data, 'base64');
+        doc.image(imgBuffer, rightColumnX + 10, yPos + 60, { 
+          fit: [signatureWidth - 30, 55],
+          align: 'center'
+        });
+      } catch (err) {
+        doc.fontSize(8).fillColor(mutedColor);
+        doc.text('[Signature numérique enregistrée]', rightColumnX + 10, yPos + 80);
+      }
+    }
+    
+    yPos += 150;
+    
+    doc.fontSize(8).fillColor(mutedColor);
+    doc.text(
+      'Ce document constitue un devis électronique signé numériquement par les deux parties.',
+      leftMargin, yPos, { width: contentWidth, align: 'center' }
+    );
+    yPos += 15;
+    doc.text(
+      `Document généré le ${formatDate(new Date())} par ${organizationName}`,
+      leftMargin, yPos, { width: contentWidth, align: 'center' }
+    );
+    
+    doc.end();
+  });
+}

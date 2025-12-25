@@ -1371,15 +1371,55 @@ ${cr.replace(/\n/g, '<br>')}
         return res.status(404).json({ error: "Devis non trouvé" });
       }
       
+      const adminSignedAt = new Date();
+      const adminSignedBy = user?.claims?.email || user?.claims?.name || 'Admin';
       const updatedQuote = await storage.updateQuote(quote.id, orgId, {
         adminSignature: signature,
-        adminSignedAt: new Date(),
-        adminSignedBy: user?.claims?.email || user?.claims?.name || 'Admin'
+        adminSignedAt: adminSignedAt,
+        adminSignedBy: adminSignedBy
       });
       
-      // Check if both signatures are present to update status
+      // Check if both signatures are present to update status and generate PDF
       if (updatedQuote?.clientSignature && updatedQuote?.adminSignature) {
         await storage.updateQuote(quote.id, orgId, { status: 'signed' });
+        
+        // Generate signed PDF and upload to Google Drive
+        try {
+          const { generateSignedQuotePDF } = await import("./pdf");
+          const { uploadFileToDrive } = await import("./drive");
+          
+          // Get account info for the PDF
+          const account = quote.accountId ? await storage.getAccount(quote.accountId, orgId) : null;
+          
+          const pdfBuffer = await generateSignedQuotePDF({
+            quoteNumber: quote.number || `DEVIS-${quote.id.slice(0, 8)}`,
+            title: quote.title,
+            amount: quote.amount,
+            accountName: account?.name || 'Client',
+            contactEmail: account?.contactEmail || '',
+            adminSignature: signature,
+            adminSignedBy: adminSignedBy,
+            adminSignedAt: adminSignedAt.toISOString(),
+            clientSignature: updatedQuote.clientSignature,
+            clientSignedBy: updatedQuote.clientSignedBy || 'Client',
+            clientSignedAt: updatedQuote.clientSignedAt?.toISOString() || new Date().toISOString()
+          });
+          
+          const filename = `Devis_Signe_${quote.number || quote.id.slice(0, 8)}_${new Date().toISOString().split('T')[0]}.pdf`;
+          const driveFile = await uploadFileToDrive(pdfBuffer, filename, 'application/pdf', 'IA Infinity - Devis Signés');
+          
+          // Update quote with signed PDF URL
+          const finalQuote = await storage.updateQuote(quote.id, orgId, {
+            signedPdfUrl: driveFile.webViewLink || driveFile.webContentLink
+          });
+          
+          console.log(`Signed quote PDF uploaded to Google Drive: ${driveFile.webViewLink}`);
+          res.json({ success: true, quote: finalQuote });
+          return;
+        } catch (pdfError) {
+          console.error("Error generating signed PDF:", pdfError);
+          // Continue with response even if PDF generation fails
+        }
       }
       
       res.json({ success: true, quote: updatedQuote });
@@ -1406,8 +1446,11 @@ ${cr.replace(/\n/g, '<br>')}
         return res.status(404).json({ error: "Devis non trouvé" });
       }
       
-      // Verify token if provided
-      if (quote.signatureToken && token) {
+      // Verify token - required if quote has a token set
+      if (quote.signatureToken) {
+        if (!token) {
+          return res.status(403).json({ error: "Token de signature requis" });
+        }
         const hashedToken = hashToken(token);
         if (hashedToken !== quote.signatureToken) {
           return res.status(403).json({ error: "Token de signature invalide" });
@@ -1417,15 +1460,54 @@ ${cr.replace(/\n/g, '<br>')}
         }
       }
       
+      const clientSignedAt = new Date();
       const updatedQuote = await storage.updateQuote(quote.id, orgId, {
         clientSignature: signature,
-        clientSignedAt: new Date(),
+        clientSignedAt: clientSignedAt,
         clientSignedBy: clientName
       });
       
-      // Check if both signatures are present to update status
+      // Check if both signatures are present to update status and generate PDF
       if (updatedQuote?.clientSignature && updatedQuote?.adminSignature) {
         await storage.updateQuote(quote.id, orgId, { status: 'signed' });
+        
+        // Generate signed PDF and upload to Google Drive
+        try {
+          const { generateSignedQuotePDF } = await import("./pdf");
+          const { uploadFileToDrive } = await import("./drive");
+          
+          // Get account info for the PDF
+          const account = quote.accountId ? await storage.getAccount(quote.accountId, orgId) : null;
+          
+          const pdfBuffer = await generateSignedQuotePDF({
+            quoteNumber: quote.number || `DEVIS-${quote.id.slice(0, 8)}`,
+            title: quote.title,
+            amount: quote.amount,
+            accountName: account?.name || 'Client',
+            contactEmail: account?.contactEmail || '',
+            adminSignature: updatedQuote.adminSignature,
+            adminSignedBy: updatedQuote.adminSignedBy || 'Admin',
+            adminSignedAt: updatedQuote.adminSignedAt?.toISOString() || new Date().toISOString(),
+            clientSignature: signature,
+            clientSignedBy: clientName,
+            clientSignedAt: clientSignedAt.toISOString()
+          });
+          
+          const filename = `Devis_Signe_${quote.number || quote.id.slice(0, 8)}_${new Date().toISOString().split('T')[0]}.pdf`;
+          const driveFile = await uploadFileToDrive(pdfBuffer, filename, 'application/pdf', 'IA Infinity - Devis Signés');
+          
+          // Update quote with signed PDF URL
+          const finalQuote = await storage.updateQuote(quote.id, orgId, {
+            signedPdfUrl: driveFile.webViewLink || driveFile.webContentLink
+          });
+          
+          console.log(`Signed quote PDF uploaded to Google Drive: ${driveFile.webViewLink}`);
+          res.json({ success: true, quote: finalQuote });
+          return;
+        } catch (pdfError) {
+          console.error("Error generating signed PDF:", pdfError);
+          // Continue with response even if PDF generation fails
+        }
       }
       
       res.json({ success: true, quote: updatedQuote });
