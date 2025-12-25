@@ -52,6 +52,7 @@ export const memberships = pgTable("memberships", {
   role: userRoleEnum("role").notNull().default('sales'),
   space: spaceEnum("space").notNull().default('internal'),
   accountId: varchar("account_id"),
+  vendorContactId: varchar("vendor_contact_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("memberships_org_user_idx").on(table.orgId, table.userId),

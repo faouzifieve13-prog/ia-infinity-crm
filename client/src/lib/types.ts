@@ -20,6 +20,9 @@ export interface User {
   name: string;
   email: string;
   avatar?: string | null;
+  role?: UserRole;
+  vendorContactId?: string | null;
+  accountId?: string | null;
   createdAt?: string;
 }
 

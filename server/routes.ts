@@ -349,6 +349,30 @@ ${cr.replace(/\n/g, '<br>')}
       const orgId = getOrgId(req);
       const data = insertContactSchema.parse({ ...req.body, orgId });
       const contact = await storage.createContact(data);
+      
+      // Send welcome email if creating a vendor contact
+      if (data.contactType === 'vendor' && contact.email) {
+        try {
+          const { sendVendorWelcomeEmail } = await import("./gmail");
+          const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+            ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+            : process.env.REPL_SLUG 
+              ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
+              : 'https://ia-infinity.replit.app';
+          
+          await sendVendorWelcomeEmail({
+            to: contact.email,
+            vendorName: contact.name,
+            portalLink: `${baseUrl}/vendor`,
+            organizationName: 'IA Infinity'
+          });
+          console.log(`Welcome email sent to new vendor: ${contact.email}`);
+        } catch (emailError) {
+          console.error("Failed to send vendor welcome email:", emailError);
+          // Continue even if email fails - contact was created successfully
+        }
+      }
+      
       res.status(201).json(contact);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -4386,6 +4410,201 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     } catch (error: any) {
       console.error("Update follow-up history error:", error);
       res.status(500).json({ error: error.message || "Failed to update follow-up history" });
+    }
+  });
+
+  // ==========================================
+  // VENDOR PORTAL ROUTES (Filtered by vendorContactId)
+  // ==========================================
+
+  // Get projects assigned to a specific vendor contact
+  app.get("/api/vendor/projects", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.query.vendorContactId as string;
+      
+      if (!vendorContactId) {
+        return res.status(400).json({ error: "vendorContactId is required" });
+      }
+      
+      // Get all projects where this vendor contact is assigned
+      const allProjects = await storage.getProjects(orgId);
+      const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
+      
+      res.json(vendorProjects);
+    } catch (error) {
+      console.error("Get vendor projects error:", error);
+      res.status(500).json({ error: "Failed to get vendor projects" });
+    }
+  });
+
+  // Get accounts/clients for projects assigned to a specific vendor contact
+  app.get("/api/vendor/accounts", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.query.vendorContactId as string;
+      
+      if (!vendorContactId) {
+        return res.status(400).json({ error: "vendorContactId is required" });
+      }
+      
+      // Get all projects where this vendor contact is assigned
+      const allProjects = await storage.getProjects(orgId);
+      const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
+      
+      // Get unique account IDs from vendor projects
+      const accountIds = vendorProjects.map(p => p.accountId).filter((id): id is string => id !== null);
+      const uniqueAccountIds = [...new Set(accountIds)];
+      
+      // Fetch accounts for those IDs
+      const allAccounts = await storage.getAccounts(orgId);
+      const vendorAccounts = allAccounts.filter(a => uniqueAccountIds.includes(a.id));
+      
+      res.json(vendorAccounts);
+    } catch (error) {
+      console.error("Get vendor accounts error:", error);
+      res.status(500).json({ error: "Failed to get vendor accounts" });
+    }
+  });
+
+  // Get documents for projects assigned to a specific vendor contact
+  app.get("/api/vendor/documents", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.query.vendorContactId as string;
+      
+      if (!vendorContactId) {
+        return res.status(400).json({ error: "vendorContactId is required" });
+      }
+      
+      // Get all projects where this vendor contact is assigned
+      const allProjects = await storage.getProjects(orgId);
+      const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
+      const vendorProjectIds = vendorProjects.map(p => p.id);
+      
+      // Get unique account IDs from vendor projects
+      const accountIdsList = vendorProjects.map(p => p.accountId).filter((id): id is string => id !== null);
+      const uniqueAccountIds = [...new Set(accountIdsList)];
+      
+      // Fetch all documents
+      const allDocuments = await storage.getDocuments(orgId);
+      
+      // Filter documents that belong to vendor's projects or accounts
+      const vendorDocuments = allDocuments.filter(d => 
+        (d.projectId && vendorProjectIds.includes(d.projectId)) ||
+        (d.accountId && uniqueAccountIds.includes(d.accountId))
+      );
+      
+      res.json(vendorDocuments);
+    } catch (error) {
+      console.error("Get vendor documents error:", error);
+      res.status(500).json({ error: "Failed to get vendor documents" });
+    }
+  });
+
+  // Get missions for projects assigned to a specific vendor contact
+  app.get("/api/vendor/missions", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.query.vendorContactId as string;
+      
+      if (!vendorContactId) {
+        return res.status(400).json({ error: "vendorContactId is required" });
+      }
+      
+      // Get all projects where this vendor contact is assigned
+      const allProjects = await storage.getProjects(orgId);
+      const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
+      const vendorProjectIds = vendorProjects.map(p => p.id);
+      
+      // Get missions for those projects
+      const allMissions = await storage.getMissions(orgId);
+      const vendorMissions = allMissions.filter(m => m.projectId && vendorProjectIds.includes(m.projectId));
+      
+      res.json(vendorMissions);
+    } catch (error) {
+      console.error("Get vendor missions error:", error);
+      res.status(500).json({ error: "Failed to get vendor missions" });
+    }
+  });
+
+  // Get tasks for projects assigned to a specific vendor contact
+  app.get("/api/vendor/tasks", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.query.vendorContactId as string;
+      
+      if (!vendorContactId) {
+        return res.status(400).json({ error: "vendorContactId is required" });
+      }
+      
+      // Get all projects where this vendor contact is assigned
+      const allProjects = await storage.getProjects(orgId);
+      const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
+      const vendorProjectIds = vendorProjects.map(p => p.id);
+      
+      // Get tasks for those projects
+      const allTasks = await storage.getTasks(orgId);
+      const vendorTasks = allTasks.filter(t => t.projectId && vendorProjectIds.includes(t.projectId));
+      
+      res.json(vendorTasks);
+    } catch (error) {
+      console.error("Get vendor tasks error:", error);
+      res.status(500).json({ error: "Failed to get vendor tasks" });
+    }
+  });
+
+  // Get vendor portal summary/dashboard stats
+  app.get("/api/vendor/dashboard", async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.query.vendorContactId as string;
+      
+      if (!vendorContactId) {
+        return res.status(400).json({ error: "vendorContactId is required" });
+      }
+      
+      // Get all projects where this vendor contact is assigned
+      const allProjects = await storage.getProjects(orgId);
+      const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
+      const vendorProjectIds = vendorProjects.map(p => p.id);
+      
+      // Get missions for those projects
+      const allMissions = await storage.getMissions(orgId);
+      const vendorMissions = allMissions.filter(m => m.projectId && vendorProjectIds.includes(m.projectId));
+      
+      // Get tasks for those projects
+      const allTasks = await storage.getTasks(orgId);
+      const vendorTasks = allTasks.filter(t => t.projectId && vendorProjectIds.includes(t.projectId));
+      
+      // Calculate stats
+      const activeProjects = vendorProjects.filter(p => p.status === 'active').length;
+      const completedProjects = vendorProjects.filter(p => p.status === 'completed').length;
+      const activeMissions = vendorMissions.filter(m => m.status === 'in_progress').length;
+      const pendingMissions = vendorMissions.filter(m => m.status === 'pending').length;
+      const completedTasks = vendorTasks.filter(t => t.status === 'completed').length;
+      const totalTasks = vendorTasks.length;
+      
+      res.json({
+        projects: {
+          total: vendorProjects.length,
+          active: activeProjects,
+          completed: completedProjects,
+        },
+        missions: {
+          total: vendorMissions.length,
+          active: activeMissions,
+          pending: pendingMissions,
+        },
+        tasks: {
+          total: totalTasks,
+          completed: completedTasks,
+          progress: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
+        },
+      });
+    } catch (error) {
+      console.error("Get vendor dashboard error:", error);
+      res.status(500).json({ error: "Failed to get vendor dashboard" });
     }
   });
 

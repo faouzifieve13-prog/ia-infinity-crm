@@ -7,6 +7,7 @@ interface SpaceContextType {
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;
   canAccessSpace: (space: Space) => boolean;
+  vendorContactId: string | null;
 }
 
 const SpaceContext = createContext<SpaceContextType | undefined>(undefined);
@@ -23,16 +24,17 @@ const spaceAccessByRole: Record<UserRole, Space[]> = {
 
 export function SpaceProvider({ children }: { children: React.ReactNode }) {
   const [currentSpace, setCurrentSpace] = useState<Space>('internal');
-  // todo: remove mock functionality
   const [currentUser, setCurrentUser] = useState<User | null>({
     id: '1',
     name: 'Alice Martin',
     email: 'alice@iainfinity.com',
     role: 'admin',
+    vendorContactId: null,
+    accountId: null,
   });
 
   const canAccessSpace = (space: Space): boolean => {
-    if (!currentUser) return false;
+    if (!currentUser || !currentUser.role) return false;
     return spaceAccessByRole[currentUser.role].includes(space);
   };
 
@@ -42,8 +44,10 @@ export function SpaceProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const vendorContactId = currentUser?.vendorContactId || null;
+
   return (
-    <SpaceContext.Provider value={{ currentSpace, setSpace, currentUser, setCurrentUser, canAccessSpace }}>
+    <SpaceContext.Provider value={{ currentSpace, setSpace, currentUser, setCurrentUser, canAccessSpace, vendorContactId }}>
       {children}
     </SpaceContext.Provider>
   );

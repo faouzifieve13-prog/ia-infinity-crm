@@ -998,6 +998,126 @@ function formatProjectDate(date: string | null | undefined): string {
   }).format(new Date(date));
 }
 
+export interface VendorWelcomeEmailParams {
+  to: string;
+  vendorName: string;
+  portalLink: string;
+  organizationName?: string;
+}
+
+export async function sendVendorWelcomeEmail(params: VendorWelcomeEmailParams): Promise<boolean> {
+  try {
+    const gmail = await getUncachableGmailClient();
+    
+    const orgName = params.organizationName || 'IA Infinity';
+    
+    const subject = `Bienvenue chez ${orgName} - Accès à votre espace sous-traitant`;
+    
+    const htmlBody = `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); padding: 32px 40px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">
+                ${orgName}
+              </h1>
+              <p style="margin: 8px 0 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">
+                Espace Sous-traitant
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <h2 style="margin: 0 0 16px 0; color: #18181b; font-size: 22px; font-weight: 600;">
+                Bienvenue ${params.vendorName} !
+              </h2>
+              
+              <p style="margin: 0 0 24px 0; color: #52525b; font-size: 16px; line-height: 1.6;">
+                Nous sommes ravis de vous compter parmi nos sous-traitants. Votre accès au portail a été créé avec succès.
+              </p>
+              
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px; background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); border-radius: 8px; border: 1px solid #fed7aa;">
+                <tr>
+                  <td style="padding: 24px;">
+                    <h3 style="margin: 0 0 12px 0; color: #c2410c; font-size: 16px; font-weight: 600;">
+                      Votre Portail Sous-traitant
+                    </h3>
+                    <p style="margin: 0; color: #9a3412; font-size: 14px; line-height: 1.6;">
+                      Accédez à votre espace personnel pour consulter vos missions, suivre vos projets et accéder aux documents associés.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+              
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
+                <tr>
+                  <td align="center">
+                    <a href="${params.portalLink}" style="display: inline-block; background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 12px rgba(249, 115, 22, 0.4);">
+                      Accéder à mon espace
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              
+              <p style="margin: 0 0 16px 0; color: #71717a; font-size: 14px; line-height: 1.6;">
+                Si le bouton ne fonctionne pas, copiez et collez ce lien dans votre navigateur :
+              </p>
+              
+              <p style="margin: 0 0 24px 0; color: #f97316; font-size: 12px; word-break: break-all; background-color: #f4f4f5; padding: 12px; border-radius: 4px;">
+                ${params.portalLink}
+              </p>
+              
+              <p style="margin: 0; color: #a1a1aa; font-size: 12px; line-height: 1.6;">
+                Pour toute question, n'hésitez pas à nous contacter. Nous sommes impatients de collaborer avec vous !
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #fafafa; padding: 24px 40px; text-align: center; border-top: 1px solid #e4e4e7;">
+              <p style="margin: 0; color: #a1a1aa; font-size: 12px;">
+                &copy; ${new Date().getFullYear()} ${orgName}. Tous droits réservés.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim();
+    
+    const encodedMessage = createEmailMessage(params.to, subject, htmlBody);
+    
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage
+      }
+    });
+    
+    console.log(`Vendor welcome email sent to ${params.to}`);
+    return true;
+  } catch (error) {
+    console.error('Failed to send vendor welcome email:', error);
+    return false;
+  }
+}
+
 export async function sendVendorProjectAssignmentEmail(params: VendorProjectAssignmentEmailParams): Promise<boolean> {
   try {
     const gmail = await getUncachableGmailClient();
