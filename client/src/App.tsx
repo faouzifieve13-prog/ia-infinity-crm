@@ -124,6 +124,13 @@ function AppContent() {
     (location.startsWith("/contracts/") && location.includes("/sign")) ||
     location.startsWith("/sign-quote/");
   
+  // Redirect to login if not authenticated on protected routes
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated && !isPublicRoute) {
+      setLocation("/login");
+    }
+  }, [authLoading, isAuthenticated, isPublicRoute, location]);
+  
   // Show loading while checking auth
   if (authLoading && !isPublicRoute) {
     return (
@@ -133,9 +140,8 @@ function AppContent() {
     );
   }
   
-  // Redirect to login if not authenticated on protected routes
+  // Don't render protected content if not authenticated
   if (!isAuthenticated && !isPublicRoute) {
-    setLocation("/login");
     return null;
   }
   

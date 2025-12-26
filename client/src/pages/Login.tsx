@@ -1,20 +1,36 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { Lock, Mail, ArrowRight, Eye, EyeOff } from "lucide-react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Lock, Mail, ArrowRight, Eye, EyeOff, User, Shield } from "lucide-react";
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isInitMode, setIsInitMode] = useState(false);
+
+  const { data: needsInitData, isLoading: checkingInit } = useQuery<{ needsInit: boolean }>({
+    queryKey: ["/api/auth/needs-init"],
+    queryFn: async () => {
+      const res = await fetch("/api/auth/needs-init");
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    if (needsInitData?.needsInit) {
+      setIsInitMode(true);
+    }
+  }, [needsInitData]);
 
   const loginMutation = useMutation({
     mutationFn: async (data: { email: string; password: string }) => {
@@ -22,6 +38,7 @@ export default function Login() {
       return response.json();
     },
     onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/session"] });
       toast({
         title: "Connexion réussie",
         description: `Bienvenue, ${data.user?.name || data.user?.email || ""}!`,
@@ -45,6 +62,29 @@ export default function Login() {
     },
   });
 
+  const initAdminMutation = useMutation({
+    mutationFn: async (data: { email: string; password: string; name?: string }) => {
+      const response = await apiRequest("POST", "/api/auth/init-admin", data);
+      return response.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/session"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/needs-init"] });
+      toast({
+        title: "Administrateur créé",
+        description: `Bienvenue, ${data.user?.name || data.user?.email || ""}!`,
+      });
+      setLocation("/");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Erreur",
+        description: error.message || "Impossible de créer l'administrateur",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
@@ -55,25 +95,57 @@ export default function Login() {
       });
       return;
     }
-    loginMutation.mutate({ email, password });
+    
+    if (isInitMode) {
+      initAdminMutation.mutate({ email, password, name: name.trim() || undefined });
+    } else {
+      loginMutation.mutate({ email, password });
+    }
   };
+
+  if (checkingInit) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-purple-50 dark:from-violet-950 dark:via-gray-900 dark:to-purple-950 flex items-center justify-center p-4">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-purple-50 dark:from-violet-950 dark:via-gray-900 dark:to-purple-950 flex items-center justify-center p-4">
       <Card className="w-full max-w-md shadow-lg border-violet-200 dark:border-violet-800">
         <CardHeader className="text-center space-y-2">
           <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg">
-            <Lock className="h-8 w-8 text-white" />
+            {isInitMode ? <Shield className="h-8 w-8 text-white" /> : <Lock className="h-8 w-8 text-white" />}
           </div>
           <CardTitle className="text-2xl font-bold bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent">
             IA Infinity
           </CardTitle>
           <CardDescription className="text-muted-foreground">
-            Connectez-vous à votre espace
+            {isInitMode 
+              ? "Créez votre compte administrateur pour démarrer" 
+              : "Connectez-vous à votre espace"}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {isInitMode && (
+              <div className="space-y-2">
+                <Label htmlFor="name">Nom (optionnel)</Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="name"
+                    type="text"
+                    placeholder="Votre nom"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="pl-10"
+                    data-testid="input-name"
+                  />
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <div className="relative">
@@ -119,21 +191,26 @@ export default function Login() {
                   )}
                 </Button>
               </div>
+              {isInitMode && (
+                <p className="text-xs text-muted-foreground">
+                  Le mot de passe doit contenir au moins 8 caractères
+                </p>
+              )}
             </div>
             <Button
               type="submit"
               className="w-full bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700"
-              disabled={loginMutation.isPending}
+              disabled={loginMutation.isPending || initAdminMutation.isPending}
               data-testid="button-login"
             >
-              {loginMutation.isPending ? (
+              {(loginMutation.isPending || initAdminMutation.isPending) ? (
                 <div className="flex items-center gap-2">
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  Connexion...
+                  {isInitMode ? "Création..." : "Connexion..."}
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  Se connecter
+                  {isInitMode ? "Créer le compte admin" : "Se connecter"}
                   <ArrowRight className="h-4 w-4" />
                 </div>
               )}

@@ -381,3 +381,102 @@ export function getSessionData(req: Request) {
     orgId: req.session.orgId || DEFAULT_ORG_ID,
   };
 }
+
+export function registerAdminInitRoute(app: Express) {
+  const initAdminSchema = z.object({
+    email: z.string().email(),
+    password: z.string().min(8, "Le mot de passe doit contenir au moins 8 caractères"),
+    name: z.string().optional(),
+  });
+
+  app.post("/api/auth/init-admin", async (req: Request, res: Response) => {
+    try {
+      const { email, password, name } = initAdminSchema.parse(req.body);
+      const normalizedEmail = email.toLowerCase();
+      
+      const existingAdmins = await storage.getUsers();
+      const hasAdminWithPassword = existingAdmins.some(u => u.password !== null);
+      
+      if (hasAdminWithPassword) {
+        return res.status(403).json({ error: "Un administrateur existe déjà. Utilisez la page de connexion." });
+      }
+      
+      const hashedPassword = await bcrypt.hash(password, 10);
+      
+      let user = await storage.getUserByEmail(normalizedEmail);
+      if (user) {
+        await storage.updateUser(user.id, { 
+          password: hashedPassword,
+          name: name || user.name 
+        });
+      } else {
+        user = await storage.createUser({
+          email: normalizedEmail,
+          name: name || normalizedEmail.split("@")[0],
+          password: hashedPassword,
+        });
+      }
+      
+      let membership = await storage.getMembershipByUserAndOrg(user.id, DEFAULT_ORG_ID);
+      if (!membership) {
+        membership = await storage.createMembership({
+          userId: user.id,
+          orgId: DEFAULT_ORG_ID,
+          role: "admin",
+          space: "internal",
+          accountId: null,
+          vendorContactId: null,
+        });
+      }
+      
+      req.session.regenerate((err) => {
+        if (err) {
+          console.error("Session regeneration error:", err);
+          return res.status(500).json({ error: "Erreur de session" });
+        }
+        
+        req.session.userId = user!.id;
+        req.session.email = user!.email;
+        req.session.role = membership!.role;
+        req.session.space = membership!.space;
+        req.session.accountId = membership!.accountId;
+        req.session.vendorContactId = membership!.vendorContactId;
+        req.session.orgId = DEFAULT_ORG_ID;
+        
+        req.session.save((saveErr) => {
+          if (saveErr) {
+            console.error("Session save error:", saveErr);
+            return res.status(500).json({ error: "Erreur de session" });
+          }
+          
+          res.json({
+            success: true,
+            user: {
+              id: user!.id,
+              email: user!.email,
+              name: user!.name,
+            },
+            role: membership!.role,
+          });
+        });
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Données invalides", details: error.errors });
+      }
+      console.error("Init admin error:", error);
+      res.status(500).json({ error: "Erreur lors de l'initialisation de l'administrateur" });
+    }
+  });
+  
+  app.get("/api/auth/needs-init", async (req: Request, res: Response) => {
+    try {
+      const users = await storage.getUsers();
+      const hasAdminWithPassword = users.some(u => u.password !== null);
+      res.json({ needsInit: !hasAdminWithPassword });
+    } catch (error) {
+      console.error("Check init error:", error);
+      res.status(500).json({ error: "Erreur de vérification" });
+    }
+  });
+}
