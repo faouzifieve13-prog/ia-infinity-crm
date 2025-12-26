@@ -11,6 +11,7 @@ import { FolderKanban, TrendingUp, CheckCircle, Briefcase } from "lucide-react";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { SpaceProvider } from "@/hooks/use-space";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { useAuth } from "@/hooks/use-auth";
 import Dashboard from "@/pages/Dashboard";
 import Pipeline from "@/pages/Pipeline";
 import DealDetail from "@/pages/DealDetail";
@@ -85,6 +86,7 @@ function Router() {
 
 function AppContent() {
   const [location, setLocation] = useLocation();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   
   // Check for vendor invite return after login - must run synchronously before render
   useEffect(() => {
@@ -114,6 +116,27 @@ function AppContent() {
   // Setup password page (for accepting invitations)
   if (location === "/setup-password") {
     return <SetupPassword />;
+  }
+  
+  // Public routes that don't require authentication
+  const isPublicRoute = 
+    location.startsWith("/auth/") ||
+    (location.startsWith("/contracts/") && location.includes("/sign")) ||
+    location.startsWith("/sign-quote/");
+  
+  // Show loading while checking auth
+  if (authLoading && !isPublicRoute) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+  
+  // Redirect to login if not authenticated on protected routes
+  if (!isAuthenticated && !isPublicRoute) {
+    setLocation("/login");
+    return null;
   }
   
   // Auth routes are rendered outside the main layout
