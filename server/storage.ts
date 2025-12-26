@@ -3,7 +3,7 @@ import { eq, and, desc, asc, sql, isNotNull } from "drizzle-orm";
 import {
   organizations, users, memberships, accounts, contacts, deals, quotes, activities,
   projects, tasks, invoices, invoiceLineItems, vendors, missions, documents,
-  workflowRuns, importJobs, contracts, expenses, invitations, emails, followUpHistory,
+  workflowRuns, importJobs, contracts, expenses, invitations, emails, followUpHistory, projectComments,
   type Organization, type InsertOrganization,
   type User, type InsertUser,
   type Membership, type InsertMembership,
@@ -26,6 +26,7 @@ import {
   type Email, type InsertEmail,
   type Quote, type InsertQuote,
   type FollowUpHistory, type InsertFollowUpHistory,
+  type ProjectComment, type InsertProjectComment,
   type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
   type ExpenseStatus, type ExpenseCategory, type InvitationStatus, type FollowUpType
 } from "@shared/schema";
@@ -193,6 +194,9 @@ export interface IStorage {
   getFollowUpHistory(dealId: string, orgId: string): Promise<FollowUpHistory[]>;
   createFollowUpHistory(followUp: InsertFollowUpHistory): Promise<FollowUpHistory>;
   updateFollowUpHistory(id: string, orgId: string, data: Partial<InsertFollowUpHistory>): Promise<FollowUpHistory | undefined>;
+  
+  getProjectComments(projectId: string, orgId: string): Promise<ProjectComment[]>;
+  createProjectComment(comment: InsertProjectComment): Promise<ProjectComment>;
   
   getDashboardStats(orgId: string): Promise<{
     totalDeals: number;
@@ -1209,6 +1213,17 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(followUpHistory.id, id), eq(followUpHistory.orgId, orgId)))
       .returning();
     return updated;
+  }
+
+  async getProjectComments(projectId: string, orgId: string): Promise<ProjectComment[]> {
+    return db.select().from(projectComments)
+      .where(and(eq(projectComments.projectId, projectId), eq(projectComments.orgId, orgId)))
+      .orderBy(asc(projectComments.createdAt));
+  }
+
+  async createProjectComment(comment: InsertProjectComment): Promise<ProjectComment> {
+    const [created] = await db.insert(projectComments).values(comment).returning();
+    return created;
   }
 }
 

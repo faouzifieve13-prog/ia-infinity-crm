@@ -722,6 +722,34 @@ export const emailsRelations = relations(emails, ({ one }) => ({
   }),
 }));
 
+export const projectComments = pgTable("project_comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  content: text("content").notNull(),
+  isFromClient: boolean("is_from_client").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("project_comments_org_idx").on(table.orgId),
+  index("project_comments_project_idx").on(table.projectId),
+]);
+
+export const projectCommentsRelations = relations(projectComments, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [projectComments.orgId],
+    references: [organizations.id],
+  }),
+  project: one(projects, {
+    fields: [projectComments.projectId],
+    references: [projects.id],
+  }),
+  user: one(users, {
+    fields: [projectComments.userId],
+    references: [users.id],
+  }),
+}));
+
 export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertMembershipSchema = createInsertSchema(memberships).omit({ id: true, createdAt: true });
@@ -762,6 +790,7 @@ export const insertFollowUpHistorySchema = createInsertSchema(followUpHistory).o
   sentAt: z.coerce.date().optional(),
   responseAt: z.coerce.date().optional().nullable(),
 });
+export const insertProjectCommentSchema = createInsertSchema(projectComments).omit({ id: true, createdAt: true });
 
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -808,6 +837,8 @@ export type Expense = typeof expenses.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
 export type Email = typeof emails.$inferSelect;
 export type FollowUpHistory = typeof followUpHistory.$inferSelect;
+export type ProjectComment = typeof projectComments.$inferSelect;
+export type InsertProjectComment = z.infer<typeof insertProjectCommentSchema>;
 
 export type UserRole = 'admin' | 'sales' | 'delivery' | 'finance' | 'client_admin' | 'client_member' | 'vendor';
 export type MissionType = 'audit' | 'automatisation';

@@ -44,6 +44,7 @@ import { LandingPage } from "@/pages/LandingPage";
 import Login from "@/pages/Login";
 import SetupPassword from "@/pages/SetupPassword";
 import ClientPortal from "@/pages/ClientPortal";
+import ClientProjectDetail from "@/pages/ClientProjectDetail";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -181,7 +182,13 @@ function AppContent() {
   
   // Client portal routes
   if (location === "/client" || location.startsWith("/client/")) {
-    return <ClientPortal />;
+    return (
+      <Switch>
+        <Route path="/client" component={ClientPortal} />
+        <Route path="/client/projects/:id" component={ClientProjectDetail} />
+        <Route component={NotFound} />
+      </Switch>
+    );
   }
 
   // Vendor portal routes

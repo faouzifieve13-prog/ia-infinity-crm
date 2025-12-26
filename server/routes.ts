@@ -4956,6 +4956,97 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     }
   });
 
+  // Get single project details for client
+  app.get("/api/client/projects/:id", requireClient, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+      const projectId = req.params.id;
+      
+      if (!accountId) {
+        return res.status(403).json({ error: "No account linked" });
+      }
+      
+      const project = await storage.getProject(projectId, orgId);
+      if (!project || project.accountId !== accountId) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      // Get tasks for this project
+      const allTasks = await storage.getTasks(orgId);
+      const projectTasks = allTasks.filter(t => t.projectId === projectId);
+      
+      // Get missions for this project
+      const allMissions = await storage.getMissions(orgId);
+      const projectMissions = allMissions.filter(m => m.projectId === projectId);
+      
+      // Get documents for this project
+      const allDocuments = await storage.getDocuments(orgId);
+      const projectDocuments = allDocuments.filter(d => d.projectId === projectId);
+      
+      // Get comments for this project
+      const comments = await storage.getProjectComments(projectId, orgId);
+      
+      // Get user info for comments
+      const commentUsers = await Promise.all(
+        comments.map(async (c) => {
+          const user = await storage.getUser(c.userId);
+          return { ...c, userName: user?.name || 'Utilisateur' };
+        })
+      );
+      
+      res.json({
+        project,
+        tasks: projectTasks,
+        missions: projectMissions,
+        documents: projectDocuments,
+        comments: commentUsers,
+      });
+    } catch (error) {
+      console.error("Get client project detail error:", error);
+      res.status(500).json({ error: "Failed to get project details" });
+    }
+  });
+
+  // Add comment to project (client)
+  app.post("/api/client/projects/:id/comments", requireClient, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+      const userId = req.session.userId;
+      const projectId = req.params.id;
+      const { content } = req.body;
+      
+      if (!accountId || !userId) {
+        return res.status(403).json({ error: "Not authenticated" });
+      }
+      
+      if (!content || typeof content !== 'string' || content.trim().length === 0) {
+        return res.status(400).json({ error: "Content is required" });
+      }
+      
+      const project = await storage.getProject(projectId, orgId);
+      if (!project || project.accountId !== accountId) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      const comment = await storage.createProjectComment({
+        orgId,
+        projectId,
+        userId,
+        content: content.trim(),
+        isFromClient: true,
+      });
+      
+      const user = await storage.getUser(userId);
+      
+      res.status(201).json({ ...comment, userName: user?.name || 'Utilisateur' });
+    } catch (error) {
+      console.error("Create project comment error:", error);
+      res.status(500).json({ error: "Failed to create comment" });
+    }
+  });
+
   // ==========================================
   // VENDOR PORTAL ROUTES (Secured with authentication)
   // ==========================================

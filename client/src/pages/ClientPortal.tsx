@@ -233,6 +233,7 @@ export default function ClientPortal() {
                     <div 
                       key={project.id} 
                       className="p-4 border rounded-lg hover-elevate cursor-pointer"
+                      onClick={() => setLocation(`/client/projects/${project.id}`)}
                       data-testid={`card-project-${project.id}`}
                     >
                       <div className="flex items-start justify-between mb-2">
@@ -244,7 +245,10 @@ export default function ClientPortal() {
                             </p>
                           )}
                         </div>
-                        {getStatusBadge(project.status)}
+                        <div className="flex items-center gap-2">
+                          {getStatusBadge(project.status)}
+                          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        </div>
                       </div>
                       <div className="space-y-2">
                         <div className="flex items-center justify-between text-sm">
