@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Lock, Mail, ArrowRight, Eye, EyeOff, User, Shield } from "lucide-react";
+import { Lock, Mail, ArrowRight, Eye, EyeOff, User } from "lucide-react";
+import logoImg from "@assets/logo_iA_Infinity_1766693283199.png";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -115,8 +116,8 @@ export default function Login() {
     <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-purple-50 dark:from-violet-950 dark:via-gray-900 dark:to-purple-950 flex items-center justify-center p-4">
       <Card className="w-full max-w-md shadow-lg border-violet-200 dark:border-violet-800">
         <CardHeader className="text-center space-y-2">
-          <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg">
-            {isInitMode ? <Shield className="h-8 w-8 text-white" /> : <Lock className="h-8 w-8 text-white" />}
+          <div className="mx-auto mb-2">
+            <img src={logoImg} alt="IA Infinity" className="h-20 w-auto" />
           </div>
           <CardTitle className="text-2xl font-bold bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent">
             IA Infinity
