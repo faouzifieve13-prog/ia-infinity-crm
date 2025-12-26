@@ -40,6 +40,8 @@ import SignQuote from "@/pages/SignQuote";
 import ClientQuotes from "@/pages/ClientQuotes";
 import Settings from "@/pages/Settings";
 import { LandingPage } from "@/pages/LandingPage";
+import Login from "@/pages/Login";
+import SetupPassword from "@/pages/SetupPassword";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -101,6 +103,16 @@ function AppContent() {
   // Public landing page route
   if (location === "/landing" || location === "/welcome") {
     return <LandingPage />;
+  }
+  
+  // Login page
+  if (location === "/login") {
+    return <Login />;
+  }
+  
+  // Setup password page (for accepting invitations)
+  if (location === "/setup-password") {
+    return <SetupPassword />;
   }
   
   // Auth routes are rendered outside the main layout

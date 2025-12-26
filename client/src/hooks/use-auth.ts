@@ -1,37 +1,46 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { User } from "@shared/models/auth";
+import { apiRequest } from "@/lib/queryClient";
 
-// Extended user type that includes role from membership
-export interface AuthUser extends User {
-  role: 'admin' | 'sales' | 'delivery' | 'finance' | 'client_admin' | 'client_member' | 'vendor' | null;
-  orgId: string | null;
+export type UserRole = 'admin' | 'sales' | 'delivery' | 'finance' | 'client_admin' | 'client_member' | 'vendor';
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name?: string | null;
+  avatar?: string | null;
 }
 
-async function fetchUser(): Promise<AuthUser | null> {
-  const response = await fetch("/api/auth/user", {
+export interface AuthSession {
+  authenticated: boolean;
+  user?: AuthUser;
+  role?: UserRole;
+  space?: 'internal' | 'client' | 'vendor';
+  accountId?: string | null;
+  vendorContactId?: string | null;
+}
+
+async function fetchSession(): Promise<AuthSession> {
+  const response = await fetch("/api/auth/session", {
     credentials: "include",
   });
 
-  if (response.status === 401) {
-    return null;
-  }
-
   if (!response.ok) {
-    throw new Error(`${response.status}: ${response.statusText}`);
+    return { authenticated: false };
   }
 
   return response.json();
 }
 
 async function logout(): Promise<void> {
-  window.location.href = "/api/logout";
+  await apiRequest("POST", "/api/auth/logout");
+  window.location.href = "/login";
 }
 
 export function useAuth() {
   const queryClient = useQueryClient();
-  const { data: user, isLoading } = useQuery<AuthUser | null>({
-    queryKey: ["/api/auth/user"],
-    queryFn: fetchUser,
+  const { data: session, isLoading } = useQuery<AuthSession>({
+    queryKey: ["/api/auth/session"],
+    queryFn: fetchSession,
     retry: false,
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
@@ -39,14 +48,18 @@ export function useAuth() {
   const logoutMutation = useMutation({
     mutationFn: logout,
     onSuccess: () => {
-      queryClient.setQueryData(["/api/auth/user"], null);
+      queryClient.setQueryData(["/api/auth/session"], { authenticated: false });
     },
   });
 
   return {
-    user,
+    user: session?.authenticated ? session.user : null,
+    role: session?.role,
+    space: session?.space,
+    accountId: session?.accountId,
+    vendorContactId: session?.vendorContactId,
     isLoading,
-    isAuthenticated: !!user,
+    isAuthenticated: session?.authenticated ?? false,
     logout: logoutMutation.mutate,
     isLoggingOut: logoutMutation.isPending,
   };

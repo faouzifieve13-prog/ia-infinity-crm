@@ -3652,8 +3652,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
       const baseUrl = process.env.REPLIT_DEV_DOMAIN 
         ? `https://${process.env.REPLIT_DEV_DOMAIN}`
         : 'http://localhost:5000';
-      const invitePath = parsed.space === 'vendor' ? '/auth/vendor-invite' : '/auth/accept-invite';
-      const inviteLink = `${baseUrl}${invitePath}?token=${token}`;
+      const inviteLink = `${baseUrl}/setup-password?token=${token}`;
       
       let emailSent = false;
       if (parsed.sendEmail) {

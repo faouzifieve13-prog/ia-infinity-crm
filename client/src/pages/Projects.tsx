@@ -77,10 +77,10 @@ export default function Projects() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { role } = useAuth();
   const { currentSpace } = useSpace();
   
-  const canSeePricing = user?.role === 'admin' || user?.role === 'vendor';
+  const canSeePricing = role === 'admin' || role === 'vendor';
   
   // Determine API endpoint based on portal
   const projectsApiEndpoint = currentSpace === 'client' ? '/api/client/projects' 
