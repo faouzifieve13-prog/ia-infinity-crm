@@ -493,6 +493,14 @@ export const invitations = pgTable("invitations", {
   index("invitations_status_idx").on(table.status),
 ]);
 
+export const sessions = pgTable("sessions", {
+  sid: varchar("sid").primaryKey(),
+  sess: text("sess").notNull(),
+  expire: timestamp("expire").notNull(),
+}, (table) => [
+  index("sessions_expire_idx").on(table.expire),
+]);
+
 export const emails = pgTable("emails", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
