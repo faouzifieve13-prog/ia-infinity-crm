@@ -53,19 +53,19 @@ type InvitationWithLink = Invitation & { inviteLink?: string; token?: string; em
 type GmailStatus = { connected: boolean; email?: string; error?: string };
 
 const roleLabels: Record<UserRole, string> = {
-  admin: 'Administrator',
-  sales: 'Sales',
-  delivery: 'Delivery',
+  admin: 'Administrateur',
+  sales: 'Commercial',
+  delivery: 'Livraison',
   finance: 'Finance',
-  client_admin: 'Client Admin',
-  client_member: 'Client Member',
-  vendor: 'Vendor',
+  client_admin: 'Admin Client',
+  client_member: 'Membre Client',
+  vendor: 'Sous-traitant',
 };
 
 const spaceLabels: Record<Space, string> = {
-  internal: 'Internal',
-  client: 'Client Portal',
-  vendor: 'Vendor Portal',
+  internal: 'Interne',
+  client: 'Portail Client',
+  vendor: 'Portail Sous-traitant',
 };
 
 const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -314,9 +314,9 @@ export default function Invitations() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="internal">Internal (Team)</SelectItem>
-                        <SelectItem value="client">Client Portal</SelectItem>
-                        <SelectItem value="vendor">Vendor Portal</SelectItem>
+                        <SelectItem value="internal">Interne (Équipe)</SelectItem>
+                        <SelectItem value="client">Portail Client</SelectItem>
+                        <SelectItem value="vendor">Portail Sous-traitant</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
