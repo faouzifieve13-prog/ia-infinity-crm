@@ -88,6 +88,16 @@ function AppContent() {
   const [location, setLocation] = useLocation();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   
+  // Public routes that don't require authentication
+  const isPublicRoute = 
+    location === "/landing" ||
+    location === "/welcome" ||
+    location === "/login" ||
+    location === "/setup-password" ||
+    location.startsWith("/auth/") ||
+    (location.startsWith("/contracts/") && location.includes("/sign")) ||
+    location.startsWith("/sign-quote/");
+  
   // Check for vendor invite return after login - must run synchronously before render
   useEffect(() => {
     const storedUrl = sessionStorage.getItem("vendor_invite_return");
@@ -95,13 +105,19 @@ function AppContent() {
       sessionStorage.removeItem("vendor_invite_return");
       try {
         const url = new URL(storedUrl);
-        // Redirect to the stored invite URL
         setLocation(url.pathname + url.search);
       } catch (e) {
         console.error("Invalid stored URL:", storedUrl);
       }
     }
-  }, []); // Run only once on mount
+  }, []);
+  
+  // Redirect to login if not authenticated on protected routes
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated && !isPublicRoute) {
+      setLocation("/login");
+    }
+  }, [authLoading, isAuthenticated, isPublicRoute, location]);
   
   // Public landing page route
   if (location === "/landing" || location === "/welcome") {
@@ -117,19 +133,6 @@ function AppContent() {
   if (location === "/setup-password") {
     return <SetupPassword />;
   }
-  
-  // Public routes that don't require authentication
-  const isPublicRoute = 
-    location.startsWith("/auth/") ||
-    (location.startsWith("/contracts/") && location.includes("/sign")) ||
-    location.startsWith("/sign-quote/");
-  
-  // Redirect to login if not authenticated on protected routes
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated && !isPublicRoute) {
-      setLocation("/login");
-    }
-  }, [authLoading, isAuthenticated, isPublicRoute, location]);
   
   // Show loading while checking auth
   if (authLoading && !isPublicRoute) {
