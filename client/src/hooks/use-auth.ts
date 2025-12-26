@@ -20,13 +20,22 @@ export interface AuthSession {
 }
 
 const SESSION_KEY = "ia_infinity_session";
+const TOKEN_KEY = "ia_infinity_token";
 
-export function saveLocalSession(session: AuthSession) {
+export function saveLocalSession(session: AuthSession, authToken?: string) {
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  if (authToken) {
+    localStorage.setItem(TOKEN_KEY, authToken);
+  }
 }
 
 export function clearLocalSession() {
   localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+export function getAuthToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
 }
 
 function getLocalSession(): AuthSession | null {

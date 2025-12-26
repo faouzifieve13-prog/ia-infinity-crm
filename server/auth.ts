@@ -24,6 +24,36 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+// In-memory token store for auth tokens (alternative to cookies)
+const authTokens = new Map<string, {
+  userId: string;
+  email: string;
+  role: string;
+  space: string;
+  accountId: string | null;
+  vendorContactId: string | null;
+  orgId: string;
+  expiresAt: Date;
+}>();
+
+function generateAuthToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
+function cleanExpiredTokens() {
+  const now = new Date();
+  const tokensToDelete: string[] = [];
+  authTokens.forEach((data, token) => {
+    if (data.expiresAt < now) {
+      tokensToDelete.push(token);
+    }
+  });
+  tokensToDelete.forEach(token => authTokens.delete(token));
+}
+
+// Clean expired tokens every hour
+setInterval(cleanExpiredTokens, 60 * 60 * 1000);
+
 export function setupPasswordAuth(app: Express) {
   const PgStore = pgSession(session);
   
@@ -83,10 +113,23 @@ export function registerPasswordAuthRoutes(app: Express) {
         return res.status(403).json({ error: "Aucun accès à cette organisation" });
       }
       
+      // Generate auth token for API access
+      const authToken = generateAuthToken();
+      authTokens.set(authToken, {
+        userId: user.id,
+        email: user.email,
+        role: membership.role,
+        space: membership.space,
+        accountId: membership.accountId,
+        vendorContactId: membership.vendorContactId,
+        orgId: DEFAULT_ORG_ID,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      });
+      
       req.session.regenerate((err) => {
         if (err) {
           console.error("Session regeneration error:", err);
-          return res.status(500).json({ error: "Erreur de session" });
+          // Continue anyway with token auth
         }
         
         req.session.userId = user.id;
@@ -100,7 +143,7 @@ export function registerPasswordAuthRoutes(app: Express) {
         req.session.save((saveErr) => {
           if (saveErr) {
             console.error("Session save error:", saveErr);
-            return res.status(500).json({ error: "Erreur de session" });
+            // Continue anyway with token auth
           }
           
           res.json({
@@ -114,6 +157,7 @@ export function registerPasswordAuthRoutes(app: Express) {
             space: membership.space,
             accountId: membership.accountId,
             vendorContactId: membership.vendorContactId,
+            authToken, // Include token for fallback auth
           });
         });
       });
@@ -277,10 +321,31 @@ export function registerPasswordAuthRoutes(app: Express) {
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.userId) {
-    return res.status(401).json({ error: "Non authentifié" });
+  // Check session first
+  if (req.session.userId) {
+    return next();
   }
-  next();
+  
+  // Fallback to token auth
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    const tokenData = authTokens.get(token);
+    
+    if (tokenData && tokenData.expiresAt > new Date()) {
+      // Populate session from token
+      req.session.userId = tokenData.userId;
+      req.session.email = tokenData.email;
+      req.session.role = tokenData.role;
+      req.session.space = tokenData.space;
+      req.session.accountId = tokenData.accountId;
+      req.session.vendorContactId = tokenData.vendorContactId;
+      req.session.orgId = tokenData.orgId;
+      return next();
+    }
+  }
+  
+  return res.status(401).json({ error: "Non authentifié" });
 }
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
@@ -429,10 +494,23 @@ export function registerAdminInitRoute(app: Express) {
         });
       }
       
+      // Generate auth token for API access
+      const authToken = generateAuthToken();
+      authTokens.set(authToken, {
+        userId: user.id,
+        email: user.email,
+        role: membership.role,
+        space: membership.space,
+        accountId: membership.accountId,
+        vendorContactId: membership.vendorContactId,
+        orgId: DEFAULT_ORG_ID,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      });
+      
       req.session.regenerate((err) => {
         if (err) {
           console.error("Session regeneration error:", err);
-          return res.status(500).json({ error: "Erreur de session" });
+          // Continue anyway with token auth
         }
         
         req.session.userId = user!.id;
@@ -446,7 +524,7 @@ export function registerAdminInitRoute(app: Express) {
         req.session.save((saveErr) => {
           if (saveErr) {
             console.error("Session save error:", saveErr);
-            return res.status(500).json({ error: "Erreur de session" });
+            // Continue anyway with token auth
           }
           
           res.json({
@@ -457,6 +535,7 @@ export function registerAdminInitRoute(app: Express) {
               name: user!.name,
             },
             role: membership!.role,
+            authToken, // Include token for fallback auth
           });
         });
       });

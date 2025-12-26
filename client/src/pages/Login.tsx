@@ -40,7 +40,7 @@ export default function Login() {
       return response.json();
     },
     onSuccess: (data: any) => {
-      // Save session to localStorage for persistence
+      // Save session and auth token to localStorage for persistence
       saveLocalSession({
         authenticated: true,
         user: data.user,
@@ -48,7 +48,7 @@ export default function Login() {
         space: data.space,
         accountId: data.accountId,
         vendorContactId: data.vendorContactId,
-      });
+      }, data.authToken);
       
       toast({
         title: "Connexion réussie",
@@ -80,7 +80,7 @@ export default function Login() {
       return response.json();
     },
     onSuccess: (data: any) => {
-      // Save session to localStorage for persistence
+      // Save session and auth token to localStorage for persistence
       saveLocalSession({
         authenticated: true,
         user: data.user,
@@ -88,7 +88,7 @@ export default function Login() {
         space: "internal",
         accountId: null,
         vendorContactId: null,
-      });
+      }, data.authToken);
       
       toast({
         title: "Administrateur créé",
