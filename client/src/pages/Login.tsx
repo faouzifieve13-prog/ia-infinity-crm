@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Lock, Mail, ArrowRight, Eye, EyeOff, User } from "lucide-react";
 import logoImg from "@assets/logo_iA_Infinity_1766693283199.png";
+import { saveLocalSession } from "@/hooks/use-auth";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -39,12 +40,22 @@ export default function Login() {
       return response.json();
     },
     onSuccess: (data: any) => {
+      // Save session to localStorage for persistence
+      saveLocalSession({
+        authenticated: true,
+        user: data.user,
+        role: data.role,
+        space: data.space,
+        accountId: data.accountId,
+        vendorContactId: data.vendorContactId,
+      });
+      
       toast({
         title: "Connexion réussie",
         description: `Bienvenue, ${data.user?.name || data.user?.email || ""}!`,
       });
       
-      // Force page reload to ensure session cookie is properly set
+      // Force page reload to ensure session is properly set
       const role = data.role;
       if (role === "client_admin" || role === "client_member") {
         window.location.href = "/client";
@@ -69,11 +80,21 @@ export default function Login() {
       return response.json();
     },
     onSuccess: (data: any) => {
+      // Save session to localStorage for persistence
+      saveLocalSession({
+        authenticated: true,
+        user: data.user,
+        role: data.role,
+        space: "internal",
+        accountId: null,
+        vendorContactId: null,
+      });
+      
       toast({
         title: "Administrateur créé",
         description: `Bienvenue, ${data.user?.name || data.user?.email || ""}!`,
       });
-      // Force page reload to ensure session cookie is properly set
+      // Force page reload to ensure session is properly set
       window.location.href = "/";
     },
     onError: (error: any) => {

@@ -19,19 +19,58 @@ export interface AuthSession {
   vendorContactId?: string | null;
 }
 
+const SESSION_KEY = "ia_infinity_session";
+
+export function saveLocalSession(session: AuthSession) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+export function clearLocalSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+function getLocalSession(): AuthSession | null {
+  try {
+    const stored = localStorage.getItem(SESSION_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error("Error reading local session:", e);
+  }
+  return null;
+}
+
 async function fetchSession(): Promise<AuthSession> {
   const response = await fetch("/api/auth/session", {
     credentials: "include",
   });
 
   if (!response.ok) {
+    const localSession = getLocalSession();
+    if (localSession?.authenticated) {
+      return localSession;
+    }
     return { authenticated: false };
   }
 
-  return response.json();
+  const serverSession = await response.json();
+  
+  if (serverSession.authenticated) {
+    saveLocalSession(serverSession);
+    return serverSession;
+  }
+  
+  const localSession = getLocalSession();
+  if (localSession?.authenticated) {
+    return localSession;
+  }
+  
+  return { authenticated: false };
 }
 
 async function logout(): Promise<void> {
+  clearLocalSession();
   await apiRequest("POST", "/api/auth/logout");
   window.location.href = "/login";
 }
