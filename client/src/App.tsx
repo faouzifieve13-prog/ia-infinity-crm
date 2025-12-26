@@ -42,6 +42,7 @@ import Settings from "@/pages/Settings";
 import { LandingPage } from "@/pages/LandingPage";
 import Login from "@/pages/Login";
 import SetupPassword from "@/pages/SetupPassword";
+import ClientPortal from "@/pages/ClientPortal";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -147,22 +148,8 @@ function AppContent() {
   }
   
   // Client portal routes
-  if (location.startsWith("/client/")) {
-    return (
-      <SpaceProvider defaultSpace="client">
-        <AppLayout>
-          <Switch>
-            <Route path="/client" component={() => <ClientDashboard />} />
-            <Route path="/client/projects" component={Projects} />
-            <Route path="/client/projects/:id" component={ProjectDetail} />
-            <Route path="/client/documents" component={Documents} />
-            <Route path="/client/tasks" component={Tasks} />
-            <Route path="/client/quotes" component={ClientQuotes} />
-            <Route component={NotFound} />
-          </Switch>
-        </AppLayout>
-      </SpaceProvider>
-    );
+  if (location === "/client" || location.startsWith("/client/")) {
+    return <ClientPortal />;
   }
 
   // Vendor portal routes

@@ -53,7 +53,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/accounts", async (req: Request, res: Response) => {
+  app.get("/api/accounts", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const accounts = await storage.getAccounts(orgId);
@@ -64,7 +64,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/accounts/:id", async (req: Request, res: Response) => {
+  app.get("/api/accounts/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const account = await storage.getAccount(req.params.id, orgId);
@@ -78,7 +78,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/accounts", async (req: Request, res: Response) => {
+  app.post("/api/accounts", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const data = insertAccountSchema.parse({ ...req.body, orgId });
@@ -547,7 +547,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/projects", async (req: Request, res: Response) => {
+  app.get("/api/projects", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const accountId = req.query.accountId as string | undefined;
@@ -560,7 +560,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/projects/:id", async (req: Request, res: Response) => {
+  app.get("/api/projects/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const project = await storage.getProject(req.params.id, orgId);
