@@ -42,7 +42,7 @@ export async function registerRoutes(
 ): Promise<Server> {
   await ensureDefaultOrg();
 
-  app.get("/api/dashboard/stats", async (req: Request, res: Response) => {
+  app.get("/api/dashboard/stats", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const stats = await storage.getDashboardStats(orgId);
@@ -138,7 +138,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/accounts/:id", async (req: Request, res: Response) => {
+  app.patch("/api/accounts/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const account = await storage.updateAccount(req.params.id, orgId, req.body);
@@ -152,7 +152,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/accounts/:id", async (req: Request, res: Response) => {
+  app.delete("/api/accounts/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       await storage.deleteAccount(req.params.id, orgId);
@@ -164,7 +164,7 @@ export async function registerRoutes(
   });
 
   // Generate CR (Compte Rendu) using ChatGPT for a client
-  app.post("/api/accounts/:id/generate-cr", async (req: Request, res: Response) => {
+  app.post("/api/accounts/:id/generate-cr", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const account = await storage.getAccount(req.params.id, orgId);
@@ -236,7 +236,7 @@ Utilise un ton professionnel mais accessible. Formate le texte avec des titres e
   });
 
   // Send CR by email to client
-  app.post("/api/accounts/:id/send-cr", async (req: Request, res: Response) => {
+  app.post("/api/accounts/:id/send-cr", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const account = await storage.getAccount(req.params.id, orgId);
@@ -319,7 +319,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/contacts", async (req: Request, res: Response) => {
+  app.get("/api/contacts", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const accountId = req.query.accountId as string | undefined;
@@ -331,7 +331,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/contacts/:id", async (req: Request, res: Response) => {
+  app.get("/api/contacts/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const contact = await storage.getContact(req.params.id, orgId);
@@ -345,7 +345,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.post("/api/contacts", async (req: Request, res: Response) => {
+  app.post("/api/contacts", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const data = insertContactSchema.parse({ ...req.body, orgId });
@@ -403,7 +403,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.patch("/api/contacts/:id", async (req: Request, res: Response) => {
+  app.patch("/api/contacts/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const contact = await storage.updateContact(req.params.id, orgId, req.body);
@@ -417,7 +417,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.delete("/api/contacts/:id", async (req: Request, res: Response) => {
+  app.delete("/api/contacts/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       await storage.deleteContact(req.params.id, orgId);
@@ -428,7 +428,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/deals", async (req: Request, res: Response) => {
+  app.get("/api/deals", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const stage = req.query.stage as DealStage | undefined;
@@ -440,7 +440,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/deals/:id", async (req: Request, res: Response) => {
+  app.get("/api/deals/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const deal = await storage.getDeal(req.params.id, orgId);
@@ -454,7 +454,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.post("/api/deals", async (req: Request, res: Response) => {
+  app.post("/api/deals", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const data = insertDealSchema.parse({ ...req.body, orgId });
@@ -469,7 +469,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.patch("/api/deals/:id", async (req: Request, res: Response) => {
+  app.patch("/api/deals/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const updateData = { ...req.body };
@@ -493,7 +493,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.patch("/api/deals/:id/stage", async (req: Request, res: Response) => {
+  app.patch("/api/deals/:id/stage", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const { stage, position } = req.body;
@@ -508,7 +508,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.delete("/api/deals/:id", async (req: Request, res: Response) => {
+  app.delete("/api/deals/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       await storage.deleteDeal(req.params.id, orgId);
@@ -519,7 +519,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/activities", async (req: Request, res: Response) => {
+  app.get("/api/activities", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const dealId = req.query.dealId as string | undefined;
@@ -532,7 +532,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.post("/api/activities", async (req: Request, res: Response) => {
+  app.post("/api/activities", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const data = insertActivitySchema.parse({ ...req.body, orgId });
@@ -675,7 +675,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/tasks", async (req: Request, res: Response) => {
+  app.get("/api/tasks", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const projectId = req.query.projectId as string | undefined;
@@ -688,7 +688,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/tasks/:id", async (req: Request, res: Response) => {
+  app.get("/api/tasks/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const task = await storage.getTask(req.params.id, orgId);
@@ -742,7 +742,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/invoices", async (req: Request, res: Response) => {
+  app.get("/api/invoices", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const accountId = req.query.accountId as string | undefined;
@@ -754,7 +754,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/invoices/:id", async (req: Request, res: Response) => {
+  app.get("/api/invoices/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const invoice = await storage.getInvoice(req.params.id, orgId);
@@ -769,7 +769,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.post("/api/invoices", async (req: Request, res: Response) => {
+  app.post("/api/invoices", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const { lineItems, ...invoiceData } = req.body;
@@ -793,7 +793,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.patch("/api/invoices/:id", async (req: Request, res: Response) => {
+  app.patch("/api/invoices/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const { lineItems, ...invoiceData } = req.body;
@@ -816,7 +816,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.delete("/api/invoices/:id", async (req: Request, res: Response) => {
+  app.delete("/api/invoices/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       await storage.deleteInvoiceLineItems(req.params.id);
@@ -828,7 +828,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/vendors", async (req: Request, res: Response) => {
+  app.get("/api/vendors", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const vendors = await storage.getVendors(orgId);
@@ -839,7 +839,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/vendors/:id", async (req: Request, res: Response) => {
+  app.get("/api/vendors/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const vendor = await storage.getVendor(req.params.id, orgId);
@@ -853,7 +853,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.post("/api/vendors", async (req: Request, res: Response) => {
+  app.post("/api/vendors", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const data = insertVendorSchema.parse({ ...req.body, orgId });
@@ -908,7 +908,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.patch("/api/vendors/:id", async (req: Request, res: Response) => {
+  app.patch("/api/vendors/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const vendor = await storage.updateVendor(req.params.id, orgId, req.body);
@@ -922,7 +922,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.delete("/api/vendors/:id", async (req: Request, res: Response) => {
+  app.delete("/api/vendors/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       await storage.deleteVendor(req.params.id, orgId);
@@ -933,7 +933,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/missions", async (req: Request, res: Response) => {
+  app.get("/api/missions", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const projectId = req.query.projectId as string | undefined;
@@ -946,7 +946,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/missions/:id", async (req: Request, res: Response) => {
+  app.get("/api/missions/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const mission = await storage.getMission(req.params.id, orgId);
@@ -960,7 +960,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.post("/api/missions", async (req: Request, res: Response) => {
+  app.post("/api/missions", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const data = insertMissionSchema.parse({ ...req.body, orgId });
@@ -975,7 +975,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.patch("/api/missions/:id", async (req: Request, res: Response) => {
+  app.patch("/api/missions/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const mission = await storage.updateMission(req.params.id, orgId, req.body);
@@ -989,7 +989,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.delete("/api/missions/:id", async (req: Request, res: Response) => {
+  app.delete("/api/missions/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       await storage.deleteMission(req.params.id, orgId);
@@ -1000,7 +1000,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/documents", async (req: Request, res: Response) => {
+  app.get("/api/documents", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const projectId = req.query.projectId as string | undefined;
@@ -1013,7 +1013,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/documents/:id", async (req: Request, res: Response) => {
+  app.get("/api/documents/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const document = await storage.getDocument(req.params.id, orgId);
@@ -1053,7 +1053,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/workflows", async (req: Request, res: Response) => {
+  app.get("/api/workflows", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const workflows = await storage.getWorkflowRuns(orgId);
@@ -1064,7 +1064,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/workflows/:id", async (req: Request, res: Response) => {
+  app.get("/api/workflows/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const workflow = await storage.getWorkflowRun(req.params.id, orgId);
@@ -1078,7 +1078,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.post("/api/workflows", async (req: Request, res: Response) => {
+  app.post("/api/workflows", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const data = insertWorkflowRunSchema.parse({ ...req.body, orgId });
@@ -1093,7 +1093,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.patch("/api/workflows/:id", async (req: Request, res: Response) => {
+  app.patch("/api/workflows/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const workflow = await storage.updateWorkflowRun(req.params.id, orgId, req.body);
@@ -1132,7 +1132,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/contracts", async (req: Request, res: Response) => {
+  app.get("/api/contracts", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const type = req.query.type as ContractType | undefined;
@@ -1145,7 +1145,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/contracts/:id", async (req: Request, res: Response) => {
+  app.get("/api/contracts/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const contract = await storage.getContract(req.params.id, orgId);
@@ -1159,7 +1159,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.post("/api/contracts", async (req: Request, res: Response) => {
+  app.post("/api/contracts", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const contractNumber = await storage.generateContractNumber(orgId, req.body.type || 'audit');
@@ -1175,7 +1175,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.patch("/api/contracts/:id", async (req: Request, res: Response) => {
+  app.patch("/api/contracts/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const updateSchema = insertContractSchema.partial().omit({ orgId: true, contractNumber: true });
@@ -1194,7 +1194,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.delete("/api/contracts/:id", async (req: Request, res: Response) => {
+  app.delete("/api/contracts/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       await storage.deleteContract(req.params.id, orgId);
@@ -1205,7 +1205,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/contracts/by-deal/:dealId", async (req: Request, res: Response) => {
+  app.get("/api/contracts/by-deal/:dealId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const contracts = await storage.getContractsByDeal(req.params.dealId, orgId);
@@ -1216,7 +1216,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.get("/api/contracts/by-account/:accountId", async (req: Request, res: Response) => {
+  app.get("/api/contracts/by-account/:accountId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const contracts = await storage.getContractsByAccount(req.params.accountId, orgId);
@@ -1228,7 +1228,7 @@ ${cr.replace(/\n/g, '<br>')}
   });
 
   // Quotes API - get all quotes
-  app.get("/api/quotes/all", async (req: Request, res: Response) => {
+  app.get("/api/quotes/all", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const quotes = await storage.getQuotes(orgId);
@@ -1276,7 +1276,7 @@ ${cr.replace(/\n/g, '<br>')}
   });
 
   // Send a quote to the client
-  app.post("/api/quotes/:id/send", async (req: Request, res: Response) => {
+  app.post("/api/quotes/:id/send", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const quote = await storage.getQuote(req.params.id, orgId);
@@ -1586,7 +1586,7 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
-  app.post("/api/contracts/generate", async (req: Request, res: Response) => {
+  app.post("/api/contracts/generate", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const { type, dealId, accountId, vendorId, clientName, clientEmail, clientCompany, clientAddress, clientSiret, amount, description, scope, deliverables, startDate, endDate, paymentTerms } = req.body;
@@ -1655,7 +1655,7 @@ ${cr.replace(/\n/g, '<br>')}
   });
 
   // AI-powered contract personalization endpoint using Word templates
-  app.post("/api/contracts/:id/personalize", async (req: Request, res: Response) => {
+  app.post("/api/contracts/:id/personalize", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const contract = await storage.getContract(req.params.id, orgId);
@@ -1746,7 +1746,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   });
 
   // Apply AI suggestions to a contract
-  app.post("/api/contracts/:id/apply-suggestions", async (req: Request, res: Response) => {
+  app.post("/api/contracts/:id/apply-suggestions", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const { title, scope, deliverables, paymentTerms, description } = req.body;
@@ -1772,7 +1772,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   });
 
   // Download contract as PDF
-  app.get("/api/contracts/:id/download-pdf", async (req: Request, res: Response) => {
+  app.get("/api/contracts/:id/download-pdf", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const contract = await storage.getContract(req.params.id, orgId);
@@ -1799,7 +1799,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.post("/api/contracts/:id/send", async (req: Request, res: Response) => {
+  app.post("/api/contracts/:id/send", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const contract = await storage.getContract(req.params.id, orgId);
@@ -2112,7 +2112,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.get("/api/contracts/:id/pdf", async (req: Request, res: Response) => {
+  app.get("/api/contracts/:id/pdf", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const contract = await storage.getContract(req.params.id, orgId);
@@ -2178,7 +2178,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   // Contract Template Routes (DOCX Generation)
   // ============================================
   
-  app.get("/api/contracts/templates/:type", async (req: Request, res: Response) => {
+  app.get("/api/contracts/templates/:type", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const contractType = req.params.type as 'audit' | 'prestation';
       if (!['audit', 'prestation'].includes(contractType)) {
@@ -2194,7 +2194,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
   
-  app.get("/api/contracts/:id/docx", async (req: Request, res: Response) => {
+  app.get("/api/contracts/:id/docx", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const contract = await storage.getContract(req.params.id, orgId);
@@ -2246,7 +2246,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     lieu: z.string().optional(),
   });
   
-  app.post("/api/contracts/:id/generate-docx-drive", async (req: Request, res: Response) => {
+  app.post("/api/contracts/:id/generate-docx-drive", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const contract = await storage.getContract(req.params.id, orgId);
@@ -2347,7 +2347,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   });
   
   // Convert DOCX from Drive to PDF and upload
-  app.post("/api/contracts/:id/convert-to-pdf", async (req: Request, res: Response) => {
+  app.post("/api/contracts/:id/convert-to-pdf", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const contract = await storage.getContract(req.params.id, orgId);
@@ -2390,7 +2390,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   });
   
   // Download PDF directly
-  app.get("/api/contracts/:id/download-pdf", async (req: Request, res: Response) => {
+  app.get("/api/contracts/:id/download-pdf", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const contract = await storage.getContract(req.params.id, orgId);
@@ -2423,7 +2423,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
   
-  app.post("/api/contracts/create-from-deal", async (req: Request, res: Response) => {
+  app.post("/api/contracts/create-from-deal", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const createFromDealSchema = z.object({
@@ -2522,7 +2522,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   // AI Contract Scope Generation Routes
   // ============================================
 
-  app.post("/api/contracts/generate-scope", async (req: Request, res: Response) => {
+  app.post("/api/contracts/generate-scope", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const generateScopeSchema = z.object({
@@ -2574,7 +2574,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   // Notion Integration Routes
   // ============================================
 
-  app.get("/api/notion/databases", async (req: Request, res: Response) => {
+  app.get("/api/notion/databases", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { listNotionDatabases } = await import("./notion");
       const databases = await listNotionDatabases();
@@ -2585,7 +2585,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.get("/api/notion/databases/:id/schema", async (req: Request, res: Response) => {
+  app.get("/api/notion/databases/:id/schema", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { getDatabaseSchema } = await import("./notion");
       const schema = await getDatabaseSchema(req.params.id);
@@ -2601,7 +2601,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     fieldMapping: z.record(z.string()).optional(),
   });
 
-  app.post("/api/notion/sync/accounts", async (req: Request, res: Response) => {
+  app.post("/api/notion/sync/accounts", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const parsed = notionSyncSchema.safeParse(req.body);
@@ -2811,21 +2811,21 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   }
 
   // Sync prospects from Notion
-  app.post("/api/notion/sync/prospects", async (req: Request, res: Response) => {
+  app.post("/api/notion/sync/prospects", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     await syncAccountsWithPlan(req, res, 'prospect', 'prospects');
   });
 
   // Sync audit clients from Notion
-  app.post("/api/notion/sync/audit-clients", async (req: Request, res: Response) => {
+  app.post("/api/notion/sync/audit-clients", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     await syncAccountsWithPlan(req, res, 'audit', 'audit-clients');
   });
 
   // Sync automation clients from Notion
-  app.post("/api/notion/sync/automation-clients", async (req: Request, res: Response) => {
+  app.post("/api/notion/sync/automation-clients", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     await syncAccountsWithPlan(req, res, 'automation', 'automation-clients');
   });
 
-  app.post("/api/notion/sync/expenses", async (req: Request, res: Response) => {
+  app.post("/api/notion/sync/expenses", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const parsed = notionSyncSchema.safeParse(req.body);
@@ -2946,7 +2946,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.post("/api/notion/sync/contacts", async (req: Request, res: Response) => {
+  app.post("/api/notion/sync/contacts", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const parsed = notionSyncSchema.safeParse(req.body);
@@ -3017,7 +3017,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.post("/api/notion/sync/deals", async (req: Request, res: Response) => {
+  app.post("/api/notion/sync/deals", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const parsed = notionSyncSchema.safeParse(req.body);
@@ -3089,7 +3089,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.post("/api/notion/sync/projects", async (req: Request, res: Response) => {
+  app.post("/api/notion/sync/projects", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const parsed = notionSyncSchema.safeParse(req.body);
@@ -3161,7 +3161,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.post("/api/notion/sync/tasks", async (req: Request, res: Response) => {
+  app.post("/api/notion/sync/tasks", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const parsed = notionSyncSchema.safeParse(req.body);
@@ -3232,7 +3232,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.post("/api/notion/sync/invoices", async (req: Request, res: Response) => {
+  app.post("/api/notion/sync/invoices", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const parsed = notionSyncSchema.safeParse(req.body);
@@ -3304,7 +3304,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.post("/api/notion/sync/vendors", async (req: Request, res: Response) => {
+  app.post("/api/notion/sync/vendors", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const parsed = notionSyncSchema.safeParse(req.body);
@@ -3532,7 +3532,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   // Expenses Routes
   // ============================================
 
-  app.get("/api/expenses", async (req: Request, res: Response) => {
+  app.get("/api/expenses", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const category = req.query.category as any | undefined;
@@ -3545,7 +3545,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.post("/api/expenses", async (req: Request, res: Response) => {
+  app.post("/api/expenses", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const { insertExpenseSchema } = await import("@shared/schema");
@@ -3561,7 +3561,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.patch("/api/expenses/:id", async (req: Request, res: Response) => {
+  app.patch("/api/expenses/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const expense = await storage.updateExpense(req.params.id, orgId, req.body);
@@ -3575,7 +3575,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.delete("/api/expenses/:id", async (req: Request, res: Response) => {
+  app.delete("/api/expenses/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       await storage.deleteExpense(req.params.id, orgId);
@@ -3590,7 +3590,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   // Invitations Routes
   // ============================================
 
-  app.get("/api/invitations", async (req: Request, res: Response) => {
+  app.get("/api/invitations", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const status = req.query.status as InvitationStatus | undefined;
@@ -3603,7 +3603,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.get("/api/invitations/:id", async (req: Request, res: Response) => {
+  app.get("/api/invitations/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const invitation = await storage.getInvitation(req.params.id, orgId);
@@ -3628,7 +3628,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     sendEmail: z.boolean().default(false),
   });
 
-  app.post("/api/invitations", async (req: Request, res: Response) => {
+  app.post("/api/invitations", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const parsed = createInvitationSchema.parse(req.body);
@@ -3785,7 +3785,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.post("/api/invitations/:id/revoke", async (req: Request, res: Response) => {
+  app.post("/api/invitations/:id/revoke", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const invitation = await storage.revokeInvitation(req.params.id, orgId);
@@ -3799,7 +3799,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.delete("/api/invitations/:id", async (req: Request, res: Response) => {
+  app.delete("/api/invitations/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       await storage.deleteInvitation(req.params.id, orgId);
@@ -3811,7 +3811,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   });
 
   // Gmail connection status
-  app.get("/api/gmail/status", async (req: Request, res: Response) => {
+  app.get("/api/gmail/status", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const status = await testGmailConnection();
       res.json(status);
@@ -3822,7 +3822,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   });
 
   // Gmail inbox - fetch emails from connected Gmail account
-  app.get("/api/gmail/inbox", async (req: Request, res: Response) => {
+  app.get("/api/gmail/inbox", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const maxResults = parseInt(req.query.maxResults as string) || 20;
       const emails = await getInboxEmails(Math.min(maxResults, 50));
@@ -3873,7 +3873,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     contactId: z.string().optional(),
   });
 
-  app.post("/api/gmail/send", async (req: Request, res: Response) => {
+  app.post("/api/gmail/send", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const parsed = sendEmailSchema.parse(req.body);
@@ -3916,7 +3916,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.post("/api/gmail/sync", async (req: Request, res: Response) => {
+  app.post("/api/gmail/sync", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const { syncGmailEmails } = await import("./gmail");
@@ -3933,7 +3933,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   // Google Calendar Routes
   // ============================================
 
-  app.get("/api/calendar/status", async (req: Request, res: Response) => {
+  app.get("/api/calendar/status", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { testCalendarConnection } = await import("./calendar");
       const status = await testCalendarConnection();
@@ -3944,7 +3944,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.get("/api/calendar/events", async (req: Request, res: Response) => {
+  app.get("/api/calendar/events", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { getCalendarEvents } = await import("./calendar");
       const timeMin = req.query.timeMin ? new Date(req.query.timeMin as string) : undefined;
@@ -3959,7 +3959,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.get("/api/calendar/calendars", async (req: Request, res: Response) => {
+  app.get("/api/calendar/calendars", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { getCalendarList } = await import("./calendar");
       const calendars = await getCalendarList();
@@ -3979,7 +3979,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     attendees: z.array(z.string().email()).optional(),
   });
 
-  app.post("/api/calendar/events", async (req: Request, res: Response) => {
+  app.post("/api/calendar/events", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const parsed = createEventSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -3995,7 +3995,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.patch("/api/calendar/events/:id", async (req: Request, res: Response) => {
+  app.patch("/api/calendar/events/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { updateCalendarEvent } = await import("./calendar");
       const event = await updateCalendarEvent(req.params.id, req.body);
@@ -4006,7 +4006,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.delete("/api/calendar/events/:id", async (req: Request, res: Response) => {
+  app.delete("/api/calendar/events/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { deleteCalendarEvent } = await import("./calendar");
       await deleteCalendarEvent(req.params.id);
@@ -4018,7 +4018,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   });
 
   // Calendar DB Sync Routes
-  app.post("/api/calendar/sync", async (req: Request, res: Response) => {
+  app.post("/api/calendar/sync", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = DEFAULT_ORG_ID;
       const { daysAhead } = req.body;
@@ -4031,7 +4031,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.get("/api/calendar/db/upcoming", async (req: Request, res: Response) => {
+  app.get("/api/calendar/db/upcoming", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = DEFAULT_ORG_ID;
       const { days, accountId, contactId, limit } = req.query;
@@ -4049,7 +4049,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.get("/api/calendar/db/past", async (req: Request, res: Response) => {
+  app.get("/api/calendar/db/past", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = DEFAULT_ORG_ID;
       const { days, limit } = req.query;
@@ -4065,7 +4065,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.get("/api/calendar/db/all", async (req: Request, res: Response) => {
+  app.get("/api/calendar/db/all", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = DEFAULT_ORG_ID;
       const { getAllDbCalendarEvents } = await import("./calendar");
@@ -4077,7 +4077,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.get("/api/calendar/db/:id", async (req: Request, res: Response) => {
+  app.get("/api/calendar/db/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = DEFAULT_ORG_ID;
       const { getDbCalendarEvent } = await import("./calendar");
@@ -4092,7 +4092,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.patch("/api/calendar/db/:id/links", async (req: Request, res: Response) => {
+  app.patch("/api/calendar/db/:id/links", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = DEFAULT_ORG_ID;
       const { accountId, contactId, dealId } = req.body;
@@ -4112,7 +4112,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.patch("/api/calendar/db/:id/message-status", async (req: Request, res: Response) => {
+  app.patch("/api/calendar/db/:id/message-status", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = DEFAULT_ORG_ID;
       const { messageType, status } = req.body;
@@ -4134,7 +4134,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.get("/api/calendar/db/needs-messages", async (req: Request, res: Response) => {
+  app.get("/api/calendar/db/needs-messages", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = DEFAULT_ORG_ID;
       const { getEventsNeedingMessages } = await import("./calendar");
@@ -4147,7 +4147,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   });
 
   // Send meeting message
-  app.post("/api/calendar/db/:id/send-message", async (req: Request, res: Response) => {
+  app.post("/api/calendar/db/:id/send-message", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = DEFAULT_ORG_ID;
       const { messageType, useAI = true } = req.body;
@@ -4226,7 +4226,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   // Google Drive Routes
   // ============================================
 
-  app.get("/api/drive/status", async (req: Request, res: Response) => {
+  app.get("/api/drive/status", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { testDriveConnection } = await import("./drive");
       const status = await testDriveConnection();
@@ -4237,7 +4237,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.get("/api/drive/quotes", async (req: Request, res: Response) => {
+  app.get("/api/drive/quotes", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { listQuotes } = await import("./drive");
       const quotes = await listQuotes();
@@ -4248,7 +4248,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.post("/api/drive/quotes", async (req: Request, res: Response) => {
+  app.post("/api/drive/quotes", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { uploadQuoteToDrive } = await import("./drive");
       const { generateQuotePDF } = await import("./pdf");
@@ -4280,7 +4280,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.get("/api/drive/quotes/:id/download", async (req: Request, res: Response) => {
+  app.get("/api/drive/quotes/:id/download", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { downloadFile } = await import("./drive");
       const buffer = await downloadFile(req.params.id);
@@ -4294,7 +4294,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.delete("/api/drive/quotes/:id", async (req: Request, res: Response) => {
+  app.delete("/api/drive/quotes/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { deleteFile } = await import("./drive");
       await deleteFile(req.params.id);
@@ -4309,7 +4309,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   // Qonto API Routes (Quote Generation)
   // ============================================
 
-  app.get("/api/qonto/status", async (req: Request, res: Response) => {
+  app.get("/api/qonto/status", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { testQontoConnection } = await import("./qonto");
       const status = await testQontoConnection();
@@ -4320,7 +4320,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.get("/api/qonto/clients", async (req: Request, res: Response) => {
+  app.get("/api/qonto/clients", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { getQontoClients } = await import("./qonto");
       const clients = await getQontoClients();
@@ -4331,7 +4331,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.get("/api/qonto/quotes", async (req: Request, res: Response) => {
+  app.get("/api/qonto/quotes", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { getQontoQuotes } = await import("./qonto");
       const quotes = await getQontoQuotes();
@@ -4365,7 +4365,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     termsAndConditions: z.string().optional()
   });
 
-  app.post("/api/qonto/quotes", async (req: Request, res: Response) => {
+  app.post("/api/qonto/quotes", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const parsed = createQontoQuoteSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -4381,7 +4381,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     }
   });
 
-  app.get("/api/qonto/quotes/:id", async (req: Request, res: Response) => {
+  app.get("/api/qonto/quotes/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { getQontoQuoteById } = await import("./qonto");
       const quote = await getQontoQuoteById(req.params.id);
@@ -4401,7 +4401,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     companyName: z.string(),
   });
 
-  app.post("/api/qonto/quotes/send-email", async (req: Request, res: Response) => {
+  app.post("/api/qonto/quotes/send-email", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const parsed = sendQontoQuoteEmailSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -4444,7 +4444,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
   });
 
   // Qonto Finance Overview (balance, income, expenses)
-  app.get("/api/qonto/finance/overview", async (req: Request, res: Response) => {
+  app.get("/api/qonto/finance/overview", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { getQontoFinanceOverview } = await import("./qonto");
       const overview = await getQontoFinanceOverview();
