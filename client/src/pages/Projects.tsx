@@ -55,8 +55,8 @@ const projectFormSchema = z.object({
   accountId: z.string().optional(),
   vendorContactId: z.string().optional(),
   pricingTier: z.enum(['simple', 'intermediate', 'expert']).optional(),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
+  startDate: z.string().min(1, 'La date de début est requise'),
+  endDate: z.string().min(1, 'La date de fin est requise'),
 });
 
 const PRICING_TIERS = {
@@ -496,7 +496,7 @@ export default function Projects() {
                     name="startDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Date de début</FormLabel>
+                        <FormLabel>Date de début *</FormLabel>
                         <FormControl>
                           <Input 
                             type="date" 
@@ -514,7 +514,7 @@ export default function Projects() {
                     name="endDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Date de fin</FormLabel>
+                        <FormLabel>Date de fin *</FormLabel>
                         <FormControl>
                           <Input 
                             type="date" 
@@ -781,7 +781,7 @@ export default function Projects() {
                   name="startDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Date de début</FormLabel>
+                      <FormLabel>Date de début *</FormLabel>
                       <FormControl>
                         <Input 
                           type="date" 
@@ -799,7 +799,7 @@ export default function Projects() {
                   name="endDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Date de fin</FormLabel>
+                      <FormLabel>Date de fin *</FormLabel>
                       <FormControl>
                         <Input 
                           type="date" 
