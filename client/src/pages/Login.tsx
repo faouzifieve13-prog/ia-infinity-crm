@@ -39,19 +39,19 @@ export default function Login() {
       return response.json();
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/session"] });
       toast({
         title: "Connexion réussie",
         description: `Bienvenue, ${data.user?.name || data.user?.email || ""}!`,
       });
       
+      // Force page reload to ensure session cookie is properly set
       const role = data.role;
       if (role === "client_admin" || role === "client_member") {
-        setLocation("/client");
+        window.location.href = "/client";
       } else if (role === "vendor") {
-        setLocation("/vendor");
+        window.location.href = "/vendor";
       } else {
-        setLocation("/");
+        window.location.href = "/";
       }
     },
     onError: (error: any) => {
@@ -69,13 +69,12 @@ export default function Login() {
       return response.json();
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/session"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/needs-init"] });
       toast({
         title: "Administrateur créé",
         description: `Bienvenue, ${data.user?.name || data.user?.email || ""}!`,
       });
-      setLocation("/");
+      // Force page reload to ensure session cookie is properly set
+      window.location.href = "/";
     },
     onError: (error: any) => {
       toast({
