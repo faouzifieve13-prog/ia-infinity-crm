@@ -36,6 +36,7 @@ import {
   Send,
   Loader2,
   AlertCircle,
+  MessageSquare,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -179,7 +180,6 @@ const navCategories: NavCategory[] = [
       { title: 'Finance globale', url: '/finance', icon: PieChart, spaces: ['internal'] },
       { title: 'Factures Clients', url: '/invoices', icon: Receipt, spaces: ['internal', 'client'] },
       { title: 'Dépenses', url: '/expenses', icon: Wallet, spaces: ['internal'] },
-      { title: 'Sous-traitants', url: '/vendors', icon: Briefcase, spaces: ['internal'] },
     ],
   },
   {
@@ -209,6 +209,14 @@ const navCategories: NavCategory[] = [
     ],
   },
   {
+    title: 'Communication',
+    icon: MessageSquare,
+    spaces: ['internal'],
+    items: [
+      { title: 'Canaux', url: '/channels', icon: MessageSquare, spaces: ['internal'] },
+    ],
+  },
+  {
     title: 'Administration',
     icon: Shield,
     spaces: ['internal'],
@@ -226,7 +234,7 @@ const secondaryItems: NavItem[] = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { currentSpace } = useSpace();
-  const [openCategories, setOpenCategories] = useState<string[]>(['Commercial', 'Projets', 'Finance', 'Tâches', 'RDV', 'Documents', 'Administration']);
+  const [openCategories, setOpenCategories] = useState<string[]>(['Commercial', 'Projets', 'Finance', 'Tâches', 'RDV', 'Documents', 'Communication', 'Administration']);
 
   const toggleCategory = (category: string) => {
     setOpenCategories(prev => 

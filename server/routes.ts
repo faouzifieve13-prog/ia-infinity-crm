@@ -319,6 +319,208 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
+  // Account Loom Videos
+  app.get("/api/accounts/:accountId/loom-videos", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const videos = await storage.getAccountLoomVideos(req.params.accountId, orgId);
+      res.json(videos);
+    } catch (error) {
+      console.error("Get loom videos error:", error);
+      res.status(500).json({ error: "Failed to get loom videos" });
+    }
+  });
+
+  app.post("/api/accounts/:accountId/loom-videos", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = req.session.userId;
+      const video = await storage.createAccountLoomVideo({
+        ...req.body,
+        orgId,
+        accountId: req.params.accountId,
+        createdById: userId,
+      });
+      res.status(201).json(video);
+    } catch (error) {
+      console.error("Create loom video error:", error);
+      res.status(500).json({ error: "Failed to create loom video" });
+    }
+  });
+
+  app.delete("/api/accounts/:accountId/loom-videos/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      await storage.deleteAccountLoomVideo(req.params.id, orgId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete loom video error:", error);
+      res.status(500).json({ error: "Failed to delete loom video" });
+    }
+  });
+
+  // Account Updates (CR History)
+  app.get("/api/accounts/:accountId/updates", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const updates = await storage.getAccountUpdates(req.params.accountId, orgId);
+      res.json(updates);
+    } catch (error) {
+      console.error("Get account updates error:", error);
+      res.status(500).json({ error: "Failed to get account updates" });
+    }
+  });
+
+  app.post("/api/accounts/:accountId/updates", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = req.session.userId;
+
+      // Validate that updateDate is provided
+      if (!req.body.updateDate) {
+        return res.status(400).json({ error: "La date est obligatoire" });
+      }
+
+      const update = await storage.createAccountUpdate({
+        ...req.body,
+        orgId,
+        accountId: req.params.accountId,
+        createdById: userId,
+        updateDate: new Date(req.body.updateDate),
+      });
+      res.status(201).json(update);
+    } catch (error) {
+      console.error("Create account update error:", error);
+      res.status(500).json({ error: "Failed to create account update" });
+    }
+  });
+
+  app.patch("/api/accounts/:accountId/updates/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const update = await storage.updateAccountUpdate(req.params.id, orgId, {
+        ...req.body,
+        updateDate: req.body.updateDate ? new Date(req.body.updateDate) : undefined,
+      });
+      if (!update) {
+        return res.status(404).json({ error: "Update not found" });
+      }
+      res.json(update);
+    } catch (error) {
+      console.error("Update account update error:", error);
+      res.status(500).json({ error: "Failed to update account update" });
+    }
+  });
+
+  app.delete("/api/accounts/:accountId/updates/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      await storage.deleteAccountUpdate(req.params.id, orgId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete account update error:", error);
+      res.status(500).json({ error: "Failed to delete account update" });
+    }
+  });
+
+  // Project Updates (CR de suivi projet)
+  app.get("/api/projects/:projectId/updates", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const updates = await storage.getProjectUpdates(req.params.projectId, orgId);
+      res.json(updates);
+    } catch (error) {
+      console.error("Get project updates error:", error);
+      res.status(500).json({ error: "Failed to get project updates" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/updates", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = (req as any).user?.id;
+      const update = await storage.createProjectUpdate({
+        ...req.body,
+        orgId,
+        projectId: req.params.projectId,
+        createdById: userId,
+        updateDate: req.body.updateDate ? new Date(req.body.updateDate) : new Date(),
+      });
+      res.status(201).json(update);
+    } catch (error) {
+      console.error("Create project update error:", error);
+      res.status(500).json({ error: "Failed to create project update" });
+    }
+  });
+
+  app.patch("/api/projects/:projectId/updates/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const update = await storage.updateProjectUpdate(req.params.id, orgId, {
+        ...req.body,
+        updateDate: req.body.updateDate ? new Date(req.body.updateDate) : undefined,
+      });
+      if (!update) {
+        return res.status(404).json({ error: "Update not found" });
+      }
+      res.json(update);
+    } catch (error) {
+      console.error("Update project update error:", error);
+      res.status(500).json({ error: "Failed to update project update" });
+    }
+  });
+
+  app.delete("/api/projects/:projectId/updates/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      await storage.deleteProjectUpdate(req.params.id, orgId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete project update error:", error);
+      res.status(500).json({ error: "Failed to delete project update" });
+    }
+  });
+
+  // Project Deliverables (fichiers livrables: JSON, PDF, Loom)
+  app.get("/api/projects/:projectId/deliverables", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const deliverables = await storage.getProjectDeliverables(req.params.projectId, orgId);
+      res.json(deliverables);
+    } catch (error) {
+      console.error("Get project deliverables error:", error);
+      res.status(500).json({ error: "Failed to get project deliverables" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/deliverables", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = (req as any).user?.id;
+      const deliverable = await storage.createProjectDeliverable({
+        ...req.body,
+        orgId,
+        projectId: req.params.projectId,
+        createdById: userId,
+      });
+      res.status(201).json(deliverable);
+    } catch (error) {
+      console.error("Create project deliverable error:", error);
+      res.status(500).json({ error: "Failed to create project deliverable" });
+    }
+  });
+
+  app.delete("/api/projects/:projectId/deliverables/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      await storage.deleteProjectDeliverable(req.params.id, orgId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete project deliverable error:", error);
+      res.status(500).json({ error: "Failed to delete project deliverable" });
+    }
+  });
+
   app.get("/api/contacts", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
@@ -5244,6 +5446,548 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     } catch (error) {
       console.error("Get vendor profile error:", error);
       res.status(500).json({ error: "Failed to get vendor profile" });
+    }
+  });
+
+  // =====================
+  // Channel Routes (Admin)
+  // =====================
+
+  // Get all channels (admin)
+  app.get("/api/channels", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const type = req.query.type as 'client' | 'vendor' | undefined;
+      const scope = req.query.scope as 'global' | 'project' | undefined;
+      const channels = await storage.getChannels(orgId, type, scope);
+      res.json(channels);
+    } catch (error) {
+      console.error("Get channels error:", error);
+      res.status(500).json({ error: "Failed to get channels" });
+    }
+  });
+
+  // Get global channels
+  app.get("/api/channels/global", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const type = req.query.type as 'client' | 'vendor' | undefined;
+      const channels = await storage.getGlobalChannels(orgId, type);
+      res.json(channels);
+    } catch (error) {
+      console.error("Get global channels error:", error);
+      res.status(500).json({ error: "Failed to get global channels" });
+    }
+  });
+
+  // Get channel by ID
+  app.get("/api/channels/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const channel = await storage.getChannel(req.params.id, orgId);
+      if (!channel) {
+        return res.status(404).json({ error: "Channel not found" });
+      }
+      res.json(channel);
+    } catch (error) {
+      console.error("Get channel error:", error);
+      res.status(500).json({ error: "Failed to get channel" });
+    }
+  });
+
+  // Get channels by project
+  app.get("/api/projects/:projectId/channels", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const channels = await storage.getChannelsByProject(req.params.projectId, orgId);
+      res.json(channels);
+    } catch (error) {
+      console.error("Get project channels error:", error);
+      res.status(500).json({ error: "Failed to get project channels" });
+    }
+  });
+
+  // Create channel (admin only)
+  app.post("/api/channels", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const channel = await storage.createChannel({ ...req.body, orgId });
+      res.status(201).json(channel);
+    } catch (error) {
+      console.error("Create channel error:", error);
+      res.status(500).json({ error: "Failed to create channel" });
+    }
+  });
+
+  // Update channel (admin only)
+  app.patch("/api/channels/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const channel = await storage.updateChannel(req.params.id, orgId, req.body);
+      if (!channel) {
+        return res.status(404).json({ error: "Channel not found" });
+      }
+      res.json(channel);
+    } catch (error) {
+      console.error("Update channel error:", error);
+      res.status(500).json({ error: "Failed to update channel" });
+    }
+  });
+
+  // Delete channel (admin only)
+  app.delete("/api/channels/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      await storage.deleteChannel(req.params.id, orgId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete channel error:", error);
+      res.status(500).json({ error: "Failed to delete channel" });
+    }
+  });
+
+  // =====================
+  // Channel Messages Routes
+  // =====================
+
+  // Get channel messages
+  app.get("/api/channels/:channelId/messages", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const channel = await storage.getChannel(req.params.channelId, orgId);
+      if (!channel) {
+        return res.status(404).json({ error: "Channel not found" });
+      }
+
+      const limit = parseInt(req.query.limit as string) || 50;
+      const offset = parseInt(req.query.offset as string) || 0;
+      const messages = await storage.getChannelMessages(req.params.channelId, limit, offset);
+
+      // Get user info and attachments for each message
+      const messagesWithDetails = await Promise.all(messages.map(async (msg) => {
+        const user = await storage.getUser(msg.userId);
+        const attachments = await storage.getMessageAttachments(msg.id);
+        return {
+          ...msg,
+          user: user ? { id: user.id, name: user.name, email: user.email, avatar: user.avatar } : null,
+          attachments
+        };
+      }));
+
+      res.json(messagesWithDetails);
+    } catch (error) {
+      console.error("Get channel messages error:", error);
+      res.status(500).json({ error: "Failed to get messages" });
+    }
+  });
+
+  // Get pinned messages
+  app.get("/api/channels/:channelId/messages/pinned", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const channel = await storage.getChannel(req.params.channelId, orgId);
+      if (!channel) {
+        return res.status(404).json({ error: "Channel not found" });
+      }
+
+      const messages = await storage.getPinnedMessages(req.params.channelId);
+      res.json(messages);
+    } catch (error) {
+      console.error("Get pinned messages error:", error);
+      res.status(500).json({ error: "Failed to get pinned messages" });
+    }
+  });
+
+  // Create message in channel
+  app.post("/api/channels/:channelId/messages", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const channel = await storage.getChannel(req.params.channelId, orgId);
+      if (!channel) {
+        return res.status(404).json({ error: "Channel not found" });
+      }
+
+      const userId = req.session.userId;
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      // Only admins can post announcements
+      const isAdmin = !['client_admin', 'client_member', 'vendor'].includes(req.session.role || '');
+      const isAnnouncement = req.body.isAnnouncement && isAdmin;
+
+      const message = await storage.createChannelMessage({
+        channelId: req.params.channelId,
+        userId,
+        content: req.body.content,
+        isAnnouncement,
+        isPinned: false
+      });
+
+      // Handle attachments if any
+      if (req.body.attachments && Array.isArray(req.body.attachments)) {
+        for (const att of req.body.attachments) {
+          await storage.createChannelAttachment({
+            messageId: message.id,
+            fileName: att.fileName,
+            fileUrl: att.fileUrl,
+            fileSize: att.fileSize,
+            mimeType: att.mimeType
+          });
+        }
+      }
+
+      const user = await storage.getUser(userId);
+      const attachments = await storage.getMessageAttachments(message.id);
+
+      res.status(201).json({
+        ...message,
+        user: user ? { id: user.id, name: user.name, email: user.email, avatar: user.avatar } : null,
+        attachments
+      });
+    } catch (error) {
+      console.error("Create message error:", error);
+      res.status(500).json({ error: "Failed to create message" });
+    }
+  });
+
+  // Update message (author or admin only)
+  app.patch("/api/channels/:channelId/messages/:messageId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const channel = await storage.getChannel(req.params.channelId, orgId);
+      if (!channel) {
+        return res.status(404).json({ error: "Channel not found" });
+      }
+
+      const message = await storage.getChannelMessage(req.params.messageId);
+      if (!message) {
+        return res.status(404).json({ error: "Message not found" });
+      }
+
+      const userId = req.session.userId;
+      const isAdmin = !['client_admin', 'client_member', 'vendor'].includes(req.session.role || '');
+
+      // Only author or admin can edit
+      if (message.userId !== userId && !isAdmin) {
+        return res.status(403).json({ error: "Not authorized to edit this message" });
+      }
+
+      const updated = await storage.updateChannelMessage(req.params.messageId, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Update message error:", error);
+      res.status(500).json({ error: "Failed to update message" });
+    }
+  });
+
+  // Delete message (author or admin only)
+  app.delete("/api/channels/:channelId/messages/:messageId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const channel = await storage.getChannel(req.params.channelId, orgId);
+      if (!channel) {
+        return res.status(404).json({ error: "Channel not found" });
+      }
+
+      const message = await storage.getChannelMessage(req.params.messageId);
+      if (!message) {
+        return res.status(404).json({ error: "Message not found" });
+      }
+
+      const userId = req.session.userId;
+      const isAdmin = !['client_admin', 'client_member', 'vendor'].includes(req.session.role || '');
+
+      // Only author or admin can delete
+      if (message.userId !== userId && !isAdmin) {
+        return res.status(403).json({ error: "Not authorized to delete this message" });
+      }
+
+      await storage.deleteChannelMessage(req.params.messageId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete message error:", error);
+      res.status(500).json({ error: "Failed to delete message" });
+    }
+  });
+
+  // Pin/unpin message (admin only)
+  app.post("/api/channels/:channelId/messages/:messageId/pin", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const message = await storage.getChannelMessage(req.params.messageId);
+      if (!message) {
+        return res.status(404).json({ error: "Message not found" });
+      }
+
+      const updated = await storage.updateChannelMessage(req.params.messageId, { isPinned: true });
+      res.json(updated);
+    } catch (error) {
+      console.error("Pin message error:", error);
+      res.status(500).json({ error: "Failed to pin message" });
+    }
+  });
+
+  app.delete("/api/channels/:channelId/messages/:messageId/pin", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const message = await storage.getChannelMessage(req.params.messageId);
+      if (!message) {
+        return res.status(404).json({ error: "Message not found" });
+      }
+
+      const updated = await storage.updateChannelMessage(req.params.messageId, { isPinned: false });
+      res.json(updated);
+    } catch (error) {
+      console.error("Unpin message error:", error);
+      res.status(500).json({ error: "Failed to unpin message" });
+    }
+  });
+
+  // =====================
+  // Client Portal Channels
+  // =====================
+
+  app.get("/api/client/channels", requireAuth, requireClient, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+
+      // Get global client channel + project-specific channels for this client
+      const globalChannels = await storage.getGlobalChannels(orgId, 'client');
+      let projectChannels: any[] = [];
+
+      if (accountId) {
+        // Get projects for this account and their channels
+        const projects = await storage.getProjects(orgId, accountId);
+        for (const project of projects) {
+          const channels = await storage.getChannelsByProject(project.id, orgId);
+          const clientChannels = channels.filter(c => c.type === 'client');
+          projectChannels = [...projectChannels, ...clientChannels];
+        }
+      }
+
+      res.json([...globalChannels, ...projectChannels]);
+    } catch (error) {
+      console.error("Get client channels error:", error);
+      res.status(500).json({ error: "Failed to get channels" });
+    }
+  });
+
+  // =====================
+  // Vendor Portal Channels
+  // =====================
+
+  app.get("/api/vendor/channels", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.session.vendorContactId;
+
+      // Get global vendor channel
+      const globalChannels = await storage.getGlobalChannels(orgId, 'vendor');
+      let projectChannels: any[] = [];
+
+      if (vendorContactId) {
+        // Get projects assigned to this vendor and their channels
+        const allProjects = await storage.getProjects(orgId);
+        const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
+
+        for (const project of vendorProjects) {
+          const channels = await storage.getChannelsByProject(project.id, orgId);
+          const vendorChannelsForProject = channels.filter(c => c.type === 'vendor');
+          projectChannels = [...projectChannels, ...vendorChannelsForProject];
+        }
+      }
+
+      res.json([...globalChannels, ...projectChannels]);
+    } catch (error) {
+      console.error("Get vendor channels error:", error);
+      res.status(500).json({ error: "Failed to get channels" });
+    }
+  });
+
+  // Initialize default global channels
+  app.post("/api/channels/init-defaults", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+
+      // Check if global channels already exist
+      const existingGlobalChannels = await storage.getGlobalChannels(orgId);
+
+      const created = [];
+
+      // Create global client channel if not exists
+      const hasGlobalClient = existingGlobalChannels.some(c => c.type === 'client');
+      if (!hasGlobalClient) {
+        const clientChannel = await storage.createChannel({
+          orgId,
+          name: 'Espace Clients',
+          description: 'Canal de communication pour tous les clients',
+          type: 'client',
+          scope: 'global',
+          isActive: true
+        });
+        created.push(clientChannel);
+      }
+
+      // Create global vendor channel if not exists
+      const hasGlobalVendor = existingGlobalChannels.some(c => c.type === 'vendor');
+      if (!hasGlobalVendor) {
+        const vendorChannel = await storage.createChannel({
+          orgId,
+          name: 'Espace Sous-traitants',
+          description: 'Canal de communication pour tous les sous-traitants',
+          type: 'vendor',
+          scope: 'global',
+          isActive: true
+        });
+        created.push(vendorChannel);
+      }
+
+      res.json({ created, message: `${created.length} channel(s) created` });
+    } catch (error) {
+      console.error("Init default channels error:", error);
+      res.status(500).json({ error: "Failed to initialize default channels" });
+    }
+  });
+
+  // ==================== NOTIFICATIONS ====================
+
+  // Get notifications for current user
+  app.get("/api/notifications", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const session = getSessionData(req);
+      if (!session) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const limit = parseInt(req.query.limit as string) || 20;
+      const notifications = await storage.getNotifications(session.userId, orgId, limit);
+      res.json(notifications);
+    } catch (error) {
+      console.error("Get notifications error:", error);
+      res.status(500).json({ error: "Failed to get notifications" });
+    }
+  });
+
+  // Get unread notification count
+  app.get("/api/notifications/unread-count", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const session = getSessionData(req);
+      if (!session) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const count = await storage.getUnreadNotificationCount(session.userId, orgId);
+      res.json({ count });
+    } catch (error) {
+      console.error("Get unread notification count error:", error);
+      res.status(500).json({ error: "Failed to get unread count" });
+    }
+  });
+
+  // Mark notification as read
+  app.patch("/api/notifications/:id/read", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const session = getSessionData(req);
+      if (!session) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const notification = await storage.markNotificationAsRead(req.params.id, session.userId);
+      if (!notification) {
+        return res.status(404).json({ error: "Notification not found" });
+      }
+      res.json(notification);
+    } catch (error) {
+      console.error("Mark notification as read error:", error);
+      res.status(500).json({ error: "Failed to mark notification as read" });
+    }
+  });
+
+  // Mark all notifications as read
+  app.post("/api/notifications/mark-all-read", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const session = getSessionData(req);
+      if (!session) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      await storage.markAllNotificationsAsRead(session.userId, orgId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Mark all notifications as read error:", error);
+      res.status(500).json({ error: "Failed to mark all as read" });
+    }
+  });
+
+  // Delete notification
+  app.delete("/api/notifications/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const session = getSessionData(req);
+      if (!session) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      await storage.deleteNotification(req.params.id, session.userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete notification error:", error);
+      res.status(500).json({ error: "Failed to delete notification" });
+    }
+  });
+
+  // ==================== USER PROFILE ====================
+
+  // Get current user profile
+  app.get("/api/profile", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const session = getSessionData(req);
+      if (!session) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const user = await storage.getUser(session.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      // Don't return password
+      const { password, ...userWithoutPassword } = user;
+      res.json(userWithoutPassword);
+    } catch (error) {
+      console.error("Get profile error:", error);
+      res.status(500).json({ error: "Failed to get profile" });
+    }
+  });
+
+  // Update current user profile
+  app.patch("/api/profile", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const session = getSessionData(req);
+      if (!session) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const { name, avatar } = req.body;
+      const updateData: { name?: string; avatar?: string } = {};
+
+      if (name && typeof name === 'string' && name.trim().length > 0) {
+        updateData.name = name.trim();
+      }
+      if (avatar !== undefined) {
+        updateData.avatar = avatar;
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ error: "No valid fields to update" });
+      }
+
+      const user = await storage.updateUser(session.userId, updateData);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Don't return password
+      const { password, ...userWithoutPassword } = user;
+      res.json(userWithoutPassword);
+    } catch (error) {
+      console.error("Update profile error:", error);
+      res.status(500).json({ error: "Failed to update profile" });
     }
   });
 

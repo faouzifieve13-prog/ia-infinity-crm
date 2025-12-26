@@ -356,6 +356,76 @@ export const documents = pgTable("documents", {
   index("documents_notion_idx").on(table.notionPageId),
 ]);
 
+// Account Loom Videos - Multiple videos per account
+export const accountLoomVideos = pgTable("account_loom_videos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  accountId: varchar("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  url: text("url").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdById: varchar("created_by_id").references(() => users.id),
+}, (table) => [
+  index("account_loom_videos_account_idx").on(table.accountId),
+  index("account_loom_videos_org_idx").on(table.orgId),
+]);
+
+// Account Updates History (CR - Compte Rendu)
+export const accountUpdates = pgTable("account_updates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  accountId: varchar("account_id").notNull().references(() => accounts.id, { onDelete: "cascade" }),
+  updateDate: timestamp("update_date").notNull(), // Date obligatoire
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  type: text("type").notNull().default('note'), // 'note', 'meeting', 'call', 'email'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdById: varchar("created_by_id").references(() => users.id),
+}, (table) => [
+  index("account_updates_account_idx").on(table.accountId),
+  index("account_updates_org_idx").on(table.orgId),
+  index("account_updates_date_idx").on(table.accountId, table.updateDate),
+]);
+
+// Project Updates (CR de suivi projet pour sous-traitants)
+export const projectUpdates = pgTable("project_updates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  updateDate: timestamp("update_date").notNull(), // Date obligatoire
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  type: text("type").notNull().default('suivi'), // 'suivi', 'avancement', 'probleme', 'livraison', 'autre'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdById: varchar("created_by_id").references(() => users.id),
+}, (table) => [
+  index("project_updates_project_idx").on(table.projectId),
+  index("project_updates_org_idx").on(table.orgId),
+  index("project_updates_date_idx").on(table.projectId, table.updateDate),
+]);
+
+// Project Deliverables (fichiers livrables: JSON, PDF, Loom)
+export const projectDeliverables = pgTable("project_deliverables", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  type: text("type").notNull(), // 'json', 'pdf', 'loom', 'other'
+  url: text("url"), // Pour les liens (Loom, fichiers externes)
+  fileName: text("file_name"), // Nom du fichier uploadé
+  fileSize: integer("file_size"), // Taille en bytes
+  mimeType: text("mime_type"), // Type MIME du fichier
+  fileData: text("file_data"), // Données base64 pour petits fichiers
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdById: varchar("created_by_id").references(() => users.id),
+}, (table) => [
+  index("project_deliverables_project_idx").on(table.projectId),
+  index("project_deliverables_org_idx").on(table.orgId),
+  index("project_deliverables_type_idx").on(table.projectId, table.type),
+]);
+
 export const workflowRuns = pgTable("workflow_runs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
@@ -791,6 +861,14 @@ export const insertFollowUpHistorySchema = createInsertSchema(followUpHistory).o
   responseAt: z.coerce.date().optional().nullable(),
 });
 export const insertProjectCommentSchema = createInsertSchema(projectComments).omit({ id: true, createdAt: true });
+export const insertAccountLoomVideoSchema = createInsertSchema(accountLoomVideos).omit({ id: true, createdAt: true });
+export const insertAccountUpdateSchema = createInsertSchema(accountUpdates).omit({ id: true, createdAt: true }).extend({
+  updateDate: z.coerce.date(),
+});
+export const insertProjectUpdateSchema = createInsertSchema(projectUpdates).omit({ id: true, createdAt: true }).extend({
+  updateDate: z.coerce.date(),
+});
+export const insertProjectDeliverableSchema = createInsertSchema(projectDeliverables).omit({ id: true, createdAt: true });
 
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -814,6 +892,10 @@ export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 export type InsertInvitation = z.infer<typeof insertInvitationSchema>;
 export type InsertEmail = z.infer<typeof insertEmailSchema>;
 export type InsertFollowUpHistory = z.infer<typeof insertFollowUpHistorySchema>;
+export type InsertAccountLoomVideo = z.infer<typeof insertAccountLoomVideoSchema>;
+export type InsertAccountUpdate = z.infer<typeof insertAccountUpdateSchema>;
+export type InsertProjectUpdate = z.infer<typeof insertProjectUpdateSchema>;
+export type InsertProjectDeliverable = z.infer<typeof insertProjectDeliverableSchema>;
 
 export type Organization = typeof organizations.$inferSelect;
 export type User = typeof users.$inferSelect;
@@ -839,6 +921,10 @@ export type Email = typeof emails.$inferSelect;
 export type FollowUpHistory = typeof followUpHistory.$inferSelect;
 export type ProjectComment = typeof projectComments.$inferSelect;
 export type InsertProjectComment = z.infer<typeof insertProjectCommentSchema>;
+export type AccountLoomVideo = typeof accountLoomVideos.$inferSelect;
+export type AccountUpdate = typeof accountUpdates.$inferSelect;
+export type ProjectUpdate = typeof projectUpdates.$inferSelect;
+export type ProjectDeliverable = typeof projectDeliverables.$inferSelect;
 
 export type UserRole = 'admin' | 'sales' | 'delivery' | 'finance' | 'client_admin' | 'client_member' | 'vendor';
 export type MissionType = 'audit' | 'automatisation';
@@ -936,6 +1022,141 @@ export type Conversation = typeof conversations.$inferSelect;
 export type InsertConversation = z.infer<typeof insertConversationSchema>;
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
+
+// Channels for client and vendor communication
+export const channelTypeEnum = pgEnum('channel_type', ['client', 'vendor']);
+export const channelScopeEnum = pgEnum('channel_scope', ['global', 'project']);
+
+export const channels = pgTable("channels", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  type: channelTypeEnum("type").notNull(), // 'client' or 'vendor'
+  scope: channelScopeEnum("scope").notNull(), // 'global' or 'project'
+  projectId: varchar("project_id").references(() => projects.id), // null for global channels
+  accountId: varchar("account_id").references(() => accounts.id), // for client channels
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("channels_org_idx").on(table.orgId),
+  index("channels_type_idx").on(table.orgId, table.type),
+  index("channels_project_idx").on(table.projectId),
+  index("channels_account_idx").on(table.accountId),
+]);
+
+export const channelMessages = pgTable("channel_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  channelId: varchar("channel_id").notNull().references(() => channels.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  content: text("content").notNull(),
+  isAnnouncement: boolean("is_announcement").notNull().default(false), // Admin announcements
+  isPinned: boolean("is_pinned").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("channel_messages_channel_idx").on(table.channelId),
+  index("channel_messages_user_idx").on(table.userId),
+  index("channel_messages_created_idx").on(table.channelId, table.createdAt),
+]);
+
+export const channelAttachments = pgTable("channel_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  messageId: varchar("message_id").notNull().references(() => channelMessages.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("channel_attachments_message_idx").on(table.messageId),
+]);
+
+export const channelsRelations = relations(channels, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [channels.orgId],
+    references: [organizations.id],
+  }),
+  project: one(projects, {
+    fields: [channels.projectId],
+    references: [projects.id],
+  }),
+  account: one(accounts, {
+    fields: [channels.accountId],
+    references: [accounts.id],
+  }),
+  messages: many(channelMessages),
+}));
+
+export const channelMessagesRelations = relations(channelMessages, ({ one, many }) => ({
+  channel: one(channels, {
+    fields: [channelMessages.channelId],
+    references: [channels.id],
+  }),
+  user: one(users, {
+    fields: [channelMessages.userId],
+    references: [users.id],
+  }),
+  attachments: many(channelAttachments),
+}));
+
+export const channelAttachmentsRelations = relations(channelAttachments, ({ one }) => ({
+  message: one(channelMessages, {
+    fields: [channelAttachments.messageId],
+    references: [channelMessages.id],
+  }),
+}));
+
+export const insertChannelSchema = createInsertSchema(channels).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertChannelMessageSchema = createInsertSchema(channelMessages).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertChannelAttachmentSchema = createInsertSchema(channelAttachments).omit({ id: true, createdAt: true });
+
+export type Channel = typeof channels.$inferSelect;
+export type InsertChannel = z.infer<typeof insertChannelSchema>;
+export type ChannelMessage = typeof channelMessages.$inferSelect;
+export type InsertChannelMessage = z.infer<typeof insertChannelMessageSchema>;
+export type ChannelAttachment = typeof channelAttachments.$inferSelect;
+export type InsertChannelAttachment = z.infer<typeof insertChannelAttachmentSchema>;
+export type ChannelType = 'client' | 'vendor';
+export type ChannelScope = 'global' | 'project';
+
+// Notifications for users
+export const notificationTypeEnum = pgEnum('notification_type', ['info', 'success', 'warning', 'error']);
+
+export const notifications = pgTable("notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  type: notificationTypeEnum("type").notNull().default('info'),
+  isRead: boolean("is_read").notNull().default(false),
+  link: text("link"), // Optional link to navigate to
+  relatedEntityType: text("related_entity_type"), // 'deal', 'project', 'task', 'invoice', etc.
+  relatedEntityId: varchar("related_entity_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("notifications_user_idx").on(table.userId),
+  index("notifications_org_idx").on(table.orgId),
+  index("notifications_unread_idx").on(table.userId, table.isRead),
+]);
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [notifications.orgId],
+    references: [organizations.id],
+  }),
+  user: one(users, {
+    fields: [notifications.userId],
+    references: [users.id],
+  }),
+}));
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type NotificationType = 'info' | 'success' | 'warning' | 'error';
 
 // Auth schema export
 export * from "./models/auth";

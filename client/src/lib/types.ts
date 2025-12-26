@@ -353,3 +353,19 @@ export interface GmailMessage {
   isUnread: boolean;
   labelIds: string[];
 }
+
+export type NotificationType = 'info' | 'success' | 'warning' | 'error';
+
+export interface Notification {
+  id: string;
+  orgId: string;
+  userId: string;
+  title: string;
+  description?: string | null;
+  type: NotificationType;
+  isRead: boolean;
+  link?: string | null;
+  relatedEntityType?: string | null;
+  relatedEntityId?: string | null;
+  createdAt: string;
+}

@@ -5,17 +5,22 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLocation } from "wouter";
-import { 
-  FolderKanban, 
-  FileText, 
-  Building2, 
-  Calendar, 
-  CheckCircle2, 
-  Clock, 
+import {
+  FolderKanban,
+  FileText,
+  Building2,
+  Calendar,
+  CheckCircle2,
+  Clock,
   AlertCircle,
   ArrowRight,
-  FileSignature
+  FileSignature,
+  MessageSquare,
+  Hash
 } from "lucide-react";
+import { useState } from "react";
+import { ChannelList } from "@/components/channels/ChannelList";
+import { ChannelView } from "@/components/channels/ChannelView";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 
@@ -76,8 +81,21 @@ function getQuoteStatusBadge(status: string, adminSigned: boolean, clientSigned:
   return <Badge variant="secondary">Brouillon</Badge>;
 }
 
+interface Channel {
+  id: string;
+  name: string;
+  description?: string;
+  type: 'client' | 'vendor';
+  scope: 'global' | 'project';
+  projectId?: string;
+  accountId?: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
 export default function ClientPortal() {
   const [, setLocation] = useLocation();
+  const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   
   const { data: account, isLoading: accountLoading } = useQuery<Account>({
     queryKey: ["/api/client/account"],
@@ -319,6 +337,42 @@ export default function ClientPortal() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Channels Section */}
+        <Card data-testid="card-channels">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5 text-violet-600" />
+              Espace d'échange
+            </CardTitle>
+            <CardDescription>
+              Communiquez avec notre équipe
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-1">
+                <ChannelList
+                  selectedChannelId={selectedChannel?.id}
+                  onSelectChannel={setSelectedChannel}
+                  endpoint="/api/client/channels"
+                />
+              </div>
+              <div className="lg:col-span-2 min-h-[400px]">
+                {selectedChannel ? (
+                  <ChannelView channel={selectedChannel} />
+                ) : (
+                  <div className="h-full flex items-center justify-center border rounded-lg bg-muted/30">
+                    <div className="text-center text-muted-foreground">
+                      <Hash className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>Sélectionnez un canal pour voir les messages</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

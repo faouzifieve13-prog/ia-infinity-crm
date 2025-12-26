@@ -8,11 +8,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useSpace } from '@/hooks/use-space';
+import { useAuth } from '@/hooks/use-auth';
+import { useLocation } from 'wouter';
 
 export function UserMenu() {
-  const { currentUser, setCurrentUser } = useSpace();
+  const { currentUser } = useSpace();
+  const { logout, isLoggingOut } = useAuth();
+  const [, navigate] = useLocation();
 
   if (!currentUser) return null;
 
@@ -23,8 +27,7 @@ export function UserMenu() {
     .toUpperCase();
 
   const handleLogout = () => {
-    console.log('Logging out...');
-    setCurrentUser(null);
+    logout();
   };
 
   return (
@@ -32,6 +35,7 @@ export function UserMenu() {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-9 w-9 rounded-full" data-testid="button-user-menu">
           <Avatar className="h-9 w-9">
+            {currentUser.avatar && <AvatarImage src={currentUser.avatar} alt={currentUser.name} />}
             <AvatarFallback className="bg-primary text-primary-foreground">
               {initials}
             </AvatarFallback>
@@ -46,18 +50,18 @@ export function UserMenu() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem data-testid="menu-item-profile">
+        <DropdownMenuItem onClick={() => navigate('/profile')} data-testid="menu-item-profile">
           <User className="mr-2 h-4 w-4" />
-          Profile
+          Mon profil
         </DropdownMenuItem>
-        <DropdownMenuItem data-testid="menu-item-settings">
+        <DropdownMenuItem onClick={() => navigate('/settings')} data-testid="menu-item-settings">
           <Settings className="mr-2 h-4 w-4" />
-          Settings
+          Paramètres
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleLogout} data-testid="menu-item-logout">
+        <DropdownMenuItem onClick={handleLogout} disabled={isLoggingOut} data-testid="menu-item-logout">
           <LogOut className="mr-2 h-4 w-4" />
-          Log out
+          {isLoggingOut ? 'Déconnexion...' : 'Déconnexion'}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -4,6 +4,8 @@ import {
   organizations, users, memberships, accounts, contacts, deals, quotes, activities,
   projects, tasks, invoices, invoiceLineItems, vendors, missions, documents,
   workflowRuns, importJobs, contracts, expenses, invitations, emails, followUpHistory, projectComments,
+  channels, channelMessages, channelAttachments, accountLoomVideos, accountUpdates, projectUpdates, projectDeliverables,
+  notifications,
   type Organization, type InsertOrganization,
   type User, type InsertUser,
   type Membership, type InsertMembership,
@@ -27,8 +29,17 @@ import {
   type Quote, type InsertQuote,
   type FollowUpHistory, type InsertFollowUpHistory,
   type ProjectComment, type InsertProjectComment,
+  type Channel, type InsertChannel,
+  type ChannelMessage, type InsertChannelMessage,
+  type ChannelAttachment, type InsertChannelAttachment,
+  type AccountLoomVideo, type InsertAccountLoomVideo,
+  type AccountUpdate, type InsertAccountUpdate,
+  type ProjectUpdate, type InsertProjectUpdate,
+  type ProjectDeliverable, type InsertProjectDeliverable,
+  type Notification, type InsertNotification,
   type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
-  type ExpenseStatus, type ExpenseCategory, type InvitationStatus, type FollowUpType
+  type ExpenseStatus, type ExpenseCategory, type InvitationStatus, type FollowUpType,
+  type ChannelType, type ChannelScope
 } from "@shared/schema";
 
 export interface IStorage {
@@ -1224,6 +1235,264 @@ export class DatabaseStorage implements IStorage {
   async createProjectComment(comment: InsertProjectComment): Promise<ProjectComment> {
     const [created] = await db.insert(projectComments).values(comment).returning();
     return created;
+  }
+
+  // Channel methods
+  async getChannels(orgId: string, type?: ChannelType, scope?: ChannelScope): Promise<Channel[]> {
+    let query = db.select().from(channels).where(eq(channels.orgId, orgId));
+    if (type) {
+      query = db.select().from(channels).where(and(eq(channels.orgId, orgId), eq(channels.type, type)));
+    }
+    if (scope) {
+      query = db.select().from(channels).where(and(eq(channels.orgId, orgId), eq(channels.scope, scope)));
+    }
+    if (type && scope) {
+      query = db.select().from(channels).where(and(eq(channels.orgId, orgId), eq(channels.type, type), eq(channels.scope, scope)));
+    }
+    return query.orderBy(desc(channels.createdAt));
+  }
+
+  async getChannel(id: string, orgId: string): Promise<Channel | undefined> {
+    const [channel] = await db.select().from(channels)
+      .where(and(eq(channels.id, id), eq(channels.orgId, orgId)));
+    return channel;
+  }
+
+  async getChannelsByProject(projectId: string, orgId: string): Promise<Channel[]> {
+    return db.select().from(channels)
+      .where(and(eq(channels.projectId, projectId), eq(channels.orgId, orgId)))
+      .orderBy(desc(channels.createdAt));
+  }
+
+  async getChannelsByAccount(accountId: string, orgId: string): Promise<Channel[]> {
+    return db.select().from(channels)
+      .where(and(eq(channels.accountId, accountId), eq(channels.orgId, orgId)))
+      .orderBy(desc(channels.createdAt));
+  }
+
+  async getGlobalChannels(orgId: string, type?: ChannelType): Promise<Channel[]> {
+    if (type) {
+      return db.select().from(channels)
+        .where(and(eq(channels.orgId, orgId), eq(channels.scope, 'global'), eq(channels.type, type)))
+        .orderBy(desc(channels.createdAt));
+    }
+    return db.select().from(channels)
+      .where(and(eq(channels.orgId, orgId), eq(channels.scope, 'global')))
+      .orderBy(desc(channels.createdAt));
+  }
+
+  async createChannel(channel: InsertChannel): Promise<Channel> {
+    const [created] = await db.insert(channels).values(channel).returning();
+    return created;
+  }
+
+  async updateChannel(id: string, orgId: string, data: Partial<InsertChannel>): Promise<Channel | undefined> {
+    const [updated] = await db.update(channels)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(channels.id, id), eq(channels.orgId, orgId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteChannel(id: string, orgId: string): Promise<boolean> {
+    await db.delete(channels).where(and(eq(channels.id, id), eq(channels.orgId, orgId)));
+    return true;
+  }
+
+  // Channel Messages
+  async getChannelMessages(channelId: string, limit: number = 50, offset: number = 0): Promise<ChannelMessage[]> {
+    return db.select().from(channelMessages)
+      .where(eq(channelMessages.channelId, channelId))
+      .orderBy(desc(channelMessages.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async getChannelMessage(id: string): Promise<ChannelMessage | undefined> {
+    const [message] = await db.select().from(channelMessages)
+      .where(eq(channelMessages.id, id));
+    return message;
+  }
+
+  async createChannelMessage(message: InsertChannelMessage): Promise<ChannelMessage> {
+    const [created] = await db.insert(channelMessages).values(message).returning();
+    return created;
+  }
+
+  async updateChannelMessage(id: string, data: Partial<InsertChannelMessage>): Promise<ChannelMessage | undefined> {
+    const [updated] = await db.update(channelMessages)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(channelMessages.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteChannelMessage(id: string): Promise<boolean> {
+    await db.delete(channelMessages).where(eq(channelMessages.id, id));
+    return true;
+  }
+
+  async getPinnedMessages(channelId: string): Promise<ChannelMessage[]> {
+    return db.select().from(channelMessages)
+      .where(and(eq(channelMessages.channelId, channelId), eq(channelMessages.isPinned, true)))
+      .orderBy(desc(channelMessages.createdAt));
+  }
+
+  // Channel Attachments
+  async getMessageAttachments(messageId: string): Promise<ChannelAttachment[]> {
+    return db.select().from(channelAttachments)
+      .where(eq(channelAttachments.messageId, messageId));
+  }
+
+  async createChannelAttachment(attachment: InsertChannelAttachment): Promise<ChannelAttachment> {
+    const [created] = await db.insert(channelAttachments).values(attachment).returning();
+    return created;
+  }
+
+  async deleteChannelAttachment(id: string): Promise<boolean> {
+    await db.delete(channelAttachments).where(eq(channelAttachments.id, id));
+    return true;
+  }
+
+  // Account Loom Videos
+  async getAccountLoomVideos(accountId: string, orgId: string): Promise<AccountLoomVideo[]> {
+    return db.select().from(accountLoomVideos)
+      .where(and(eq(accountLoomVideos.accountId, accountId), eq(accountLoomVideos.orgId, orgId)))
+      .orderBy(desc(accountLoomVideos.createdAt));
+  }
+
+  async createAccountLoomVideo(video: InsertAccountLoomVideo): Promise<AccountLoomVideo> {
+    const [created] = await db.insert(accountLoomVideos).values(video).returning();
+    return created;
+  }
+
+  async deleteAccountLoomVideo(id: string, orgId: string): Promise<boolean> {
+    await db.delete(accountLoomVideos).where(and(eq(accountLoomVideos.id, id), eq(accountLoomVideos.orgId, orgId)));
+    return true;
+  }
+
+  // Account Updates (CR History)
+  async getAccountUpdates(accountId: string, orgId: string): Promise<AccountUpdate[]> {
+    return db.select().from(accountUpdates)
+      .where(and(eq(accountUpdates.accountId, accountId), eq(accountUpdates.orgId, orgId)))
+      .orderBy(desc(accountUpdates.updateDate));
+  }
+
+  async createAccountUpdate(update: InsertAccountUpdate): Promise<AccountUpdate> {
+    const [created] = await db.insert(accountUpdates).values(update).returning();
+    return created;
+  }
+
+  async updateAccountUpdate(id: string, orgId: string, data: Partial<InsertAccountUpdate>): Promise<AccountUpdate | undefined> {
+    const [updated] = await db.update(accountUpdates)
+      .set(data)
+      .where(and(eq(accountUpdates.id, id), eq(accountUpdates.orgId, orgId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteAccountUpdate(id: string, orgId: string): Promise<boolean> {
+    await db.delete(accountUpdates).where(and(eq(accountUpdates.id, id), eq(accountUpdates.orgId, orgId)));
+    return true;
+  }
+
+  // Project Updates (CR de suivi projet)
+  async getProjectUpdates(projectId: string, orgId: string): Promise<ProjectUpdate[]> {
+    return db.select().from(projectUpdates)
+      .where(and(eq(projectUpdates.projectId, projectId), eq(projectUpdates.orgId, orgId)))
+      .orderBy(desc(projectUpdates.updateDate));
+  }
+
+  async createProjectUpdate(update: InsertProjectUpdate): Promise<ProjectUpdate> {
+    const [created] = await db.insert(projectUpdates).values(update).returning();
+    return created;
+  }
+
+  async updateProjectUpdate(id: string, orgId: string, data: Partial<InsertProjectUpdate>): Promise<ProjectUpdate | undefined> {
+    const [updated] = await db.update(projectUpdates)
+      .set(data)
+      .where(and(eq(projectUpdates.id, id), eq(projectUpdates.orgId, orgId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteProjectUpdate(id: string, orgId: string): Promise<boolean> {
+    await db.delete(projectUpdates).where(and(eq(projectUpdates.id, id), eq(projectUpdates.orgId, orgId)));
+    return true;
+  }
+
+  // Project Deliverables (fichiers livrables)
+  async getProjectDeliverables(projectId: string, orgId: string): Promise<ProjectDeliverable[]> {
+    return db.select().from(projectDeliverables)
+      .where(and(eq(projectDeliverables.projectId, projectId), eq(projectDeliverables.orgId, orgId)))
+      .orderBy(desc(projectDeliverables.createdAt));
+  }
+
+  async createProjectDeliverable(deliverable: InsertProjectDeliverable): Promise<ProjectDeliverable> {
+    const [created] = await db.insert(projectDeliverables).values(deliverable).returning();
+    return created;
+  }
+
+  async deleteProjectDeliverable(id: string, orgId: string): Promise<boolean> {
+    await db.delete(projectDeliverables).where(and(eq(projectDeliverables.id, id), eq(projectDeliverables.orgId, orgId)));
+    return true;
+  }
+
+  // Notifications
+  async getNotifications(userId: string, orgId: string, limit: number = 20): Promise<Notification[]> {
+    return db.select().from(notifications)
+      .where(and(eq(notifications.userId, userId), eq(notifications.orgId, orgId)))
+      .orderBy(desc(notifications.createdAt))
+      .limit(limit);
+  }
+
+  async getUnreadNotifications(userId: string, orgId: string): Promise<Notification[]> {
+    return db.select().from(notifications)
+      .where(and(eq(notifications.userId, userId), eq(notifications.orgId, orgId), eq(notifications.isRead, false)))
+      .orderBy(desc(notifications.createdAt));
+  }
+
+  async getUnreadNotificationCount(userId: string, orgId: string): Promise<number> {
+    const result = await db.select({ count: sql<number>`count(*)` }).from(notifications)
+      .where(and(eq(notifications.userId, userId), eq(notifications.orgId, orgId), eq(notifications.isRead, false)));
+    return Number(result[0]?.count || 0);
+  }
+
+  async createNotification(notification: InsertNotification): Promise<Notification> {
+    const [created] = await db.insert(notifications).values(notification).returning();
+    return created;
+  }
+
+  async markNotificationAsRead(id: string, userId: string): Promise<Notification | undefined> {
+    const [updated] = await db.update(notifications)
+      .set({ isRead: true })
+      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
+      .returning();
+    return updated;
+  }
+
+  async markAllNotificationsAsRead(userId: string, orgId: string): Promise<boolean> {
+    await db.update(notifications)
+      .set({ isRead: true })
+      .where(and(eq(notifications.userId, userId), eq(notifications.orgId, orgId)));
+    return true;
+  }
+
+  async deleteNotification(id: string, userId: string): Promise<boolean> {
+    await db.delete(notifications).where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
+    return true;
+  }
+
+  async deleteOldNotifications(userId: string, orgId: string, daysOld: number = 30): Promise<boolean> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+    await db.delete(notifications)
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.orgId, orgId),
+        sql`${notifications.createdAt} < ${cutoffDate}`
+      ));
+    return true;
   }
 }
 

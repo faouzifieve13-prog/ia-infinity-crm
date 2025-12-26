@@ -1,13 +1,15 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { FolderKanban, TrendingUp, CheckCircle, Briefcase } from "lucide-react";
+import { FolderKanban, TrendingUp, CheckCircle, Briefcase, MessageSquare, Hash } from "lucide-react";
+import { ChannelList } from "@/components/channels/ChannelList";
+import { ChannelView } from "@/components/channels/ChannelView";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { SpaceProvider } from "@/hooks/use-space";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -40,6 +42,8 @@ import ContractPreview from "@/pages/ContractPreview";
 import SignQuote from "@/pages/SignQuote";
 import ClientQuotes from "@/pages/ClientQuotes";
 import Settings from "@/pages/Settings";
+import Profile from "@/pages/Profile";
+import ChannelsPage from "@/pages/ChannelsPage";
 import { LandingPage } from "@/pages/LandingPage";
 import Login from "@/pages/Login";
 import SetupPassword from "@/pages/SetupPassword";
@@ -73,6 +77,8 @@ function Router() {
       <Route path="/calendar" component={Calendar} />
       <Route path="/notion-sync" component={NotionSync} />
       <Route path="/invitations" component={Invitations} />
+      <Route path="/channels" component={ChannelsPage} />
+      <Route path="/profile" component={Profile} />
       <Route path="/settings" component={Settings} />
       <Route path="/help" component={() => (
         <div className="space-y-4">
@@ -317,7 +323,20 @@ function ClientDashboard() {
 }
 
 // Vendor Dashboard Component
+interface VendorChannel {
+  id: string;
+  name: string;
+  description?: string;
+  type: 'client' | 'vendor';
+  scope: 'global' | 'project';
+  projectId?: string;
+  accountId?: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
 function VendorDashboard() {
+  const [selectedChannel, setSelectedChannel] = useState<VendorChannel | null>(null);
   const { data: dashboard, isLoading } = useQuery<{
     projects: { total: number; active: number; completed: number };
     missions: { total: number; active: number; pending: number };
@@ -408,6 +427,42 @@ function VendorDashboard() {
           ) : (
             <p className="text-muted-foreground text-center py-8">Aucun projet assigné pour le moment</p>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Channels Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            Espace d'échange
+          </CardTitle>
+          <CardDescription>
+            Communiquez avec l'équipe IA Infinity
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1">
+              <ChannelList
+                selectedChannelId={selectedChannel?.id}
+                onSelectChannel={setSelectedChannel}
+                endpoint="/api/vendor/channels"
+              />
+            </div>
+            <div className="lg:col-span-2 min-h-[400px]">
+              {selectedChannel ? (
+                <ChannelView channel={selectedChannel} />
+              ) : (
+                <div className="h-full flex items-center justify-center border rounded-lg bg-muted/30">
+                  <div className="text-center text-muted-foreground">
+                    <Hash className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Sélectionnez un canal pour voir les messages</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>

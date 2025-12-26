@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { 
-  ArrowLeft, 
-  Building2, 
+import {
+  ArrowLeft,
+  Building2,
   Mail,
   Globe,
   User,
@@ -28,7 +28,8 @@ import {
   Sparkles,
   SendHorizontal,
   Plus,
-  FolderPlus
+  FolderPlus,
+  Calendar
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,6 +71,8 @@ const projectFormSchema = z.object({
   description: z.string().optional(),
   status: z.enum(['active', 'on_hold', 'completed', 'cancelled']).default('active'),
   vendorId: z.string().optional(),
+  startDate: z.string().min(1, 'La date de début est requise'),
+  endDate: z.string().min(1, 'La date de fin est requise'),
 });
 
 type ProjectFormValues = z.infer<typeof projectFormSchema>;
@@ -129,24 +132,29 @@ export default function AccountDetail() {
       name: '',
       description: '',
       status: 'active',
+      startDate: '',
+      endDate: '',
     },
   });
 
   const createProjectMutation = useMutation({
     mutationFn: async (data: ProjectFormValues) => {
-      const { vendorId, ...projectData } = data;
+      const { vendorId, startDate, endDate, ...projectData } = data;
+      const actualVendorId = vendorId && vendorId !== 'none' ? vendorId : null;
       const project = await apiRequest('POST', '/api/projects', {
         ...projectData,
         accountId,
+        startDate: startDate ? new Date(startDate).toISOString() : null,
+        endDate: endDate ? new Date(endDate).toISOString() : null,
       });
       const projectResult = await project.json();
-      
+
       let missionCreated = false;
-      if (vendorId && projectResult?.id) {
+      if (actualVendorId && projectResult?.id) {
         try {
           await apiRequest('POST', '/api/missions', {
             projectId: projectResult.id,
-            vendorId,
+            vendorId: actualVendorId,
             title: `Mission - ${projectData.name}`,
             description: projectData.description || '',
           });
@@ -156,7 +164,7 @@ export default function AccountDetail() {
         }
       }
       
-      return { project: projectResult, vendorId, missionCreated };
+      return { project: projectResult, vendorId: actualVendorId, missionCreated };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
@@ -209,6 +217,18 @@ export default function AccountDetail() {
 
   const { data: accountEmails = [], isLoading: emailsLoading } = useQuery<Email[]>({
     queryKey: ['/api/emails', { accountId }],
+    enabled: !!accountId,
+  });
+
+  // Loom Videos
+  const { data: loomVideos = [] } = useQuery<{ id: string; title: string; url: string; description?: string; createdAt: string }[]>({
+    queryKey: [`/api/accounts/${accountId}/loom-videos`],
+    enabled: !!accountId,
+  });
+
+  // Account Updates (CR History)
+  const { data: accountUpdates = [] } = useQuery<{ id: string; updateDate: string; title: string; content: string; type: string; createdAt: string }[]>({
+    queryKey: [`/api/accounts/${accountId}/updates`],
     enabled: !!accountId,
   });
 
@@ -356,6 +376,126 @@ export default function AccountDetail() {
       });
     },
   });
+
+  // Loom Video Mutations
+  const [newVideoTitle, setNewVideoTitle] = useState('');
+  const [newVideoUrl, setNewVideoUrl] = useState('');
+  const [newVideoDescription, setNewVideoDescription] = useState('');
+  const [showAddVideo, setShowAddVideo] = useState(false);
+
+  const addLoomVideoMutation = useMutation({
+    mutationFn: async (data: { title: string; url: string; description?: string }) => {
+      return apiRequest('POST', `/api/accounts/${accountId}/loom-videos`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/accounts/${accountId}/loom-videos`] });
+      setNewVideoTitle('');
+      setNewVideoUrl('');
+      setNewVideoDescription('');
+      setShowAddVideo(false);
+      toast({ title: 'Vidéo ajoutée', description: 'La vidéo a été ajoutée avec succès.' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Erreur', description: error.message || 'Impossible d\'ajouter la vidéo.', variant: 'destructive' });
+    },
+  });
+
+  const deleteLoomVideoMutation = useMutation({
+    mutationFn: async (videoId: string) => {
+      return apiRequest('DELETE', `/api/accounts/${accountId}/loom-videos/${videoId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/accounts/${accountId}/loom-videos`] });
+      toast({ title: 'Vidéo supprimée', description: 'La vidéo a été supprimée.' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Erreur', description: error.message || 'Impossible de supprimer la vidéo.', variant: 'destructive' });
+    },
+  });
+
+  // Account Updates (CR History) Mutations
+  const [newUpdateDate, setNewUpdateDate] = useState('');
+  const [newUpdateTitle, setNewUpdateTitle] = useState('');
+  const [newUpdateContent, setNewUpdateContent] = useState('');
+  const [newUpdateType, setNewUpdateType] = useState('note');
+  const [showAddUpdate, setShowAddUpdate] = useState(false);
+  const [editingUpdateId, setEditingUpdateId] = useState<string | null>(null);
+  const [editUpdateDate, setEditUpdateDate] = useState('');
+  const [editUpdateTitle, setEditUpdateTitle] = useState('');
+  const [editUpdateContent, setEditUpdateContent] = useState('');
+  const [editUpdateType, setEditUpdateType] = useState('note');
+
+  const addAccountUpdateMutation = useMutation({
+    mutationFn: async (data: { updateDate: string; title: string; content: string; type: string }) => {
+      return apiRequest('POST', `/api/accounts/${accountId}/updates`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/accounts/${accountId}/updates`] });
+      setNewUpdateDate('');
+      setNewUpdateTitle('');
+      setNewUpdateContent('');
+      setNewUpdateType('note');
+      setShowAddUpdate(false);
+      toast({ title: 'CR ajouté', description: 'Le compte-rendu a été ajouté à l\'historique.' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Erreur', description: error.message || 'Impossible d\'ajouter le CR.', variant: 'destructive' });
+    },
+  });
+
+  const deleteAccountUpdateMutation = useMutation({
+    mutationFn: async (updateId: string) => {
+      return apiRequest('DELETE', `/api/accounts/${accountId}/updates/${updateId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/accounts/${accountId}/updates`] });
+      toast({ title: 'CR supprimé', description: 'Le compte-rendu a été supprimé.' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Erreur', description: error.message || 'Impossible de supprimer le CR.', variant: 'destructive' });
+    },
+  });
+
+  const editAccountUpdateMutation = useMutation({
+    mutationFn: async (data: { id: string; updateDate: string; title: string; content: string; type: string }) => {
+      return apiRequest('PATCH', `/api/accounts/${accountId}/updates/${data.id}`, {
+        updateDate: data.updateDate,
+        title: data.title,
+        content: data.content,
+        type: data.type,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/accounts/${accountId}/updates`] });
+      setEditingUpdateId(null);
+      setEditUpdateDate('');
+      setEditUpdateTitle('');
+      setEditUpdateContent('');
+      setEditUpdateType('note');
+      toast({ title: 'CR modifié', description: 'Le compte-rendu a été modifié avec succès.' });
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Erreur', description: error.message || 'Impossible de modifier le CR.', variant: 'destructive' });
+    },
+  });
+
+  const startEditingUpdate = (update: { id: string; updateDate: string; title: string; content: string; type: string }) => {
+    setEditingUpdateId(update.id);
+    // Format date for input type="date"
+    const dateValue = new Date(update.updateDate).toISOString().split('T')[0];
+    setEditUpdateDate(dateValue);
+    setEditUpdateTitle(update.title);
+    setEditUpdateContent(update.content);
+    setEditUpdateType(update.type);
+  };
+
+  const cancelEditingUpdate = () => {
+    setEditingUpdateId(null);
+    setEditUpdateDate('');
+    setEditUpdateTitle('');
+    setEditUpdateContent('');
+    setEditUpdateType('note');
+  };
 
   const saveCRToNotesMutation = useMutation({
     mutationFn: async (cr: string) => {
@@ -764,30 +904,351 @@ export default function AccountDetail() {
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle className="flex items-center gap-2">
                 <Video className="h-5 w-5 text-primary" />
-                Vidéo Loom
+                Vidéos Loom
               </CardTitle>
-              {account.loomVideoUrl && (
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => window.open(account.loomVideoUrl!, '_blank')}
-                  data-testid="button-open-loom"
-                >
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Ouvrir
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAddVideo(true)}
+                data-testid="button-add-loom-video"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Ajouter
+              </Button>
             </CardHeader>
-            <CardContent>
-              {account.loomVideoUrl ? (
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-sm text-muted-foreground break-all" data-testid="text-loom-url">
-                    {account.loomVideoUrl}
-                  </p>
+            <CardContent className="space-y-4">
+              {showAddVideo && (
+                <div className="p-4 rounded-lg border bg-muted/30 space-y-3">
+                  <h4 className="font-medium text-sm">Nouvelle vidéo</h4>
+                  <Input
+                    placeholder="Titre de la vidéo *"
+                    value={newVideoTitle}
+                    onChange={(e) => setNewVideoTitle(e.target.value)}
+                    data-testid="input-new-video-title"
+                  />
+                  <Input
+                    placeholder="URL Loom (https://www.loom.com/share/...) *"
+                    value={newVideoUrl}
+                    onChange={(e) => setNewVideoUrl(e.target.value)}
+                    data-testid="input-new-video-url"
+                  />
+                  <Textarea
+                    placeholder="Description (optionnel)"
+                    value={newVideoDescription}
+                    onChange={(e) => setNewVideoDescription(e.target.value)}
+                    rows={2}
+                    data-testid="input-new-video-description"
+                  />
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setShowAddVideo(false);
+                        setNewVideoTitle('');
+                        setNewVideoUrl('');
+                        setNewVideoDescription('');
+                      }}
+                    >
+                      Annuler
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={!newVideoTitle.trim() || !newVideoUrl.trim() || addLoomVideoMutation.isPending}
+                      onClick={() => addLoomVideoMutation.mutate({
+                        title: newVideoTitle.trim(),
+                        url: newVideoUrl.trim(),
+                        description: newVideoDescription.trim() || undefined,
+                      })}
+                      data-testid="button-save-video"
+                    >
+                      {addLoomVideoMutation.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}
+                      Enregistrer
+                    </Button>
+                  </div>
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Aucun lien vidéo enregistré. Cliquez sur "Modifier" pour ajouter un lien Loom.
+              )}
+
+              {loomVideos.length > 0 ? (
+                <div className="space-y-3">
+                  {loomVideos.map((video) => (
+                    <div key={video.id} className="p-3 rounded-lg border hover-elevate">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <h5 className="font-medium text-sm">{video.title}</h5>
+                          {video.description && (
+                            <p className="text-xs text-muted-foreground mt-1">{video.description}</p>
+                          )}
+                          <p className="text-xs text-muted-foreground truncate mt-1">{video.url}</p>
+                          <p className="text-xs text-muted-foreground mt-2">
+                            Ajouté le {new Date(video.createdAt).toLocaleDateString('fr-FR')}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => window.open(video.url, '_blank')}
+                            data-testid={`button-open-video-${video.id}`}
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteLoomVideoMutation.mutate(video.id)}
+                            disabled={deleteLoomVideoMutation.isPending}
+                            data-testid={`button-delete-video-${video.id}`}
+                          >
+                            <X className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : !showAddVideo && (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  Aucune vidéo Loom. Cliquez sur "Ajouter" pour ajouter une vidéo.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                Historique des CR
+              </CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAddUpdate(true)}
+                data-testid="button-add-cr"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Ajouter CR
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {showAddUpdate && (
+                <div className="p-4 rounded-lg border bg-muted/30 space-y-3">
+                  <h4 className="font-medium text-sm">Nouveau compte-rendu</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                        Date du CR *
+                      </label>
+                      <Input
+                        type="date"
+                        value={newUpdateDate}
+                        onChange={(e) => setNewUpdateDate(e.target.value)}
+                        data-testid="input-cr-date"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                        Type
+                      </label>
+                      <Select value={newUpdateType} onValueChange={setNewUpdateType}>
+                        <SelectTrigger data-testid="select-cr-type">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="note">Note</SelectItem>
+                          <SelectItem value="reunion">Réunion</SelectItem>
+                          <SelectItem value="appel">Appel</SelectItem>
+                          <SelectItem value="email">Email</SelectItem>
+                          <SelectItem value="autre">Autre</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <Input
+                    placeholder="Titre du CR *"
+                    value={newUpdateTitle}
+                    onChange={(e) => setNewUpdateTitle(e.target.value)}
+                    data-testid="input-cr-title"
+                  />
+                  <Textarea
+                    placeholder="Contenu du compte-rendu *"
+                    value={newUpdateContent}
+                    onChange={(e) => setNewUpdateContent(e.target.value)}
+                    rows={4}
+                    data-testid="input-cr-content"
+                  />
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setShowAddUpdate(false);
+                        setNewUpdateDate('');
+                        setNewUpdateTitle('');
+                        setNewUpdateContent('');
+                        setNewUpdateType('note');
+                      }}
+                    >
+                      Annuler
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={!newUpdateDate || !newUpdateTitle.trim() || !newUpdateContent.trim() || addAccountUpdateMutation.isPending}
+                      onClick={() => addAccountUpdateMutation.mutate({
+                        updateDate: newUpdateDate,
+                        title: newUpdateTitle.trim(),
+                        content: newUpdateContent.trim(),
+                        type: newUpdateType,
+                      })}
+                      data-testid="button-save-cr"
+                    >
+                      {addAccountUpdateMutation.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}
+                      Enregistrer
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {accountUpdates.length > 0 ? (
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {accountUpdates
+                    .sort((a, b) => new Date(b.updateDate).getTime() - new Date(a.updateDate).getTime())
+                    .map((update) => (
+                    <div key={update.id} className="p-3 rounded-lg border hover-elevate">
+                      {editingUpdateId === update.id ? (
+                        <div className="space-y-3">
+                          <h4 className="font-medium text-sm flex items-center gap-2">
+                            <Edit2 className="h-4 w-4" />
+                            Modifier le compte-rendu
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                                Date du CR *
+                              </label>
+                              <Input
+                                type="date"
+                                value={editUpdateDate}
+                                onChange={(e) => setEditUpdateDate(e.target.value)}
+                                data-testid={`input-edit-cr-date-${update.id}`}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                                Type
+                              </label>
+                              <Select value={editUpdateType} onValueChange={setEditUpdateType}>
+                                <SelectTrigger data-testid={`select-edit-cr-type-${update.id}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="note">Note</SelectItem>
+                                  <SelectItem value="reunion">Réunion</SelectItem>
+                                  <SelectItem value="appel">Appel</SelectItem>
+                                  <SelectItem value="email">Email</SelectItem>
+                                  <SelectItem value="autre">Autre</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          <Input
+                            placeholder="Titre du CR *"
+                            value={editUpdateTitle}
+                            onChange={(e) => setEditUpdateTitle(e.target.value)}
+                            data-testid={`input-edit-cr-title-${update.id}`}
+                          />
+                          <Textarea
+                            placeholder="Contenu du compte-rendu *"
+                            value={editUpdateContent}
+                            onChange={(e) => setEditUpdateContent(e.target.value)}
+                            rows={4}
+                            data-testid={`input-edit-cr-content-${update.id}`}
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={cancelEditingUpdate}
+                            >
+                              Annuler
+                            </Button>
+                            <Button
+                              size="sm"
+                              disabled={!editUpdateDate || !editUpdateTitle.trim() || !editUpdateContent.trim() || editAccountUpdateMutation.isPending}
+                              onClick={() => editAccountUpdateMutation.mutate({
+                                id: update.id,
+                                updateDate: editUpdateDate,
+                                title: editUpdateTitle.trim(),
+                                content: editUpdateContent.trim(),
+                                type: editUpdateType,
+                              })}
+                              data-testid={`button-save-edit-cr-${update.id}`}
+                            >
+                              {editAccountUpdateMutation.isPending ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <Save className="mr-2 h-4 w-4" />
+                              )}
+                              Enregistrer
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="secondary" className="text-xs">
+                                {new Date(update.updateDate).toLocaleDateString('fr-FR', {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  year: 'numeric'
+                                })}
+                              </Badge>
+                              <Badge variant="outline" className="text-xs capitalize">
+                                {update.type}
+                              </Badge>
+                            </div>
+                            <h5 className="font-medium text-sm">{update.title}</h5>
+                            <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">
+                              {update.content}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => startEditingUpdate(update)}
+                              data-testid={`button-edit-cr-${update.id}`}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteAccountUpdateMutation.mutate(update.id)}
+                              disabled={deleteAccountUpdateMutation.isPending}
+                              data-testid={`button-delete-cr-${update.id}`}
+                            >
+                              <X className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : !showAddUpdate && (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  Aucun compte-rendu enregistré. Cliquez sur "Ajouter CR" pour créer un historique.
                 </p>
               )}
             </CardContent>
@@ -1093,6 +1554,34 @@ export default function AccountDetail() {
                           </FormItem>
                         )}
                       />
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={projectForm.control}
+                          name="startDate"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Date de début *</FormLabel>
+                              <FormControl>
+                                <Input type="date" {...field} data-testid="input-project-start-date" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={projectForm.control}
+                          name="endDate"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Date de fin *</FormLabel>
+                              <FormControl>
+                                <Input type="date" {...field} data-testid="input-project-end-date" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
                       <FormField
                         control={projectForm.control}
                         name="vendorId"
@@ -1106,7 +1595,7 @@ export default function AccountDetail() {
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                <SelectItem value="">Aucun</SelectItem>
+                                <SelectItem value="none">Aucun</SelectItem>
                                 {allVendors.map((vendor) => (
                                   <SelectItem key={vendor.id} value={vendor.id}>
                                     {vendor.name} {vendor.company ? `(${vendor.company})` : ''}
