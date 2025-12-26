@@ -7,16 +7,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Lock, User, ArrowRight, Eye, EyeOff, Check, X, AlertCircle } from "lucide-react";
+import { Lock, User, ArrowRight, Eye, EyeOff, Check, X, AlertCircle, Mail } from "lucide-react";
 
 export default function SetupPassword() {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [token, setToken] = useState<string | null>(null);
+  const [isValidating, setIsValidating] = useState(true);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -28,9 +30,39 @@ export default function SetupPassword() {
         variant: "destructive",
       });
       setLocation("/login");
-    } else {
-      setToken(t);
+      return;
     }
+    
+    // Validate token and get email
+    fetch("/api/invitations/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: t }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.valid && data.invitation?.email) {
+          setToken(t);
+          setEmail(data.invitation.email);
+          if (data.invitation.name) setName(data.invitation.name);
+        } else {
+          toast({
+            title: "Lien invalide",
+            description: data.error || "Le lien d'invitation est invalide ou expiré",
+            variant: "destructive",
+          });
+          setLocation("/login");
+        }
+      })
+      .catch(() => {
+        toast({
+          title: "Erreur",
+          description: "Impossible de valider l'invitation",
+          variant: "destructive",
+        });
+        setLocation("/login");
+      })
+      .finally(() => setIsValidating(false));
   }, []);
 
   const passwordChecks = {
@@ -88,13 +120,13 @@ export default function SetupPassword() {
     setupMutation.mutate({ token, password, name: name.trim() || undefined });
   };
 
-  if (!token) {
+  if (isValidating || !token) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-purple-50 dark:from-violet-950 dark:via-gray-900 dark:to-purple-950 flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardContent className="pt-6 text-center">
-            <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
-            <p className="text-muted-foreground">Chargement...</p>
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-violet-500 border-t-transparent mx-auto mb-4" />
+            <p className="text-muted-foreground">Validation de l'invitation...</p>
           </CardContent>
         </Card>
       </div>
@@ -117,6 +149,22 @@ export default function SetupPassword() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email (identifiant)</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  readOnly
+                  disabled
+                  className="pl-10 bg-muted cursor-not-allowed"
+                  data-testid="input-email"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Cet email sera votre identifiant de connexion</p>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="name">Nom (optionnel)</Label>
               <div className="relative">
