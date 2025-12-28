@@ -43,6 +43,8 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   avatar: text("avatar"),
   password: text("password"),
+  isActive: boolean("is_active").notNull().default(true),
+  deactivatedAt: timestamp("deactivated_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -167,7 +169,16 @@ export const quotes = pgTable("quotes", {
   qontoQuoteId: varchar("qonto_quote_id"),
   number: text("number").notNull(),
   title: text("title").notNull(),
+  description: text("description"),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  vatRate: decimal("vat_rate", { precision: 5, scale: 2 }).default('20'),
+  vatAmount: decimal("vat_amount", { precision: 12, scale: 2 }),
+  totalWithVat: decimal("total_with_vat", { precision: 12, scale: 2 }),
+  validityDays: integer("validity_days").default(30),
+  expiresAt: timestamp("expires_at"),
+  termsAndConditions: text("terms_and_conditions"),
+  paymentTerms: text("payment_terms"),
+  notes: text("notes"),
   quoteUrl: text("quote_url"),
   pdfUrl: text("pdf_url"),
   status: quoteStatusEnum("status").notNull().default('draft'),
@@ -191,6 +202,32 @@ export const quotes = pgTable("quotes", {
   index("quotes_account_idx").on(table.accountId),
 ]);
 
+// Quote line items for detailed display on signing page
+export const quoteLineItems = pgTable("quote_line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").notNull().references(() => quotes.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull().default('1'),
+  unit: text("unit").default('unité'),
+  unitPrice: decimal("unit_price", { precision: 12, scale: 2 }).notNull(),
+  vatRate: decimal("vat_rate", { precision: 5, scale: 2 }).default('20'),
+  totalHt: decimal("total_ht", { precision: 12, scale: 2 }).notNull(),
+  sortOrder: integer("sort_order").default(0),
+}, (table) => [
+  index("quote_line_items_quote_idx").on(table.quoteId),
+]);
+
+export const quoteLineItemsRelations = relations(quoteLineItems, ({ one }) => ({
+  quote: one(quotes, {
+    fields: [quoteLineItems.quoteId],
+    references: [quotes.id],
+  }),
+}));
+
+export const insertQuoteLineItemSchema = createInsertSchema(quoteLineItems).omit({ id: true });
+export type QuoteLineItem = typeof quoteLineItems.$inferSelect;
+export type InsertQuoteLineItem = z.infer<typeof insertQuoteLineItemSchema>;
+
 export const activities = pgTable("activities", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
@@ -211,6 +248,7 @@ export const projects = pgTable("projects", {
   accountId: varchar("account_id").references(() => accounts.id),
   dealId: varchar("deal_id").references(() => deals.id),
   vendorContactId: varchar("vendor_contact_id").references(() => contacts.id),
+  vendorId: varchar("vendor_id").references(() => vendors.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   description: text("description"),
   status: projectStatusEnum("status").notNull().default('active'),
@@ -243,6 +281,7 @@ export const tasks = pgTable("tasks", {
   status: taskStatusEnum("status").notNull().default('pending'),
   priority: taskPriorityEnum("priority").notNull().default('medium'),
   assigneeId: varchar("assignee_id").references(() => users.id),
+  vendorId: varchar("vendor_id").references(() => vendors.id),
   dueDate: timestamp("due_date"),
   timeSpent: integer("time_spent").notNull().default(0),
   notionPageId: text("notion_page_id"),
@@ -254,6 +293,7 @@ export const tasks = pgTable("tasks", {
   index("tasks_project_idx").on(table.orgId, table.projectId),
   index("tasks_status_idx").on(table.orgId, table.status),
   index("tasks_assignee_idx").on(table.assigneeId),
+  index("tasks_vendor_idx").on(table.vendorId),
   index("tasks_notion_idx").on(table.notionPageId),
 ]);
 
@@ -262,7 +302,9 @@ export const invoices = pgTable("invoices", {
   orgId: varchar("org_id").notNull().references(() => organizations.id),
   accountId: varchar("account_id").references(() => accounts.id),
   projectId: varchar("project_id").references(() => projects.id),
+  vendorId: varchar("vendor_id").references(() => vendors.id),
   invoiceNumber: text("invoice_number").notNull(),
+  description: text("description"),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull().default("0"),
   currency: text("currency").notNull().default('EUR'),
   status: invoiceStatusEnum("status").notNull().default('draft'),
@@ -270,6 +312,8 @@ export const invoices = pgTable("invoices", {
   issuedDate: timestamp("issued_date"),
   paidDate: timestamp("paid_date"),
   customerEmail: text("customer_email"),
+  pdfUrl: text("pdf_url"),
+  invoiceType: text("invoice_type"), // 'prestation', 'materiel', 'frais'
   stripePaymentIntentId: text("stripe_payment_intent_id"),
   stripeInvoiceId: text("stripe_invoice_id"),
   notionPageId: text("notion_page_id"),
@@ -279,6 +323,7 @@ export const invoices = pgTable("invoices", {
 }, (table) => [
   index("invoices_org_idx").on(table.orgId),
   index("invoices_account_idx").on(table.orgId, table.accountId),
+  index("invoices_vendor_idx").on(table.orgId, table.vendorId),
   index("invoices_status_idx").on(table.orgId, table.status),
   index("invoices_notion_idx").on(table.notionPageId),
 ]);
@@ -679,6 +724,10 @@ export const tasksRelations = relations(tasks, ({ one }) => ({
     fields: [tasks.assigneeId],
     references: [users.id],
   }),
+  vendor: one(vendors, {
+    fields: [tasks.vendorId],
+    references: [vendors.id],
+  }),
 }));
 
 export const invoicesRelations = relations(invoices, ({ one, many }) => ({
@@ -710,6 +759,7 @@ export const vendorsRelations = relations(vendors, ({ one, many }) => ({
     references: [users.id],
   }),
   missions: many(missions),
+  tasks: many(tasks),
 }));
 
 export const missionsRelations = relations(missions, ({ one }) => ({
@@ -935,6 +985,7 @@ export type ProjectStatus = 'active' | 'on_hold' | 'completed' | 'cancelled';
 export type TaskStatus = 'pending' | 'in_progress' | 'review' | 'completed';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
+export type InvoiceType = 'prestation' | 'materiel' | 'frais';
 export type AccountStatus = 'active' | 'inactive' | 'churned';
 export type VendorAvailability = 'available' | 'busy' | 'unavailable';
 export type MissionStatus = 'pending' | 'in_progress' | 'review' | 'completed';

@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { storage, db } from "./storage";
 import { z } from "zod";
 import { createHash, randomBytes } from "crypto";
 import {
@@ -9,11 +9,29 @@ import {
   insertVendorSchema, insertMissionSchema, insertDocumentSchema, insertWorkflowRunSchema,
   insertOrganizationSchema, insertUserSchema, insertMembershipSchema, insertContractSchema,
   insertInvitationSchema,
+  users,
   type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
   type UserRole, type Space, type InvitationStatus
 } from "@shared/schema";
 import { sendInvitationEmail, sendClientWelcomeEmail, testGmailConnection, getInboxEmails } from "./gmail";
-import { requireAuth, requireAdmin, requireClient, requireVendor, getSessionData } from "./auth";
+import { uploadFileToDrive } from "./drive";
+import { requireAuth, requireAdmin, requireClient, requireVendor, requireClientAdmin, requireWriteAccess, requireChannelAccess, getSessionData } from "./auth";
+import {
+  getAccessContext,
+  filterProjectsByAccess,
+  filterAccountsByAccess,
+  filterTasksByAccess,
+  validateVendorProjectAccess,
+  getVendorProjectIds,
+} from "./access-control";
+import {
+  notifyProjectComment,
+  notifyTaskAssigned,
+  notifyTaskStatusChange,
+  notifyDeliverableUploaded,
+  notifyInvoiceCreated,
+  notifyProjectStatusChange,
+} from "./notifications";
 
 function generateToken(): string {
   return randomBytes(32).toString("hex");
@@ -152,14 +170,73 @@ export async function registerRoutes(
     }
   });
 
+  // Diagnostic pour vérifier pourquoi un account ne peut pas être supprimé
+  app.get("/api/accounts/:id/deletion-check", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.params.id;
+
+      // Check all entities linked to this account
+      const allProjects = await storage.getProjects(orgId);
+      const allContacts = await storage.getContacts(orgId);
+      const allDeals = await storage.getDeals(orgId);
+      const allMemberships = await storage.getMemberships(orgId);
+
+      const linkedProjects = allProjects.filter(p => p.accountId === accountId);
+      const linkedContacts = allContacts.filter(c => c.accountId === accountId);
+      const linkedDeals = allDeals.filter(d => d.accountId === accountId);
+      const linkedMemberships = allMemberships.filter(m => m.accountId === accountId);
+
+      const canDelete = linkedProjects.length === 0 &&
+                       linkedContacts.length === 0 &&
+                       linkedDeals.length === 0 &&
+                       linkedMemberships.length === 0;
+
+      res.json({
+        canDelete,
+        blockers: {
+          projects: linkedProjects.length,
+          contacts: linkedContacts.length,
+          deals: linkedDeals.length,
+          memberships: linkedMemberships.length,
+        },
+        details: {
+          projects: linkedProjects.map(p => ({ id: p.id, name: p.name })),
+          contacts: linkedContacts.map(c => ({ id: c.id, name: c.name, email: c.email })),
+          deals: linkedDeals.map(d => ({ id: d.id, name: d.name })),
+          memberships: linkedMemberships.map(m => ({ id: m.id, userId: m.userId, role: m.role })),
+        },
+        recommendation: canDelete
+          ? "Can be safely deleted"
+          : "Delete or reassign linked entities first, or use cascade delete",
+      });
+    } catch (error) {
+      console.error("Account deletion check error:", error);
+      res.status(500).json({ error: "Failed to check account deletion" });
+    }
+  });
+
+  // Simplified account deletion route - CASCADE constraints handle all child entity deletion
   app.delete("/api/accounts/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      await storage.deleteAccount(req.params.id, orgId);
+      const accountId = req.params.id;
+
+      console.log(`Deleting account ${accountId} (CASCADE will handle all linked entities)...`);
+
+      // Thanks to CASCADE constraints at the DB level, a single query is sufficient
+      // This will automatically delete: projects, contacts, deals, memberships, invitations,
+      // channels, and all their child entities (tasks, invoices, documents, etc.)
+      await storage.deleteAccount(accountId, orgId);
+
+      console.log(`Account deleted successfully with all linked entities via CASCADE`);
       res.status(204).send();
     } catch (error) {
       console.error("Delete account error:", error);
-      res.status(500).json({ error: "Failed to delete account" });
+      res.status(500).json({
+        error: "Failed to delete account",
+        details: error instanceof Error ? error.message : "Unknown error",
+      });
     }
   });
 
@@ -782,12 +859,12 @@ ${cr.replace(/\n/g, '<br>')}
       const data = insertProjectSchema.parse({ ...req.body, orgId });
       const project = await storage.createProject(data);
       
-      // Send email to vendor if assigned
+      // Send email to vendor if assigned and create vendor channel
       if (data.vendorContactId) {
         try {
           const vendorContact = await storage.getContact(data.vendorContactId, orgId);
           const account = data.accountId ? await storage.getAccount(data.accountId, orgId) : null;
-          
+
           if (vendorContact?.email) {
             const { sendVendorProjectAssignmentEmail } = await import("./gmail");
             await sendVendorProjectAssignmentEmail({
@@ -804,8 +881,15 @@ ${cr.replace(/\n/g, '<br>')}
         } catch (emailError) {
           console.error("Failed to send vendor assignment email:", emailError);
         }
+
+        // Create vendor project channel
+        try {
+          await ensureVendorProjectChannel(project.id, orgId);
+        } catch (channelError) {
+          console.error("Failed to create vendor channel:", channelError);
+        }
       }
-      
+
       res.status(201).json(project);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -831,13 +915,25 @@ ${cr.replace(/\n/g, '<br>')}
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
-      
-      // Send email to new vendor if vendor changed
+
+      // Notify if project status changed
+      if (validatedData.status && existingProject && validatedData.status !== existingProject.status) {
+        await notifyProjectStatusChange({
+          orgId,
+          projectId: project.id,
+          projectName: project.name,
+          oldStatus: existingProject.status,
+          newStatus: validatedData.status,
+          changedBy: req.session.userId!,
+        });
+      }
+
+      // Send email to new vendor if vendor changed and create vendor channel
       if (vendorChanged && validatedData.vendorContactId) {
         try {
           const vendorContact = await storage.getContact(validatedData.vendorContactId, orgId);
           const account = project.accountId ? await storage.getAccount(project.accountId, orgId) : null;
-          
+
           if (vendorContact?.email) {
             const { sendVendorProjectAssignmentEmail } = await import("./gmail");
             await sendVendorProjectAssignmentEmail({
@@ -854,8 +950,15 @@ ${cr.replace(/\n/g, '<br>')}
         } catch (emailError) {
           console.error("Failed to send vendor assignment email:", emailError);
         }
+
+        // Create vendor project channel
+        try {
+          await ensureVendorProjectChannel(project.id, orgId);
+        } catch (channelError) {
+          console.error("Failed to create vendor channel:", channelError);
+        }
       }
-      
+
       res.json(project);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -922,10 +1025,44 @@ ${cr.replace(/\n/g, '<br>')}
   app.patch("/api/tasks/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
+      const userId = req.session.userId!;
+
+      // Get the old task to compare changes
+      const oldTask = await storage.getTask(req.params.id, orgId);
+      if (!oldTask) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
       const task = await storage.updateTask(req.params.id, orgId, req.body);
       if (!task) {
         return res.status(404).json({ error: "Task not found" });
       }
+
+      // Notify if task was assigned to someone
+      if (req.body.assigneeId && req.body.assigneeId !== oldTask.assigneeId) {
+        await notifyTaskAssigned({
+          orgId,
+          taskId: task.id,
+          taskTitle: task.title,
+          assignedTo: req.body.assigneeId,
+          assignedBy: userId,
+          projectId: task.projectId || undefined,
+        });
+      }
+
+      // Notify if task status changed
+      if (req.body.status && req.body.status !== oldTask.status) {
+        await notifyTaskStatusChange({
+          orgId,
+          taskId: task.id,
+          taskTitle: task.title,
+          oldStatus: oldTask.status,
+          newStatus: req.body.status,
+          changedBy: userId,
+          projectId: task.projectId || undefined,
+        });
+      }
+
       res.json(task);
     } catch (error) {
       console.error("Update task error:", error);
@@ -1530,10 +1667,36 @@ ${cr.replace(/\n/g, '<br>')}
       });
 
       // Update quote status to sent
-      await storage.updateQuote(quote.id, orgId, { 
+      await storage.updateQuote(quote.id, orgId, {
         status: 'sent',
         sentAt: new Date()
       });
+
+      // Create notification for client users linked to this account
+      try {
+        const memberships = await storage.getMembershipsByOrg(orgId);
+        const clientMemberships = memberships.filter(m =>
+          m.accountId === account.id &&
+          (m.role === 'client_admin' || m.role === 'client_member')
+        );
+
+        for (const membership of clientMemberships) {
+          await storage.createNotification({
+            orgId,
+            userId: membership.userId,
+            title: 'Nouveau devis à signer',
+            description: `Le devis ${quote.number || quote.title} (${parseFloat(quote.amount || '0').toLocaleString('fr-FR')} € HT) est en attente de votre signature`,
+            type: 'warning',
+            link: `/client/quotes`,
+            relatedEntityType: 'quote',
+            relatedEntityId: quote.id,
+          });
+        }
+        console.log(`Created ${clientMemberships.length} notifications for quote ${quote.id}`);
+      } catch (notifError) {
+        console.error("Error creating client notifications:", notifError);
+        // Don't fail the request if notification fails
+      }
 
       res.json({ success: true, message: `Email envoyé à ${account.contactEmail}` });
     } catch (error: any) {
@@ -1620,19 +1783,20 @@ ${cr.replace(/\n/g, '<br>')}
   app.post("/api/quotes/:id/sign-client", async (req: Request, res: Response) => {
     try {
       const { signature, clientName, token } = req.body;
-      
+
       if (!signature || !clientName) {
         return res.status(400).json({ error: "Signature et nom requis" });
       }
-      
-      // Find quote by ID (token verification optional for simpler flow)
-      const orgId = getOrgId(req);
-      const quote = await storage.getQuote(req.params.id, orgId);
-      
+
+      // Find quote by ID only (public route)
+      const quote = await storage.getQuoteByIdOnly(req.params.id);
+
       if (!quote) {
         return res.status(404).json({ error: "Devis non trouvé" });
       }
-      
+
+      const orgId = quote.orgId;
+
       // Verify token - required if quote has a token set
       if (quote.signatureToken) {
         if (!token) {
@@ -1646,26 +1810,48 @@ ${cr.replace(/\n/g, '<br>')}
           return res.status(403).json({ error: "Token de signature expiré" });
         }
       }
-      
+
       const clientSignedAt = new Date();
-      const updatedQuote = await storage.updateQuote(quote.id, orgId, {
+      const updatedQuote = await storage.updateQuoteByIdOnly(quote.id, {
         clientSignature: signature,
         clientSignedAt: clientSignedAt,
         clientSignedBy: clientName
       });
       
+      // Create notification for admin that client signed
+      try {
+        // Get all admin users to notify
+        const memberships = await storage.getMembershipsByOrg(orgId);
+        const adminMemberships = memberships.filter(m => m.role === 'admin');
+
+        for (const membership of adminMemberships) {
+          await storage.createNotification({
+            orgId,
+            userId: membership.userId,
+            title: 'Devis signé par le client',
+            description: `${clientName} a signé le devis ${quote.number || quote.title}`,
+            type: 'success',
+            link: `/quotes`,
+            relatedEntityType: 'quote',
+            relatedEntityId: quote.id,
+          });
+        }
+      } catch (notifError) {
+        console.error("Error creating signature notification:", notifError);
+      }
+
       // Check if both signatures are present to update status and generate PDF
       if (updatedQuote?.clientSignature && updatedQuote?.adminSignature) {
-        await storage.updateQuote(quote.id, orgId, { status: 'signed' });
-        
+        await storage.updateQuoteByIdOnly(quote.id, { status: 'signed' });
+
         // Generate signed PDF and upload to Google Drive
         try {
           const { generateSignedQuotePDF } = await import("./pdf");
-          const { uploadFileToDrive } = await import("./drive");
-          
+          const { uploadFileToDrive, getOrCreateFolder } = await import("./drive");
+
           // Get account info for the PDF
           const account = quote.accountId ? await storage.getAccount(quote.accountId, orgId) : null;
-          
+
           const pdfBuffer = await generateSignedQuotePDF({
             quoteNumber: quote.number || `DEVIS-${quote.id.slice(0, 8)}`,
             title: quote.title,
@@ -1679,15 +1865,45 @@ ${cr.replace(/\n/g, '<br>')}
             clientSignedBy: clientName,
             clientSignedAt: clientSignedAt.toISOString()
           });
-          
-          const filename = `Devis_Signe_${quote.number || quote.id.slice(0, 8)}_${new Date().toISOString().split('T')[0]}.pdf`;
-          const driveFile = await uploadFileToDrive(pdfBuffer, filename, 'application/pdf', 'IA Infinity - Devis Signés');
-          
+
+          // Get or create client folder for signed quotes
+          const clientFolderName = account?.name || 'Client';
+          let driveFile;
+          try {
+            const clientFolderId = await getOrCreateFolder(clientFolderName, 'Clients - Devis Signés');
+            const filename = `Devis_Signe_${quote.number || quote.id.slice(0, 8)}_${new Date().toISOString().split('T')[0]}.pdf`;
+            driveFile = await uploadFileToDrive(pdfBuffer, filename, 'application/pdf', clientFolderName);
+          } catch (folderError) {
+            console.error("Error with client folder:", folderError);
+            const filename = `Devis_Signe_${quote.number || quote.id.slice(0, 8)}_${new Date().toISOString().split('T')[0]}.pdf`;
+            driveFile = await uploadFileToDrive(pdfBuffer, filename, 'application/pdf', 'IA Infinity - Devis Signés');
+          }
+
           // Update quote with signed PDF URL
-          const finalQuote = await storage.updateQuote(quote.id, orgId, {
-            signedPdfUrl: driveFile.webViewLink || driveFile.webContentLink
+          const signedPdfUrl = driveFile.webViewLink || driveFile.webContentLink;
+          const finalQuote = await storage.updateQuoteByIdOnly(quote.id, {
+            signedPdfUrl
           });
-          
+
+          // Create document record in client's document space
+          if (quote.accountId && signedPdfUrl) {
+            try {
+              await storage.createDocument({
+                orgId,
+                accountId: quote.accountId,
+                projectId: null,
+                dealId: quote.dealId || null,
+                name: `Devis ${quote.number || ''} - ${quote.title} (Signé)`,
+                url: signedPdfUrl,
+                mimeType: 'application/pdf',
+                storageProvider: 'drive',
+              });
+              console.log(`Document record created for signed quote ${quote.id}`);
+            } catch (docError) {
+              console.error("Error creating document record for quote:", docError);
+            }
+          }
+
           console.log(`Signed quote PDF uploaded to Google Drive: ${driveFile.webViewLink}`);
           res.json({ success: true, quote: finalQuote });
           return;
@@ -1696,7 +1912,7 @@ ${cr.replace(/\n/g, '<br>')}
           // Continue with response even if PDF generation fails
         }
       }
-      
+
       res.json({ success: true, quote: updatedQuote });
     } catch (error: any) {
       console.error("Client sign quote error:", error);
@@ -1738,13 +1954,14 @@ ${cr.replace(/\n/g, '<br>')}
   app.get("/api/quotes/:id/public", async (req: Request, res: Response) => {
     try {
       const { token } = req.query;
-      const orgId = getOrgId(req);
-      const quote = await storage.getQuote(req.params.id, orgId);
-      
+
+      // Get quote by ID only (public route)
+      const quote = await storage.getQuoteByIdOnly(req.params.id);
+
       if (!quote) {
         return res.status(404).json({ error: "Devis non trouvé" });
       }
-      
+
       // Verify token
       if (quote.signatureToken && token) {
         const hashedToken = hashToken(token as string);
@@ -1758,29 +1975,52 @@ ${cr.replace(/\n/g, '<br>')}
         // No token and not authenticated
         return res.status(403).json({ error: "Accès non autorisé" });
       }
-      
+
       // Get deal and account info
-      const deal = await storage.getDeal(quote.dealId, orgId);
-      const account = deal?.accountId ? await storage.getAccount(deal.accountId, orgId) : null;
-      
-      // Return public quote info (hide sensitive data)
+      const deal = await storage.getDeal(quote.dealId, quote.orgId);
+      const account = deal?.accountId ? await storage.getAccount(deal.accountId, quote.orgId) : null;
+
+      // Get line items
+      const lineItems = await storage.getQuoteLineItems(quote.id);
+
+      // Return public quote info with details for inline display
       res.json({
         id: quote.id,
         number: quote.number,
         title: quote.title,
+        description: quote.description,
         amount: quote.amount,
+        vatRate: quote.vatRate,
+        vatAmount: quote.vatAmount,
+        totalWithVat: quote.totalWithVat,
+        validityDays: quote.validityDays,
+        expiresAt: quote.expiresAt,
+        termsAndConditions: quote.termsAndConditions,
+        paymentTerms: quote.paymentTerms,
+        notes: quote.notes,
         status: quote.status,
         quoteUrl: quote.quoteUrl,
         pdfUrl: quote.pdfUrl,
         driveFileUrl: quote.driveFileUrl,
-        adminSignature: quote.adminSignature ? true : false, // Only indicate presence
+        adminSignature: quote.adminSignature ? true : false,
         adminSignedAt: quote.adminSignedAt,
         adminSignedBy: quote.adminSignedBy,
         clientSignature: quote.clientSignature ? true : false,
         clientSignedAt: quote.clientSignedAt,
         clientSignedBy: quote.clientSignedBy,
         accountName: account?.name,
-        createdAt: quote.createdAt
+        clientName: account?.contactName || account?.name,
+        createdAt: quote.createdAt,
+        lineItems: lineItems.map(item => ({
+          id: item.id,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          unitPrice: item.unitPrice,
+          vatRate: item.vatRate,
+          totalHt: item.totalHt,
+          sortOrder: item.sortOrder
+        }))
       });
     } catch (error: any) {
       console.error("Get public quote error:", error);
@@ -2206,7 +2446,28 @@ Génère un contrat complet et professionnel adapté à ce client.`;
       } catch (docError) {
         console.error("Failed to create document record:", docError);
       }
-      
+
+      // Create notification for admin that client signed the contract
+      try {
+        const memberships = await storage.getMembershipsByOrg(contract.orgId);
+        const adminMemberships = memberships.filter(m => m.role === 'admin');
+
+        for (const membership of adminMemberships) {
+          await storage.createNotification({
+            orgId: contract.orgId,
+            userId: membership.userId,
+            title: 'Contrat signé par le client',
+            description: `${contract.clientName} a signé le contrat ${contract.contractNumber || contract.title}`,
+            type: 'success',
+            link: `/contracts`,
+            relatedEntityType: 'contract',
+            relatedEntityId: contract.id,
+          });
+        }
+      } catch (notifError) {
+        console.error("Error creating contract signature notification:", notifError);
+      }
+
       // Try to save signed PDF to Drive (async, don't block response)
       try {
         if (contract.driveFileId) {
@@ -3834,11 +4095,49 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     try {
       const orgId = getOrgId(req);
       const parsed = createInvitationSchema.parse(req.body);
-      
+
+      // STRICT VALIDATION: Ensure client invitations have accountId
+      if ((parsed.role === 'client_admin' || parsed.role === 'client_member') && !parsed.accountId) {
+        return res.status(400).json({
+          error: 'Validation Error',
+          message: 'accountId est obligatoire pour les invitations client'
+        });
+      }
+
+      // STRICT VALIDATION: Ensure vendor invitations have vendorId
+      if (parsed.role === 'vendor' && !parsed.vendorId) {
+        return res.status(400).json({
+          error: 'Validation Error',
+          message: 'vendorId est obligatoire pour les invitations vendor'
+        });
+      }
+
+      // Verify that the account exists if accountId is provided
+      if (parsed.accountId) {
+        const account = await storage.getAccount(parsed.accountId, orgId);
+        if (!account) {
+          return res.status(404).json({
+            error: 'Account Not Found',
+            message: `Account ${parsed.accountId} n'existe pas`
+          });
+        }
+      }
+
+      // Verify that the vendor exists if vendorId is provided
+      if (parsed.vendorId) {
+        const vendor = await storage.getVendor(parsed.vendorId, orgId);
+        if (!vendor) {
+          return res.status(404).json({
+            error: 'Vendor Not Found',
+            message: `Vendor ${parsed.vendorId} n'existe pas`
+          });
+        }
+      }
+
       const token = generateToken();
       const tokenHash = hashToken(token);
       const expiresAt = new Date(Date.now() + parsed.expiresInMinutes * 60 * 1000);
-      
+
       const invitation = await storage.createInvitation({
         orgId,
         email: parsed.email,
@@ -4999,21 +5298,644 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     }
   });
 
+  // Debug route to check client session
+  app.get("/api/client/debug-session", requireClient, async (req: Request, res: Response) => {
+    res.json({
+      userId: req.session.userId,
+      email: req.session.email,
+      role: req.session.role,
+      space: req.session.space,
+      accountId: req.session.accountId,
+      vendorContactId: req.session.vendorContactId,
+      orgId: req.session.orgId,
+    });
+  });
+
+  // Diagnostic route for a specific user (admin only)
+  app.post("/api/admin/diagnostic-user", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        return res.status(400).json({ error: "Email required" });
+      }
+
+      const orgId = getOrgId(req);
+      const normalizedEmail = email.toLowerCase();
+
+      // Get user
+      const user = await storage.getUserByEmail(normalizedEmail);
+
+      if (!user) {
+        return res.json({
+          found: false,
+          email: normalizedEmail,
+          message: "User not found in database"
+        });
+      }
+
+      // Get ALL memberships
+      const memberships = await storage.getMembershipsByUser(user.id, orgId);
+
+      // Get all invitations for this email
+      const allInvitations = await storage.getInvitations(orgId);
+      const userInvitations = allInvitations.filter(inv =>
+        inv.email.toLowerCase() === normalizedEmail
+      );
+
+      // Get detailed info for each membership
+      const membershipDetails = await Promise.all(memberships.map(async (membership) => {
+        const details: any = {
+          id: membership.id,
+          role: membership.role,
+          space: membership.space,
+          accountId: membership.accountId,
+          vendorContactId: membership.vendorContactId,
+        };
+
+        // Get account if client
+        if (membership.accountId) {
+          const account = await storage.getAccount(membership.accountId, orgId);
+          details.account = account ? {
+            id: account.id,
+            name: account.name,
+            contactEmail: account.contactEmail,
+          } : null;
+        }
+
+        // Get vendor/contact if vendor
+        if (membership.vendorContactId) {
+          const contact = await storage.getContact(membership.vendorContactId, orgId);
+          details.vendorContact = contact ? {
+            id: contact.id,
+            name: contact.name,
+            email: contact.email,
+            vendorId: contact.vendorId,
+          } : null;
+
+          // Get assigned projects for this vendor
+          const projectIds = await getVendorProjectIds(orgId, membership.vendorContactId);
+          const allProjects = await storage.getProjects(orgId);
+          const assignedProjects = allProjects.filter(p => projectIds.includes(p.id));
+
+          details.assignedProjects = assignedProjects.map(p => ({
+            id: p.id,
+            name: p.name,
+            vendorContactId: p.vendorContactId,
+            accountId: p.accountId,
+          }));
+        }
+
+        return details;
+      }));
+
+      return res.json({
+        found: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          hasPassword: !!user.password,
+        },
+        memberships: membershipDetails,
+        invitations: userInvitations.map(inv => ({
+          id: inv.id,
+          role: inv.role,
+          space: inv.space,
+          status: inv.status,
+          accountId: inv.accountId,
+          vendorId: inv.vendorId,
+          createdAt: inv.createdAt,
+          usedAt: inv.usedAt,
+        })),
+      });
+    } catch (error) {
+      console.error("Diagnostic user error:", error);
+      res.status(500).json({ error: "Failed to diagnose user" });
+    }
+  });
+
+  // Create additional membership for a user (admin only)
+  app.post("/api/admin/create-membership", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { userId, role, space, vendorContactId, accountId } = req.body;
+
+      if (!userId || !role || !space) {
+        return res.status(400).json({ error: "userId, role, and space are required" });
+      }
+
+      const orgId = getOrgId(req);
+
+      // Verify user exists
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Create the membership
+      const membership = await storage.createMembership({
+        userId,
+        orgId,
+        role,
+        space,
+        accountId: accountId || null,
+        vendorContactId: vendorContactId || null,
+      });
+
+      console.log(`Created additional membership for ${user.email}: ${role} (${space})`);
+
+      return res.json({
+        success: true,
+        message: `Membership created: ${role} (${space})`,
+        membership: {
+          id: membership.id,
+          role: membership.role,
+          space: membership.space,
+          accountId: membership.accountId,
+          vendorContactId: membership.vendorContactId,
+        },
+      });
+    } catch (error) {
+      console.error("Create membership error:", error);
+      res.status(500).json({ error: "Failed to create membership" });
+    }
+  });
+
+  // Delete membership and auto-close account if no more memberships (admin only)
+  app.delete("/api/admin/memberships/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const orgId = getOrgId(req);
+
+      // Get membership before deleting
+      const allMemberships = await storage.getMemberships(orgId);
+      const membership = allMemberships.find(m => m.id === id);
+
+      if (!membership) {
+        return res.status(404).json({ error: "Membership not found" });
+      }
+
+      const userId = membership.userId;
+
+      // Delete the membership
+      await storage.deleteMembership(id, orgId);
+      console.log(`Deleted membership ${id} for user ${userId}`);
+
+      // Check if user has other memberships
+      const userMemberships = await storage.getMembershipsByUser(userId, orgId);
+
+      if (userMemberships.length === 0) {
+        // No more memberships - deactivate user
+        await storage.deactivateUser(userId);
+        console.log(`User ${userId} deactivated - no more memberships`);
+
+        return res.json({
+          success: true,
+          message: "Membership deleted and user account closed (no more access)",
+          userDeactivated: true,
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "Membership deleted",
+        userDeactivated: false,
+        remainingMemberships: userMemberships.length,
+      });
+    } catch (error) {
+      console.error("Delete membership error:", error);
+      res.status(500).json({ error: "Failed to delete membership" });
+    }
+  });
+
+  // Clean up orphaned user accounts (no memberships) (admin only)
+  app.post("/api/admin/cleanup-orphaned-users", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const allMemberships = await storage.getMemberships(orgId);
+      const allUsers = await db.select().from(users);
+
+      const usersWithMemberships = new Set(allMemberships.map(m => m.userId));
+      const orphanedUsers = allUsers.filter(u => !usersWithMemberships.has(u.id) && u.isActive);
+
+      let deactivated = 0;
+      for (const user of orphanedUsers) {
+        await storage.deactivateUser(user.id);
+        deactivated++;
+        console.log(`Deactivated orphaned user: ${user.email}`);
+      }
+
+      res.json({
+        success: true,
+        deactivated,
+        orphanedUsers: orphanedUsers.map(u => ({ id: u.id, email: u.email, name: u.name })),
+      });
+    } catch (error) {
+      console.error("Cleanup orphaned users error:", error);
+      res.status(500).json({ error: "Failed to cleanup orphaned users" });
+    }
+  });
+
+  // Fix user role/membership (admin only)
+  app.post("/api/admin/fix-user-role", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { email, role, space, vendorContactId, accountId } = req.body;
+
+      if (!email || !role || !space) {
+        return res.status(400).json({ error: "Email, role, and space are required" });
+      }
+
+      const orgId = getOrgId(req);
+      const normalizedEmail = email.toLowerCase();
+
+      // Get user
+      const user = await storage.getUserByEmail(normalizedEmail);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Get existing membership
+      const membership = await storage.getMembershipByUserAndOrg(user.id, orgId);
+      if (!membership) {
+        return res.status(404).json({ error: "No membership found for this user" });
+      }
+
+      // Update membership
+      const updates: Partial<any> = {
+        role,
+        space,
+        accountId: accountId || null,
+        vendorContactId: vendorContactId || null,
+      };
+
+      await storage.updateMembership(membership.id, orgId, updates);
+
+      console.log(`Updated membership for ${email}: role=${role}, space=${space}, accountId=${accountId}, vendorContactId=${vendorContactId}`);
+
+      return res.json({
+        success: true,
+        message: `User ${email} updated to ${role} (${space})`,
+        user: {
+          email: user.email,
+          name: user.name,
+        },
+        membership: {
+          ...membership,
+          ...updates,
+        },
+      });
+    } catch (error) {
+      console.error("Fix user role error:", error);
+      res.status(500).json({ error: "Failed to fix user role" });
+    }
+  });
+
+  // Diagnostic complet de l'architecture (admin only)
+  app.post("/api/admin/diagnostic-architecture", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+
+      // Get all data
+      const allProjects = await storage.getProjects(orgId);
+      const allAccounts = await storage.getAccounts(orgId);
+      const allContacts = await storage.getContacts(orgId);
+      const allVendors = await storage.getVendors(orgId);
+      const allMemberships = await storage.getMemberships(orgId);
+
+      // Analyze projects
+      const projectsWithoutAccount = allProjects.filter(p => !p.accountId);
+      const projectsWithAccount = allProjects.filter(p => p.accountId);
+      const projectsWithVendor = allProjects.filter(p => p.vendorContactId);
+      const projectsWithoutVendor = allProjects.filter(p => !p.vendorContactId);
+
+      // Analyze contacts
+      const clientContacts = allContacts.filter(c => c.accountId);
+      const vendorContacts = allContacts.filter(c => c.vendorId);
+      const vendorContactsWithoutVendorId = allContacts.filter(c => c.contactType === 'vendor' && !c.vendorId);
+
+      // Analyze memberships
+      const clientMemberships = allMemberships.filter(m => m.role === 'client_admin' || m.role === 'client_member');
+      const vendorMemberships = allMemberships.filter(m => m.role === 'vendor');
+      const clientMembershipsWithoutAccount = clientMemberships.filter(m => !m.accountId);
+      const vendorMembershipsWithoutContact = vendorMemberships.filter(m => !m.vendorContactId);
+
+      // Check broken relations
+      const brokenProjectAccounts = [];
+      for (const project of projectsWithAccount) {
+        const account = allAccounts.find(a => a.id === project.accountId);
+        if (!account) {
+          brokenProjectAccounts.push({ projectId: project.id, projectName: project.name, accountId: project.accountId });
+        }
+      }
+
+      const brokenProjectVendors = [];
+      for (const project of projectsWithVendor) {
+        const contact = allContacts.find(c => c.id === project.vendorContactId);
+        if (!contact) {
+          brokenProjectVendors.push({ projectId: project.id, projectName: project.name, vendorContactId: project.vendorContactId });
+        } else if (!contact.vendorId) {
+          brokenProjectVendors.push({
+            projectId: project.id,
+            projectName: project.name,
+            vendorContactId: project.vendorContactId,
+            contactName: contact.name,
+            issue: 'Contact has no vendorId'
+          });
+        }
+      }
+
+      res.json({
+        summary: {
+          projects: {
+            total: allProjects.length,
+            withAccount: projectsWithAccount.length,
+            withoutAccount: projectsWithoutAccount.length,
+            withVendor: projectsWithVendor.length,
+            withoutVendor: projectsWithoutVendor.length,
+            brokenAccountLinks: brokenProjectAccounts.length,
+            brokenVendorLinks: brokenProjectVendors.length,
+          },
+          accounts: {
+            total: allAccounts.length,
+          },
+          contacts: {
+            total: allContacts.length,
+            client: clientContacts.length,
+            vendor: vendorContacts.length,
+            vendorWithoutVendorId: vendorContactsWithoutVendorId.length,
+          },
+          vendors: {
+            total: allVendors.length,
+          },
+          memberships: {
+            total: allMemberships.length,
+            client: clientMemberships.length,
+            vendor: vendorMemberships.length,
+            clientWithoutAccount: clientMembershipsWithoutAccount.length,
+            vendorWithoutContact: vendorMembershipsWithoutContact.length,
+          },
+        },
+        issues: {
+          projectsWithoutAccount: projectsWithoutAccount.map(p => ({ id: p.id, name: p.name })),
+          brokenProjectAccounts,
+          brokenProjectVendors,
+          vendorContactsWithoutVendorId: vendorContactsWithoutVendorId.map(c => ({
+            id: c.id,
+            name: c.name,
+            email: c.email
+          })),
+          clientMembershipsWithoutAccount: clientMembershipsWithoutAccount.map(m => ({
+            id: m.id,
+            userId: m.userId,
+            role: m.role
+          })),
+          vendorMembershipsWithoutContact: vendorMembershipsWithoutContact.map(m => ({
+            id: m.id,
+            userId: m.userId,
+            role: m.role
+          })),
+        },
+        details: {
+          allProjects: allProjects.map(p => ({
+            id: p.id,
+            name: p.name,
+            accountId: p.accountId,
+            vendorContactId: p.vendorContactId,
+            status: p.status,
+          })),
+          allAccounts: allAccounts.map(a => ({ id: a.id, name: a.name })),
+          allVendors: allVendors.map(v => ({ id: v.id, name: v.name })),
+          vendorContacts: vendorContacts.map(c => ({
+            id: c.id,
+            name: c.name,
+            email: c.email,
+            vendorId: c.vendorId
+          })),
+        },
+      });
+    } catch (error) {
+      console.error("Diagnostic architecture error:", error);
+      res.status(500).json({ error: "Failed to diagnose architecture" });
+    }
+  });
+
+  // Auto-fix architecture issues (admin only)
+  app.post("/api/admin/fix-architecture", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const fixes = {
+        projectsLinked: 0,
+        contactsFixed: 0,
+        membershipsFixed: 0,
+        errors: [] as string[],
+      };
+
+      // Get all data
+      const allProjects = await storage.getProjects(orgId);
+      const allAccounts = await storage.getAccounts(orgId);
+      const allContacts = await storage.getContacts(orgId);
+      const allVendors = await storage.getVendors(orgId);
+      const allMemberships = await storage.getMemberships(orgId);
+
+      // Fix 1: Link projects without accountId to a default account
+      const projectsWithoutAccount = allProjects.filter(p => !p.accountId);
+      if (projectsWithoutAccount.length > 0) {
+        // Try to find a default account or create one
+        let defaultAccount = allAccounts.find(a => a.name.toLowerCase().includes('default') || a.name.toLowerCase().includes('interne'));
+
+        if (!defaultAccount && allAccounts.length > 0) {
+          // Use first account as default
+          defaultAccount = allAccounts[0];
+        }
+
+        if (defaultAccount) {
+          for (const project of projectsWithoutAccount) {
+            try {
+              await storage.updateProject(project.id, orgId, { accountId: defaultAccount.id });
+              fixes.projectsLinked++;
+              console.log(`✓ Linked project "${project.name}" to account "${defaultAccount.name}"`);
+            } catch (error) {
+              fixes.errors.push(`Failed to link project ${project.name}: ${error}`);
+            }
+          }
+        } else {
+          fixes.errors.push(`No default account found to link ${projectsWithoutAccount.length} projects`);
+        }
+      }
+
+      // Fix 2: Link vendor contacts without vendorId
+      const vendorContacts = allContacts.filter(c => c.contactType === 'vendor');
+      for (const contact of vendorContacts) {
+        if (!contact.vendorId) {
+          // Try to find a vendor by matching name or email
+          const matchingVendor = allVendors.find(v =>
+            contact.name?.toLowerCase().includes(v.name.toLowerCase()) ||
+            v.name.toLowerCase().includes(contact.name?.toLowerCase() || '') ||
+            contact.email?.toLowerCase().includes(v.name.toLowerCase())
+          );
+
+          if (matchingVendor) {
+            try {
+              await storage.updateContact(contact.id, orgId, { vendorId: matchingVendor.id });
+              fixes.contactsFixed++;
+              console.log(`✓ Linked contact "${contact.name}" to vendor "${matchingVendor.name}"`);
+            } catch (error) {
+              fixes.errors.push(`Failed to link contact ${contact.name}: ${error}`);
+            }
+          } else {
+            // If no vendor found, try to create one from the contact info
+            try {
+              const newVendor = await storage.createVendor({
+                orgId,
+                name: contact.name,
+                email: contact.email,
+                phone: contact.phone || undefined,
+                description: `Auto-created from contact ${contact.name}`,
+              });
+              await storage.updateContact(contact.id, orgId, { vendorId: newVendor.id });
+              fixes.contactsFixed++;
+              console.log(`✓ Created vendor and linked contact "${contact.name}"`);
+            } catch (error) {
+              fixes.errors.push(`Failed to create vendor for contact ${contact.name}: ${error}`);
+            }
+          }
+        }
+      }
+
+      // Fix 3: Fix vendor memberships without vendorContactId
+      const vendorMemberships = allMemberships.filter(m => m.role === 'vendor' && !m.vendorContactId);
+      for (const membership of vendorMemberships) {
+        // Try to find a contact for this user's email
+        const user = await storage.getUser(membership.userId);
+        if (user) {
+          const matchingContact = allContacts.find(c =>
+            c.email.toLowerCase() === user.email.toLowerCase() &&
+            c.contactType === 'vendor'
+          );
+
+          if (matchingContact) {
+            try {
+              await storage.updateMembership(membership.id, orgId, { vendorContactId: matchingContact.id });
+              fixes.membershipsFixed++;
+              console.log(`✓ Linked membership for "${user.email}" to contact "${matchingContact.name}"`);
+            } catch (error) {
+              fixes.errors.push(`Failed to link membership for ${user.email}: ${error}`);
+            }
+          } else {
+            fixes.errors.push(`No vendor contact found for user ${user.email}`);
+          }
+        }
+      }
+
+      // Fix 4: Fix client memberships without accountId
+      const clientMemberships = allMemberships.filter(m =>
+        (m.role === 'client_admin' || m.role === 'client_member') && !m.accountId
+      );
+      for (const membership of clientMemberships) {
+        const user = await storage.getUser(membership.userId);
+        if (user) {
+          // Try to find a contact for this user
+          const matchingContact = allContacts.find(c =>
+            c.email.toLowerCase() === user.email.toLowerCase() &&
+            c.accountId
+          );
+
+          if (matchingContact && matchingContact.accountId) {
+            try {
+              await storage.updateMembership(membership.id, orgId, { accountId: matchingContact.accountId });
+              fixes.membershipsFixed++;
+              console.log(`✓ Linked client membership for "${user.email}" to account`);
+            } catch (error) {
+              fixes.errors.push(`Failed to link client membership for ${user.email}: ${error}`);
+            }
+          } else {
+            fixes.errors.push(`No account contact found for client user ${user.email}`);
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        fixes,
+        message: `Fixed ${fixes.projectsLinked} projects, ${fixes.contactsFixed} contacts, ${fixes.membershipsFixed} memberships`,
+      });
+    } catch (error) {
+      console.error("Fix architecture error:", error);
+      res.status(500).json({ error: "Failed to fix architecture" });
+    }
+  });
+
+  // Fix client memberships without accountId (admin only)
+  app.post("/api/admin/fix-client-memberships", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+
+      // Get all accounts
+      const accounts = await storage.getAccounts(orgId);
+      let fixed = 0;
+      let errors = 0;
+
+      for (const account of accounts) {
+        if (!account.contactEmail) continue;
+
+        // Find user by email
+        const user = await storage.getUserByEmail(account.contactEmail.toLowerCase());
+        if (!user) continue;
+
+        // Check membership
+        const membership = await storage.getMembershipByUserAndOrg(user.id, orgId);
+        if (membership && !membership.accountId && (membership.role === 'client_admin' || membership.role === 'client_member')) {
+          try {
+            // Update membership with accountId
+            await storage.updateMembership(membership.id, orgId, { accountId: account.id });
+            console.log(`Fixed membership for ${user.email} - linked to account ${account.name}`);
+            fixed++;
+          } catch (error) {
+            console.error(`Failed to fix membership for ${user.email}:`, error);
+            errors++;
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        message: `Fixed ${fixed} client memberships`,
+        fixed,
+        errors,
+      });
+    } catch (error) {
+      console.error("Fix client memberships error:", error);
+      res.status(500).json({ error: "Failed to fix client memberships" });
+    }
+  });
+
   // Get client's account information
   app.get("/api/client/account", requireClient, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const accountId = req.session.accountId;
-      
+
       if (!accountId) {
-        return res.status(403).json({ error: "No account linked to your profile" });
+        console.error("Client session missing accountId:", {
+          userId: req.session.userId,
+          email: req.session.email,
+          role: req.session.role,
+        });
+        return res.status(403).json({
+          error: "No account linked to your profile",
+          debug: {
+            userId: req.session.userId,
+            role: req.session.role,
+            email: req.session.email,
+          }
+        });
       }
-      
+
       const account = await storage.getAccount(accountId, orgId);
       if (!account) {
         return res.status(404).json({ error: "Account not found" });
       }
-      
+
       res.json(account);
     } catch (error) {
       console.error("Get client account error:", error);
@@ -5088,27 +6010,325 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     }
   });
 
+  // Get contracts for client's account (read-only)
+  app.get("/api/client/contracts", requireClient, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+
+      if (!accountId) {
+        return res.status(403).json({ error: "No account linked" });
+      }
+
+      const allContracts = await storage.getContracts(orgId);
+      const clientContracts = allContracts.filter(c => c.accountId === accountId);
+
+      res.json(clientContracts);
+    } catch (error) {
+      console.error("Get client contracts error:", error);
+      res.status(500).json({ error: "Failed to get client contracts" });
+    }
+  });
+
+  // Get invoices for client's account only (read-only)
+  app.get("/api/client/invoices", requireClient, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+
+      if (!accountId) {
+        return res.status(403).json({ error: "No account linked" });
+      }
+
+      const allInvoices = await storage.getInvoices(orgId);
+      const clientInvoices = allInvoices.filter(i => i.accountId === accountId);
+
+      res.json(clientInvoices);
+    } catch (error) {
+      console.error("Get client invoices error:", error);
+      res.status(500).json({ error: "Failed to get client invoices" });
+    }
+  });
+
+  // ==========================================
+  // CLIENT TEAM MANAGEMENT ROUTES (Client Admin only)
+  // ==========================================
+
+  // Get team members for client account
+  app.get("/api/client/team", requireClient, requireClientAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+
+      if (!accountId) {
+        return res.status(403).json({ error: "Aucun compte associé" });
+      }
+
+      // Get all memberships for this account
+      const allMemberships = await storage.getMembershipsByOrg(orgId);
+      const teamMemberships = allMemberships.filter(m => m.accountId === accountId);
+
+      // Fetch user details for each membership
+      const membersWithUsers = await Promise.all(
+        teamMemberships.map(async (m) => {
+          const user = await storage.getUser(m.userId);
+          return {
+            id: m.id,
+            userId: m.userId,
+            role: m.role,
+            space: m.space,
+            user: user ? {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              avatar: user.avatar,
+            } : null
+          };
+        })
+      );
+
+      res.json(membersWithUsers);
+    } catch (error) {
+      console.error("Get team error:", error);
+      res.status(500).json({ error: "Échec de récupération de l'équipe" });
+    }
+  });
+
+  // Get pending invitations for account
+  app.get("/api/client/team/invitations", requireClient, requireClientAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+
+      if (!accountId) {
+        return res.status(403).json({ error: "Aucun compte associé" });
+      }
+
+      const allInvitations = await storage.getInvitations(orgId, "pending");
+      const accountInvitations = allInvitations.filter(i => i.accountId === accountId);
+
+      res.json(accountInvitations);
+    } catch (error) {
+      console.error("Get invitations error:", error);
+      res.status(500).json({ error: "Échec de récupération des invitations" });
+    }
+  });
+
+  // Invite new team member (client_member only)
+  app.post("/api/client/team/invite", requireClient, requireClientAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+
+      if (!accountId) {
+        return res.status(403).json({ error: "Aucun compte associé" });
+      }
+
+      const { email, name } = req.body;
+
+      // Validate email
+      if (!email || !email.includes('@')) {
+        return res.status(400).json({ error: "Email valide requis" });
+      }
+
+      const normalizedEmail = email.toLowerCase();
+
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(normalizedEmail);
+      if (existingUser) {
+        const membership = await storage.getMembershipByUserAndOrg(existingUser.id, orgId);
+        if (membership && membership.accountId === accountId) {
+          return res.status(400).json({ error: "Cet utilisateur fait déjà partie de l'équipe" });
+        }
+      }
+
+      // Create invitation
+      const token = generateToken();
+      const tokenHash = hashToken(token);
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+      const invitation = await storage.createInvitation({
+        orgId,
+        email: normalizedEmail,
+        name: name || null,
+        role: 'client_member',
+        space: 'client',
+        tokenHash,
+        expiresAt,
+        status: 'pending',
+        accountId,
+        vendorId: null,
+        createdById: req.session.userId!,
+      });
+
+      // Send invitation email
+      const baseUrl = process.env.REPLIT_DEV_DOMAIN
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+        : 'http://localhost:5000';
+      const inviteLink = `${baseUrl}/auth/accept-invite?token=${token}`;
+
+      try {
+        await sendInvitationEmail({
+          to: normalizedEmail,
+          inviterName: req.session.email || 'Administrateur',
+          inviteLink,
+          organizationName: 'IA Infinity',
+          role: 'client_member',
+        });
+      } catch (emailError) {
+        console.error("Failed to send invitation email:", emailError);
+        // Continue anyway - invitation is created
+      }
+
+      res.status(201).json({ success: true, invitation });
+    } catch (error) {
+      console.error("Invite team member error:", error);
+      res.status(500).json({ error: "Échec de l'invitation" });
+    }
+  });
+
+  // Revoke team member invitation
+  app.delete("/api/client/team/invitations/:id", requireClient, requireClientAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+
+      if (!accountId) {
+        return res.status(403).json({ error: "Aucun compte associé" });
+      }
+
+      // Verify invitation belongs to this account
+      const allInvitations = await storage.getInvitations(orgId);
+      const invitation = allInvitations.find(i => i.id === req.params.id);
+
+      if (!invitation || invitation.accountId !== accountId) {
+        return res.status(403).json({ error: "Accès refusé" });
+      }
+
+      await storage.updateInvitation(req.params.id, orgId, { status: 'cancelled' });
+      res.status(204).send();
+    } catch (error) {
+      console.error("Revoke invitation error:", error);
+      res.status(500).json({ error: "Échec de révocation de l'invitation" });
+    }
+  });
+
+  // ==========================================
+  // CLIENT TASKS ROUTES
+  // ==========================================
+
   // Get tasks for client's projects only
   app.get("/api/client/tasks", requireClient, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const accountId = req.session.accountId;
-      
+
       if (!accountId) {
         return res.status(403).json({ error: "No account linked" });
       }
-      
+
       const allProjects = await storage.getProjects(orgId);
       const clientProjects = allProjects.filter(p => p.accountId === accountId);
       const clientProjectIds = clientProjects.map(p => p.id);
-      
+
       const allTasks = await storage.getTasks(orgId);
       const clientTasks = allTasks.filter(t => t.projectId && clientProjectIds.includes(t.projectId));
-      
+
       res.json(clientTasks);
     } catch (error) {
       console.error("Get client tasks error:", error);
       res.status(500).json({ error: "Failed to get client tasks" });
+    }
+  });
+
+  // Create task for client's project
+  app.post("/api/client/tasks", requireClient, requireWriteAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+
+      if (!accountId) {
+        return res.status(403).json({ error: "No account linked" });
+      }
+
+      const { projectId } = req.body;
+      if (!projectId) {
+        return res.status(400).json({ error: "Project ID is required" });
+      }
+
+      // Verify the project belongs to this client
+      const project = await storage.getProject(projectId, orgId);
+      if (!project || project.accountId !== accountId) {
+        return res.status(403).json({ error: "Access denied to this project" });
+      }
+
+      const data = insertTaskSchema.parse({ ...req.body, orgId });
+      const task = await storage.createTask(data);
+      res.status(201).json(task);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      console.error("Create client task error:", error);
+      res.status(500).json({ error: "Failed to create task" });
+    }
+  });
+
+  // Update task for client's project
+  app.patch("/api/client/tasks/:id", requireClient, requireWriteAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+
+      if (!accountId) {
+        return res.status(403).json({ error: "No account linked" });
+      }
+
+      // Get the task and verify it belongs to a client project
+      const existingTask = await storage.getTask(req.params.id, orgId);
+      if (!existingTask || !existingTask.projectId) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      const project = await storage.getProject(existingTask.projectId, orgId);
+      if (!project || project.accountId !== accountId) {
+        return res.status(403).json({ error: "Access denied to this task" });
+      }
+
+      const task = await storage.updateTask(req.params.id, orgId, req.body);
+      res.json(task);
+    } catch (error) {
+      console.error("Update client task error:", error);
+      res.status(500).json({ error: "Failed to update task" });
+    }
+  });
+
+  // Delete task for client's project
+  app.delete("/api/client/tasks/:id", requireClient, requireWriteAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+
+      if (!accountId) {
+        return res.status(403).json({ error: "No account linked" });
+      }
+
+      // Get the task and verify it belongs to a client project
+      const existingTask = await storage.getTask(req.params.id, orgId);
+      if (!existingTask || !existingTask.projectId) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+
+      const project = await storage.getProject(existingTask.projectId, orgId);
+      if (!project || project.accountId !== accountId) {
+        return res.status(403).json({ error: "Access denied to this task" });
+      }
+
+      await storage.deleteTask(req.params.id, orgId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete client task error:", error);
+      res.status(500).json({ error: "Failed to delete task" });
     }
   });
 
@@ -5188,7 +6408,7 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       
       // Get comments for this project
       const comments = await storage.getProjectComments(projectId, orgId);
-      
+
       // Get user info for comments
       const commentUsers = await Promise.all(
         comments.map(async (c) => {
@@ -5196,13 +6416,17 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
           return { ...c, userName: user?.name || 'Utilisateur' };
         })
       );
-      
+
+      // Get all vendors for the organization
+      const allVendors = await storage.getVendors(orgId);
+
       res.json({
         project,
         tasks: projectTasks,
         missions: projectMissions,
         documents: projectDocuments,
         comments: commentUsers,
+        vendors: allVendors,
       });
     } catch (error) {
       console.error("Get client project detail error:", error);
@@ -5211,7 +6435,7 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
   });
 
   // Add comment to project (client)
-  app.post("/api/client/projects/:id/comments", requireClient, async (req: Request, res: Response) => {
+  app.post("/api/client/projects/:id/comments", requireClient, requireWriteAccess, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const accountId = req.session.accountId;
@@ -5239,9 +6463,20 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
         content: content.trim(),
         isFromClient: true,
       });
-      
+
       const user = await storage.getUser(userId);
-      
+
+      // Send notification to stakeholders
+      await notifyProjectComment({
+        orgId,
+        projectId,
+        commentId: comment.id,
+        authorId: userId,
+        authorName: user?.name || 'Utilisateur',
+        content: content.trim(),
+        isFromClient: true,
+      });
+
       res.status(201).json({ ...comment, userName: user?.name || 'Utilisateur' });
     } catch (error) {
       console.error("Create project comment error:", error);
@@ -5256,16 +6491,10 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
   // Get projects assigned to authenticated vendor
   app.get("/api/vendor/projects", requireVendor, async (req: Request, res: Response) => {
     try {
-      const orgId = getOrgId(req);
-      const vendorContactId = req.session.vendorContactId;
-      
-      if (!vendorContactId) {
-        return res.status(403).json({ error: "No vendor profile linked" });
-      }
-      
-      const allProjects = await storage.getProjects(orgId);
-      const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
-      
+      const context = getAccessContext(req);
+      const allProjects = await storage.getProjects(context.orgId);
+      const vendorProjects = await filterProjectsByAccess(allProjects, context);
+
       res.json(vendorProjects);
     } catch (error) {
       console.error("Get vendor projects error:", error);
@@ -5276,22 +6505,10 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
   // Get accounts/clients for projects assigned to authenticated vendor
   app.get("/api/vendor/accounts", requireVendor, async (req: Request, res: Response) => {
     try {
-      const orgId = getOrgId(req);
-      const vendorContactId = req.session.vendorContactId;
-      
-      if (!vendorContactId) {
-        return res.status(403).json({ error: "No vendor profile linked" });
-      }
-      
-      const allProjects = await storage.getProjects(orgId);
-      const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
-      
-      const accountIds = vendorProjects.map(p => p.accountId).filter((id): id is string => id !== null);
-      const uniqueAccountIds = Array.from(new Set(accountIds));
-      
-      const allAccounts = await storage.getAccounts(orgId);
-      const vendorAccounts = allAccounts.filter(a => uniqueAccountIds.includes(a.id));
-      
+      const context = getAccessContext(req);
+      const allAccounts = await storage.getAccounts(context.orgId);
+      const vendorAccounts = await filterAccountsByAccess(allAccounts, context);
+
       res.json(vendorAccounts);
     } catch (error) {
       console.error("Get vendor accounts error:", error);
@@ -5304,25 +6521,27 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     try {
       const orgId = getOrgId(req);
       const vendorContactId = req.session.vendorContactId;
-      
+
       if (!vendorContactId) {
         return res.status(403).json({ error: "No vendor profile linked" });
       }
-      
+
+      // Use the corrected function to get vendor project IDs
+      const vendorProjectIds = await getVendorProjectIds(orgId, vendorContactId);
+
       const allProjects = await storage.getProjects(orgId);
-      const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
-      const vendorProjectIds = vendorProjects.map(p => p.id);
-      
+      const vendorProjects = allProjects.filter(p => vendorProjectIds.includes(p.id));
+
       const accountIdsList = vendorProjects.map(p => p.accountId).filter((id): id is string => id !== null);
       const uniqueAccountIds = Array.from(new Set(accountIdsList));
-      
+
       const allDocuments = await storage.getDocuments(orgId);
-      
-      const vendorDocuments = allDocuments.filter(d => 
+
+      const vendorDocuments = allDocuments.filter(d =>
         (d.projectId && vendorProjectIds.includes(d.projectId)) ||
         (d.accountId && uniqueAccountIds.includes(d.accountId))
       );
-      
+
       res.json(vendorDocuments);
     } catch (error) {
       console.error("Get vendor documents error:", error);
@@ -5335,18 +6554,17 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     try {
       const orgId = getOrgId(req);
       const vendorContactId = req.session.vendorContactId;
-      
+
       if (!vendorContactId) {
         return res.status(403).json({ error: "No vendor profile linked" });
       }
-      
-      const allProjects = await storage.getProjects(orgId);
-      const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
-      const vendorProjectIds = vendorProjects.map(p => p.id);
-      
+
+      // Use the corrected function to get vendor project IDs
+      const vendorProjectIds = await getVendorProjectIds(orgId, vendorContactId);
+
       const allMissions = await storage.getMissions(orgId);
       const vendorMissions = allMissions.filter(m => m.projectId && vendorProjectIds.includes(m.projectId));
-      
+
       res.json(vendorMissions);
     } catch (error) {
       console.error("Get vendor missions error:", error);
@@ -5357,20 +6575,10 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
   // Get tasks for projects assigned to authenticated vendor
   app.get("/api/vendor/tasks", requireVendor, async (req: Request, res: Response) => {
     try {
-      const orgId = getOrgId(req);
-      const vendorContactId = req.session.vendorContactId;
-      
-      if (!vendorContactId) {
-        return res.status(403).json({ error: "No vendor profile linked" });
-      }
-      
-      const allProjects = await storage.getProjects(orgId);
-      const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
-      const vendorProjectIds = vendorProjects.map(p => p.id);
-      
-      const allTasks = await storage.getTasks(orgId);
-      const vendorTasks = allTasks.filter(t => t.projectId && vendorProjectIds.includes(t.projectId));
-      
+      const context = getAccessContext(req);
+      const allTasks = await storage.getTasks(context.orgId);
+      const vendorTasks = await filterTasksByAccess(allTasks, context);
+
       res.json(vendorTasks);
     } catch (error) {
       console.error("Get vendor tasks error:", error);
@@ -5383,28 +6591,30 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     try {
       const orgId = getOrgId(req);
       const vendorContactId = req.session.vendorContactId;
-      
+
       if (!vendorContactId) {
         return res.status(403).json({ error: "No vendor profile linked" });
       }
-      
+
+      // Use the corrected function to get vendor project IDs
+      const vendorProjectIds = await getVendorProjectIds(orgId, vendorContactId);
+
       const allProjects = await storage.getProjects(orgId);
-      const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
-      const vendorProjectIds = vendorProjects.map(p => p.id);
-      
+      const vendorProjects = allProjects.filter(p => vendorProjectIds.includes(p.id));
+
       const allMissions = await storage.getMissions(orgId);
       const vendorMissions = allMissions.filter(m => m.projectId && vendorProjectIds.includes(m.projectId));
-      
+
       const allTasks = await storage.getTasks(orgId);
       const vendorTasks = allTasks.filter(t => t.projectId && vendorProjectIds.includes(t.projectId));
-      
+
       const activeProjects = vendorProjects.filter(p => p.status === 'active').length;
       const completedProjects = vendorProjects.filter(p => p.status === 'completed').length;
       const activeMissions = vendorMissions.filter(m => m.status === 'in_progress').length;
       const pendingMissions = vendorMissions.filter(m => m.status === 'pending').length;
       const completedTasks = vendorTasks.filter(t => t.status === 'completed').length;
       const totalTasks = vendorTasks.length;
-      
+
       res.json({
         projects: {
           total: vendorProjects.length,
@@ -5448,6 +6658,223 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       res.status(500).json({ error: "Failed to get vendor profile" });
     }
   });
+
+  // Get contracts for vendor's assigned projects (read-only)
+  app.get("/api/vendor/contracts", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.session.vendorContactId;
+
+      if (!vendorContactId) {
+        return res.status(403).json({ error: "No vendor profile linked" });
+      }
+
+      // Get the vendor ID from the contact
+      const allContacts = await storage.getContacts(orgId);
+      const contact = allContacts.find(c => c.id === vendorContactId);
+      const actualVendorId = contact?.vendorId;
+
+      // Use the corrected function to get vendor project IDs
+      const vendorProjectIds = await getVendorProjectIds(orgId, vendorContactId);
+
+      // Get contracts linked to these projects or to the vendor
+      const allContracts = await storage.getContracts(orgId);
+      const vendorContracts = allContracts.filter(c =>
+        (c.projectId && vendorProjectIds.includes(c.projectId)) ||
+        (actualVendorId && c.vendorId === actualVendorId)
+      );
+
+      res.json(vendorContracts);
+    } catch (error) {
+      console.error("Get vendor contracts error:", error);
+      res.status(500).json({ error: "Failed to get vendor contracts" });
+    }
+  });
+
+  // Get vendor's own invoices (invoices they submitted)
+  app.get("/api/vendor/invoices", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.session.vendorContactId;
+
+      if (!vendorContactId) {
+        return res.status(403).json({ error: "No vendor profile linked" });
+      }
+
+      // Get the actual vendor ID from the contact
+      const allContacts = await storage.getContacts(orgId);
+      const contact = allContacts.find(c => c.id === vendorContactId);
+      const actualVendorId = contact?.vendorId;
+
+      if (!actualVendorId) {
+        return res.json([]); // No vendor ID, no invoices
+      }
+
+      // Get invoices submitted by this vendor
+      const allInvoices = await storage.getInvoices(orgId);
+      const vendorInvoices = allInvoices.filter(i => i.vendorId === actualVendorId);
+
+      res.json(vendorInvoices);
+    } catch (error) {
+      console.error("Get vendor invoices error:", error);
+      res.status(500).json({ error: "Failed to get vendor invoices" });
+    }
+  });
+
+  // Upload invoice file (PDF or Image) to Google Drive
+  app.post("/api/vendor/invoices/upload", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const { fileData, fileName, mimeType } = req.body;
+
+      // Validate file type
+      if (!mimeType || (!mimeType.includes('pdf') && !mimeType.includes('image'))) {
+        return res.status(400).json({ error: "Seuls les PDF et images sont acceptés" });
+      }
+
+      // Validate required fields
+      if (!fileData || !fileName) {
+        return res.status(400).json({ error: "Fichier et nom de fichier requis" });
+      }
+
+      // Convert base64 to buffer
+      const buffer = Buffer.from(fileData, 'base64');
+
+      // Upload to Google Drive
+      const driveFile = await uploadFileToDrive(
+        buffer,
+        fileName,
+        mimeType,
+        'IA Infinity - Factures Vendors'
+      );
+
+      res.json({
+        fileUrl: driveFile.webViewLink,
+        fileId: driveFile.id
+      });
+    } catch (error) {
+      console.error("Invoice upload error:", error);
+      res.status(500).json({ error: "Échec de l'upload du fichier" });
+    }
+  });
+
+  // Create a new vendor invoice (vendor submits their own invoice)
+  app.post("/api/vendor/invoices", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.session.vendorContactId;
+
+      if (!vendorContactId) {
+        return res.status(403).json({ error: "Aucun profil vendeur associé" });
+      }
+
+      // Get the actual vendor ID from the contact
+      const allContacts = await storage.getContacts(orgId);
+      const contact = allContacts.find(c => c.id === vendorContactId);
+      const actualVendorId = contact?.vendorId;
+
+      if (!actualVendorId) {
+        return res.status(403).json({ error: "Profil vendeur incomplet" });
+      }
+
+      const {
+        description,    // Objet/Description (obligatoire)
+        amount,         // Montant (obligatoire)
+        invoiceType,    // Nature: prestation/materiel/frais (obligatoire)
+        accountId,      // Client à facturer (obligatoire)
+        pdfUrl,         // URL du fichier uploadé (obligatoire)
+        projectId       // Optionnel
+      } = req.body;
+
+      // Validation stricte de tous les champs obligatoires
+      if (!description || !amount || !invoiceType || !accountId || !pdfUrl) {
+        return res.status(400).json({
+          error: "Tous les champs sont obligatoires (description, montant, nature, client, fichier)"
+        });
+      }
+
+      // Vérifier que le vendor a accès à ce client
+      const context = getAccessContext(req);
+      const allAccounts = await storage.getAccounts(orgId);
+      const vendorAccounts = await filterAccountsByAccess(allAccounts, context);
+
+      if (!vendorAccounts.find(a => a.id === accountId)) {
+        return res.status(403).json({
+          error: "Vous n'avez pas accès à ce client"
+        });
+      }
+
+      // Générer numéro de facture unique
+      const invoiceNumber = `VND-${Date.now().toString(36).toUpperCase()}`;
+
+      // Créer la facture avec le vrai vendorId
+      const invoice = await storage.createInvoice({
+        orgId,
+        vendorId: actualVendorId,
+        accountId,
+        projectId: projectId || null,
+        invoiceNumber,
+        description,
+        amount: amount.toString(),
+        invoiceType,
+        pdfUrl,
+        issuedDate: new Date(),
+        status: 'sent',
+        currency: 'EUR'
+      });
+
+      res.status(201).json(invoice);
+    } catch (error) {
+      console.error("Create vendor invoice error:", error);
+      res.status(500).json({ error: "Échec de création de la facture" });
+    }
+  });
+
+  // =====================
+  // Helper Functions for Channels
+  // =====================
+
+  /**
+   * Ensures that a vendor project channel exists for a given project.
+   * If the channel already exists, returns it. Otherwise, creates a new one.
+   */
+  async function ensureVendorProjectChannel(
+    projectId: string,
+    orgId: string
+  ): Promise<any> {
+    try {
+      // Check if channel already exists for this project
+      const existingChannels = await storage.getChannelsByProject(projectId, orgId);
+      const vendorChannel = existingChannels.find(c => c.type === 'vendor' && c.scope === 'project');
+
+      if (vendorChannel) {
+        return vendorChannel;
+      }
+
+      // Get project info to create meaningful channel name
+      const project = await storage.getProject(projectId, orgId);
+      if (!project) {
+        throw new Error("Project not found");
+      }
+
+      // Create vendor channel for this project
+      const channel = await storage.createChannel({
+        orgId,
+        name: `Projet: ${project.name}`,
+        description: `Canal de communication pour le projet ${project.name}`,
+        type: 'vendor',
+        scope: 'project',
+        projectId,
+        accountId: project.accountId || null,
+        isActive: true,
+      });
+
+      console.log(`Created vendor channel for project ${projectId}: ${channel.id}`);
+      return channel;
+    } catch (error) {
+      console.error(`Error ensuring vendor project channel for ${projectId}:`, error);
+      throw error;
+    }
+  }
 
   // =====================
   // Channel Routes (Admin)
@@ -5599,7 +7026,7 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
   });
 
   // Create message in channel
-  app.post("/api/channels/:channelId/messages", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/channels/:channelId/messages", requireAuth, requireChannelAccess, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const channel = await storage.getChannel(req.params.channelId, orgId);
@@ -5652,7 +7079,7 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
   });
 
   // Update message (author or admin only)
-  app.patch("/api/channels/:channelId/messages/:messageId", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/channels/:channelId/messages/:messageId", requireAuth, requireChannelAccess, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const channel = await storage.getChannel(req.params.channelId, orgId);
@@ -5682,7 +7109,7 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
   });
 
   // Delete message (author or admin only)
-  app.delete("/api/channels/:channelId/messages/:messageId", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/channels/:channelId/messages/:messageId", requireAuth, requireChannelAccess, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
       const channel = await storage.getChannel(req.params.channelId, orgId);
@@ -5786,9 +7213,12 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       let projectChannels: any[] = [];
 
       if (vendorContactId) {
+        // Use the corrected function to get vendor project IDs
+        const vendorProjectIds = await getVendorProjectIds(orgId, vendorContactId);
+
         // Get projects assigned to this vendor and their channels
         const allProjects = await storage.getProjects(orgId);
-        const vendorProjects = allProjects.filter(p => p.vendorContactId === vendorContactId);
+        const vendorProjects = allProjects.filter(p => vendorProjectIds.includes(p.id));
 
         for (const project of vendorProjects) {
           const channels = await storage.getChannelsByProject(project.id, orgId);
@@ -5865,6 +7295,23 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     } catch (error) {
       console.error("Get notifications error:", error);
       res.status(500).json({ error: "Failed to get notifications" });
+    }
+  });
+
+  // Get unread notifications with count
+  app.get("/api/notifications/unread", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const session = getSessionData(req);
+      if (!session) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const notifications = await storage.getUnreadNotifications(session.userId, orgId);
+      const count = await storage.getUnreadNotificationCount(session.userId, orgId);
+      res.json({ notifications, count });
+    } catch (error) {
+      console.error("Get unread notifications error:", error);
+      res.status(500).json({ error: "Failed to get unread notifications" });
     }
   });
 
@@ -5964,13 +7411,14 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       }
 
       const { name, avatar } = req.body;
-      const updateData: { name?: string; avatar?: string } = {};
+      const updateData: { name?: string; avatar?: string | null } = {};
 
       if (name && typeof name === 'string' && name.trim().length > 0) {
         updateData.name = name.trim();
       }
       if (avatar !== undefined) {
         updateData.avatar = avatar;
+        console.log("Updating avatar, length:", avatar ? avatar.length : 'null');
       }
 
       if (Object.keys(updateData).length === 0) {
@@ -5982,6 +7430,8 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
         return res.status(404).json({ error: "User not found" });
       }
 
+      console.log("User updated, avatar length:", user.avatar ? user.avatar.length : 'null');
+
       // Don't return password
       const { password, ...userWithoutPassword } = user;
       res.json(userWithoutPassword);
@@ -5989,6 +7439,20 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       console.error("Update profile error:", error);
       res.status(500).json({ error: "Failed to update profile" });
     }
+  });
+
+  // DEBUG: Check user avatar
+  app.get("/api/debug/avatar", requireAuth, async (req: Request, res: Response) => {
+    const session = getSessionData(req);
+    if (!session) return res.status(401).json({ error: "Not authenticated" });
+
+    const user = await storage.getUser(session.userId);
+    res.json({
+      userId: session.userId,
+      hasAvatar: !!user?.avatar,
+      avatarLength: user?.avatar?.length || 0,
+      avatarPreview: user?.avatar?.substring(0, 100) || null
+    });
   });
 
   return httpServer;

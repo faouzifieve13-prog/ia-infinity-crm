@@ -1,9 +1,11 @@
 import { db } from "./db";
-import { eq, and, desc, asc, sql, isNotNull } from "drizzle-orm";
+
+export { db };
+import { eq, and, desc, asc, sql, isNotNull, isNull } from "drizzle-orm";
 import {
-  organizations, users, memberships, accounts, contacts, deals, quotes, activities,
+  organizations, users, memberships, accounts, contacts, deals, quotes, quoteLineItems, activities,
   projects, tasks, invoices, invoiceLineItems, vendors, missions, documents,
-  workflowRuns, importJobs, contracts, expenses, invitations, emails, followUpHistory, projectComments,
+  workflowRuns, importJobs, contracts, expenses, invitations, emails, calendarEvents, followUpHistory, projectComments,
   channels, channelMessages, channelAttachments, accountLoomVideos, accountUpdates, projectUpdates, projectDeliverables,
   notifications,
   type Organization, type InsertOrganization,
@@ -26,7 +28,9 @@ import {
   type Expense, type InsertExpense,
   type Invitation, type InsertInvitation,
   type Email, type InsertEmail,
+  type CalendarEvent, type InsertCalendarEvent,
   type Quote, type InsertQuote,
+  type QuoteLineItem, type InsertQuoteLineItem,
   type FollowUpHistory, type InsertFollowUpHistory,
   type ProjectComment, type InsertProjectComment,
   type Channel, type InsertChannel,
@@ -79,13 +83,20 @@ export interface IStorage {
   getQuotes(orgId: string): Promise<Quote[]>;
   getQuotesByDeal(dealId: string, orgId: string): Promise<Quote[]>;
   getQuote(id: string, orgId: string): Promise<Quote | undefined>;
+  getQuoteByIdOnly(id: string): Promise<Quote | undefined>;
   createQuote(quote: InsertQuote): Promise<Quote>;
   updateQuote(id: string, orgId: string, data: Partial<InsertQuote>): Promise<Quote | undefined>;
+  updateQuoteByIdOnly(id: string, data: Partial<InsertQuote>): Promise<Quote | undefined>;
+
+  getQuoteLineItems(quoteId: string): Promise<QuoteLineItem[]>;
+  createQuoteLineItem(item: InsertQuoteLineItem): Promise<QuoteLineItem>;
+  deleteQuoteLineItems(quoteId: string): Promise<boolean>;
   
   getActivities(orgId: string, dealId?: string, projectId?: string): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
   
   getProjects(orgId: string, accountId?: string, status?: ProjectStatus): Promise<Project[]>;
+  getProjectsByVendor(vendorId: string, orgId: string): Promise<Project[]>;
   getProject(id: string, orgId: string): Promise<Project | undefined>;
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: string, orgId: string, data: Partial<InsertProject>): Promise<Project | undefined>;
@@ -274,8 +285,49 @@ export class DatabaseStorage implements IStorage {
     return membership;
   }
 
+  async getMembershipsByUser(userId: string, orgId: string): Promise<Membership[]> {
+    return db.select().from(memberships)
+      .where(and(eq(memberships.userId, userId), eq(memberships.orgId, orgId)));
+  }
+
   async getMembershipsByOrg(orgId: string): Promise<Membership[]> {
     return db.select().from(memberships).where(eq(memberships.orgId, orgId));
+  }
+
+  async updateMembership(id: string, orgId: string, updates: Partial<InsertMembership>): Promise<Membership | undefined> {
+    const [updated] = await db.update(memberships)
+      .set(updates)
+      .where(and(eq(memberships.id, id), eq(memberships.orgId, orgId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteMembership(id: string, orgId: string): Promise<void> {
+    await db.delete(memberships)
+      .where(and(eq(memberships.id, id), eq(memberships.orgId, orgId)));
+  }
+
+  async deactivateUser(userId: string): Promise<void> {
+    await db.update(users)
+      .set({
+        isActive: false,
+        deactivatedAt: new Date()
+      })
+      .where(eq(users.id, userId));
+  }
+
+  async reactivateUser(userId: string): Promise<void> {
+    await db.update(users)
+      .set({
+        isActive: true,
+        deactivatedAt: null
+      })
+      .where(eq(users.id, userId));
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    await db.delete(users)
+      .where(eq(users.id, userId));
   }
 
   async getAccounts(orgId: string): Promise<Account[]> {
@@ -472,6 +524,40 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  async getQuoteByIdOnly(id: string): Promise<Quote | undefined> {
+    const [quote] = await db.select().from(quotes)
+      .where(eq(quotes.id, id));
+    return quote;
+  }
+
+  async updateQuoteByIdOnly(id: string, data: Partial<InsertQuote>): Promise<Quote | undefined> {
+    const [updated] = await db.update(quotes)
+      .set(data)
+      .where(eq(quotes.id, id)).returning();
+    return updated;
+  }
+
+  async getQuoteLineItems(quoteId: string): Promise<QuoteLineItem[]> {
+    return db.select().from(quoteLineItems)
+      .where(eq(quoteLineItems.quoteId, quoteId))
+      .orderBy(asc(quoteLineItems.sortOrder));
+  }
+
+  async createQuoteLineItem(item: InsertQuoteLineItem): Promise<QuoteLineItem> {
+    const [created] = await db.insert(quoteLineItems).values(item).returning();
+    return created;
+  }
+
+  async deleteQuoteLineItems(quoteId: string): Promise<boolean> {
+    await db.delete(quoteLineItems).where(eq(quoteLineItems.quoteId, quoteId));
+    return true;
+  }
+
+  async deleteQuote(id: string, orgId: string): Promise<boolean> {
+    await db.delete(quotes).where(and(eq(quotes.id, id), eq(quotes.orgId, orgId)));
+    return true;
+  }
+
   async getActivities(orgId: string, dealId?: string, projectId?: string): Promise<Activity[]> {
     if (dealId) {
       return db.select().from(activities)
@@ -508,6 +594,47 @@ export class DatabaseStorage implements IStorage {
         .orderBy(desc(projects.createdAt));
     }
     return db.select().from(projects).where(eq(projects.orgId, orgId)).orderBy(desc(projects.createdAt));
+  }
+
+  async getProjectsByVendor(vendorId: string, orgId: string): Promise<Project[]> {
+    // Projects with vendorId direct reference (post-migration data)
+    const projectsWithVendorId = await db.select().from(projects)
+      .where(and(
+        eq(projects.orgId, orgId),
+        eq(projects.vendorId, vendorId)
+      ))
+      .orderBy(desc(projects.createdAt));
+
+    // Fallback for non-migrated projects (via vendorContactId)
+    // Get all contacts for this vendor
+    const vendorContacts = await db.select().from(contacts)
+      .where(and(
+        eq(contacts.orgId, orgId),
+        eq(contacts.vendorId, vendorId)
+      ));
+
+    const contactIds = vendorContacts.map(c => c.id);
+
+    if (contactIds.length === 0) {
+      return projectsWithVendorId;
+    }
+
+    // Get projects that reference these contacts but don't have vendorId set yet
+    const projectsWithContactId = await db.select().from(projects)
+      .where(and(
+        eq(projects.orgId, orgId),
+        sql`${projects.vendorContactId} = ANY(${contactIds})`,
+        isNull(projects.vendorId)
+      ))
+      .orderBy(desc(projects.createdAt));
+
+    // Combine both result sets (deduplicate by project ID)
+    const allProjects = [...projectsWithVendorId, ...projectsWithContactId];
+    const uniqueProjects = Array.from(
+      new Map(allProjects.map(p => [p.id, p])).values()
+    );
+
+    return uniqueProjects;
   }
 
   async getProject(id: string, orgId: string): Promise<Project | undefined> {
@@ -1205,6 +1332,35 @@ export class DatabaseStorage implements IStorage {
 
   async deleteEmail(id: string, orgId: string): Promise<boolean> {
     await db.delete(emails).where(and(eq(emails.id, id), eq(emails.orgId, orgId)));
+    return true;
+  }
+
+  async getCalendarEvents(orgId: string): Promise<CalendarEvent[]> {
+    return db.select().from(calendarEvents)
+      .where(eq(calendarEvents.orgId, orgId))
+      .orderBy(desc(calendarEvents.start));
+  }
+
+  async getCalendarEvent(id: string, orgId: string): Promise<CalendarEvent | undefined> {
+    const [event] = await db.select().from(calendarEvents)
+      .where(and(eq(calendarEvents.id, id), eq(calendarEvents.orgId, orgId)));
+    return event;
+  }
+
+  async createCalendarEvent(event: InsertCalendarEvent): Promise<CalendarEvent> {
+    const [created] = await db.insert(calendarEvents).values(event).returning();
+    return created;
+  }
+
+  async updateCalendarEvent(id: string, orgId: string, data: Partial<InsertCalendarEvent>): Promise<CalendarEvent | undefined> {
+    const [updated] = await db.update(calendarEvents).set(data)
+      .where(and(eq(calendarEvents.id, id), eq(calendarEvents.orgId, orgId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteCalendarEvent(id: string, orgId: string): Promise<boolean> {
+    await db.delete(calendarEvents).where(and(eq(calendarEvents.id, id), eq(calendarEvents.orgId, orgId)));
     return true;
   }
 

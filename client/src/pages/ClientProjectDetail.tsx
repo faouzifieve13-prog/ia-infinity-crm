@@ -1,18 +1,44 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   ArrowLeft,
-  FolderKanban, 
-  FileText, 
+  FolderKanban,
+  FileText,
   Calendar,
   CheckCircle2,
   Clock,
@@ -20,12 +46,23 @@ import {
   MessageSquare,
   Send,
   AlertCircle,
-  Loader2
+  Loader2,
+  Plus
 } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+
+const taskFormSchema = z.object({
+  title: z.string().min(1, "Le titre est requis"),
+  description: z.string().optional(),
+  priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
+  vendorId: z.string().optional(),
+  dueDate: z.string().optional(),
+});
+
+type TaskFormValues = z.infer<typeof taskFormSchema>;
 
 interface Project {
   id: string;
@@ -47,6 +84,13 @@ interface Task {
   status: string;
   priority: string;
   dueDate: string | null;
+  vendorId: string | null;
+}
+
+interface Vendor {
+  id: string;
+  name: string;
+  email: string | null;
 }
 
 interface Mission {
@@ -81,6 +125,7 @@ interface ProjectDetail {
   missions: Mission[];
   documents: Document[];
   comments: Comment[];
+  vendors: Vendor[];
 }
 
 function getStatusBadge(status: string) {
@@ -133,7 +178,19 @@ export default function ClientProjectDetail() {
   const [match, params] = useRoute("/client/projects/:id");
   const projectId = params?.id;
   const [newComment, setNewComment] = useState("");
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const { toast } = useToast();
+
+  const taskForm = useForm<TaskFormValues>({
+    resolver: zodResolver(taskFormSchema),
+    defaultValues: {
+      title: "",
+      description: "",
+      priority: "medium",
+      vendorId: "",
+      dueDate: "",
+    },
+  });
 
   const { data, isLoading, error } = useQuery<ProjectDetail>({
     queryKey: ["/api/client/projects", projectId],
@@ -157,6 +214,35 @@ export default function ClientProjectDetail() {
       toast({
         title: "Erreur",
         description: "Impossible d'ajouter le commentaire.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const createTaskMutation = useMutation({
+    mutationFn: async (data: TaskFormValues) => {
+      const payload = {
+        ...data,
+        projectId,
+        status: "pending",
+        vendorId: data.vendorId || null,
+        dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : null,
+      };
+      return apiRequest("POST", "/api/client/tasks", payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/client/projects", projectId] });
+      setTaskDialogOpen(false);
+      taskForm.reset();
+      toast({
+        title: "Tâche créée",
+        description: "Votre tâche a été créée avec succès.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Erreur",
+        description: error.message || "Impossible de créer la tâche.",
         variant: "destructive",
       });
     },
@@ -205,7 +291,7 @@ export default function ClientProjectDetail() {
     );
   }
 
-  const { project, tasks, missions, documents, comments } = data;
+  const { project, tasks, missions, documents, comments, vendors = [] } = data;
   const completedTasks = tasks.filter(t => t.status === "completed").length;
   const completedMissions = missions.filter(m => m.status === "completed").length;
 
@@ -306,15 +392,30 @@ export default function ClientProjectDetail() {
 
           <TabsContent value="tasks">
             <Card>
-              <CardHeader>
-                <CardTitle>Tâches du projet</CardTitle>
-                <CardDescription>Suivez l'avancement de chaque tâche</CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Tâches du projet</CardTitle>
+                  <CardDescription>Suivez l'avancement de chaque tâche</CardDescription>
+                </div>
+                <Button onClick={() => setTaskDialogOpen(true)} size="sm" data-testid="button-add-task">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Ajouter
+                </Button>
               </CardHeader>
               <CardContent>
                 {tasks.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <ListTodo className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>Aucune tâche pour le moment</p>
+                    <Button
+                      onClick={() => setTaskDialogOpen(true)}
+                      variant="outline"
+                      className="mt-4"
+                      data-testid="button-add-task-empty"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Créer une tâche
+                    </Button>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -549,6 +650,125 @@ export default function ClientProjectDetail() {
             </CardContent>
           </Card>
         )}
+
+        <Dialog open={taskDialogOpen} onOpenChange={setTaskDialogOpen}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>Nouvelle tâche</DialogTitle>
+              <DialogDescription>
+                Créer une nouvelle tâche pour ce projet.
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...taskForm}>
+              <form onSubmit={taskForm.handleSubmit((data) => createTaskMutation.mutate(data))} className="space-y-4">
+                <FormField
+                  control={taskForm.control}
+                  name="title"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Titre</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Titre de la tâche" {...field} data-testid="input-task-title" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={taskForm.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="Description de la tâche" {...field} data-testid="input-task-description" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={taskForm.control}
+                  name="priority"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Priorité</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || "medium"}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-task-priority">
+                            <SelectValue placeholder="Sélectionner une priorité" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="low">Basse</SelectItem>
+                          <SelectItem value="medium">Moyenne</SelectItem>
+                          <SelectItem value="high">Haute</SelectItem>
+                          <SelectItem value="urgent">Urgent</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                {vendors.length > 0 && (
+                  <FormField
+                    control={taskForm.control}
+                    name="vendorId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Assigner à un sous-traitant</FormLabel>
+                        <Select onValueChange={(val) => field.onChange(val === "none" ? "" : val)} value={field.value || "none"}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-task-vendor">
+                              <SelectValue placeholder="Sélectionner un sous-traitant" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">Non assigné</SelectItem>
+                            {vendors.map((vendor) => (
+                              <SelectItem key={vendor.id} value={vendor.id}>
+                                {vendor.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+                <FormField
+                  control={taskForm.control}
+                  name="dueDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Date d'échéance</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} data-testid="input-task-due-date" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="flex justify-end gap-2 pt-4">
+                  <Button type="button" variant="outline" onClick={() => setTaskDialogOpen(false)}>
+                    Annuler
+                  </Button>
+                  <Button type="submit" disabled={createTaskMutation.isPending} data-testid="button-submit-task">
+                    {createTaskMutation.isPending ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Création...
+                      </>
+                    ) : (
+                      "Créer"
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

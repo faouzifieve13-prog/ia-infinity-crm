@@ -59,21 +59,24 @@ export default function Tasks() {
     : currentSpace === 'vendor' ? '/api/vendor/tasks'
     : '/api/tasks';
 
-  // Clients and vendors can only view, not create/edit/delete
-  const isReadOnly = currentSpace === 'client' || currentSpace === 'vendor';
+  // Vendors can only view, clients and admins can create/edit/delete
+  const isReadOnly = currentSpace === 'vendor';
 
   const { data: tasks = [], isLoading } = useQuery<Task[]>({
     queryKey: [tasksApiEndpoint],
   });
 
+  // Use appropriate endpoint based on portal
+  const projectsApiEndpoint = currentSpace === 'client' ? '/api/client/projects' : '/api/projects';
+
   const { data: projects = [] } = useQuery<Project[]>({
-    queryKey: ['/api/projects'],
+    queryKey: [projectsApiEndpoint],
     enabled: !isReadOnly,
   });
 
   const { data: users = [] } = useQuery<User[]>({
     queryKey: ['/api/users'],
-    enabled: !isReadOnly,
+    enabled: currentSpace === 'internal',
   });
 
   const taskForm = useForm<TaskFormValues>({
@@ -97,10 +100,10 @@ export default function Tasks() {
         assigneeId: data.assigneeId || null,
         dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : null,
       };
-      return apiRequest('POST', '/api/tasks', payload);
+      return apiRequest('POST', tasksApiEndpoint, payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      queryClient.invalidateQueries({ queryKey: [tasksApiEndpoint] });
       setCreateDialogOpen(false);
       taskForm.reset();
       toast({
@@ -116,6 +119,26 @@ export default function Tasks() {
       });
     },
   });
+
+  const updateTaskStatusMutation = useMutation({
+    mutationFn: async ({ taskId, status }: { taskId: string; status: string }) => {
+      return apiRequest('PATCH', `${tasksApiEndpoint}/${taskId}`, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [tasksApiEndpoint] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de mettre à jour la tâche.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const handleTaskStatusChange = (taskId: string, status: string) => {
+    updateTaskStatusMutation.mutate({ taskId, status });
+  };
 
   const filteredTasks = tasks.filter((task) => {
     const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase());
@@ -188,7 +211,7 @@ export default function Tasks() {
           )}
         </div>
       ) : (
-        <TaskList tasks={filteredTasks} />
+        <TaskList tasks={filteredTasks} onTaskStatusChange={handleTaskStatusChange} />
       )}
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
@@ -235,14 +258,14 @@ export default function Tasks() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Projet</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select onValueChange={(val) => field.onChange(val === "none" ? "" : val)} value={field.value || "none"}>
                       <FormControl>
                         <SelectTrigger data-testid="select-task-project">
                           <SelectValue placeholder="Sélectionner un projet" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="">Aucun projet</SelectItem>
+                        <SelectItem value="none">Aucun projet</SelectItem>
                         {projects.map((project) => (
                           <SelectItem key={project.id} value={project.id}>
                             {project.name}
@@ -312,14 +335,14 @@ export default function Tasks() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Assigné à</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select onValueChange={(val) => field.onChange(val === "none" ? "" : val)} value={field.value || "none"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-task-assignee">
                             <SelectValue placeholder="Sélectionner" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="">Non assigné</SelectItem>
+                          <SelectItem value="none">Non assigné</SelectItem>
                           {users.map((user) => (
                             <SelectItem key={user.id} value={user.id}>
                               {user.fullName || user.email}

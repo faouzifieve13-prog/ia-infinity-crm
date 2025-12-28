@@ -49,6 +49,12 @@ import Login from "@/pages/Login";
 import SetupPassword from "@/pages/SetupPassword";
 import ClientPortal from "@/pages/ClientPortal";
 import ClientProjectDetail from "@/pages/ClientProjectDetail";
+import ClientServices from "@/pages/ClientServices";
+import ClientInvoices from "@/pages/ClientInvoices";
+import VendorContracts from "@/pages/VendorContracts";
+import VendorInvoices from "@/pages/VendorInvoices";
+import VendorChannels from "@/pages/VendorChannels";
+import ClientContracts from "@/pages/ClientContracts";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -189,11 +195,25 @@ function AppContent() {
   // Client portal routes
   if (location === "/client" || location.startsWith("/client/")) {
     return (
-      <Switch>
-        <Route path="/client" component={ClientPortal} />
-        <Route path="/client/projects/:id" component={ClientProjectDetail} />
-        <Route component={NotFound} />
-      </Switch>
+      <SpaceProvider defaultSpace="client">
+        <AppLayout>
+          <Switch>
+            <Route path="/client" component={ClientPortal} />
+            <Route path="/client/services" component={ClientServices} />
+            <Route path="/client/projects" component={Projects} />
+            <Route path="/client/projects/:id" component={ClientProjectDetail} />
+            <Route path="/client/quotes" component={ClientQuotes} />
+            <Route path="/client/documents" component={Documents} />
+            <Route path="/client/invoices" component={ClientInvoices} />
+            <Route path="/client/tasks" component={Tasks} />
+            <Route path="/client/contracts" component={ClientContracts} />
+            <Route path="/client/messages" component={ChannelsPage} />
+            <Route path="/client/settings" component={Settings} />
+            <Route path="/client/profile" component={Profile} />
+            <Route component={NotFound} />
+          </Switch>
+        </AppLayout>
+      </SpaceProvider>
     );
   }
 
@@ -204,10 +224,18 @@ function AppContent() {
         <AppLayout>
           <Switch>
             <Route path="/vendor" component={() => <VendorDashboard />} />
+            <Route path="/vendor/services" component={ClientServices} />
             <Route path="/vendor/missions" component={Missions} />
             <Route path="/vendor/projects" component={Projects} />
             <Route path="/vendor/projects/:id" component={ProjectDetail} />
             <Route path="/vendor/documents" component={Documents} />
+            <Route path="/vendor/contracts" component={VendorContracts} />
+            <Route path="/vendor/my-invoices" component={VendorInvoices} />
+            <Route path="/vendor/channels" component={VendorChannels} />
+            <Route path="/vendor/tasks" component={Tasks} />
+            <Route path="/vendor/messages" component={ChannelsPage} />
+            <Route path="/vendor/settings" component={Settings} />
+            <Route path="/vendor/profile" component={Profile} />
             <Route component={NotFound} />
           </Switch>
         </AppLayout>

@@ -41,6 +41,7 @@ import {
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { GmailMessage } from '@/lib/types';
+import { NotificationBell } from '@/components/NotificationBell';
 import {
   Sidebar,
   SidebarContent,
@@ -147,6 +148,15 @@ interface NavCategory {
 
 const navCategories: NavCategory[] = [
   {
+    title: 'Accueil',
+    icon: LayoutDashboard,
+    spaces: ['client', 'vendor'],
+    items: [
+      { title: 'Tableau de bord', url: '/', icon: LayoutDashboard, spaces: ['client', 'vendor'] },
+      { title: 'Nos Services', url: '/services', icon: Sparkles, spaces: ['client', 'vendor'] },
+    ],
+  },
+  {
     title: 'Commercial',
     icon: TrendingUp,
     spaces: ['internal'],
@@ -205,15 +215,18 @@ const navCategories: NavCategory[] = [
     items: [
       { title: 'Tous les documents', url: '/documents', icon: FileText, spaces: ['internal', 'client', 'vendor'] },
       { title: 'Devis', url: '/quotes', icon: Receipt, spaces: ['internal', 'client'] },
-      { title: 'Contrats', url: '/contracts', icon: FileSignature, spaces: ['internal', 'client'] },
+      { title: 'Contrats', url: '/contracts', icon: FileSignature, spaces: ['internal', 'client', 'vendor'] },
+      { title: 'Mes Factures', url: '/my-invoices', icon: Receipt, spaces: ['vendor'] },
     ],
   },
   {
     title: 'Communication',
     icon: MessageSquare,
-    spaces: ['internal'],
+    spaces: ['internal', 'client', 'vendor'],
     items: [
       { title: 'Canaux', url: '/channels', icon: MessageSquare, spaces: ['internal'] },
+      { title: 'Messagerie', url: '/messages', icon: MessageSquare, spaces: ['client'] },
+      { title: 'Messagerie Projets', url: '/channels', icon: MessageSquare, spaces: ['vendor'] },
     ],
   },
   {
@@ -281,24 +294,27 @@ export function AppSidebar() {
   return (
     <Sidebar className="border-r-0">
       <SidebarHeader className="p-4 border-b border-sidebar-border/50">
-        <Link href={getPortalUrl('/')} className="flex items-center gap-3 group">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-background shadow-lg transition-transform hover:scale-105 active:scale-95 overflow-hidden">
-            <img src={logoIaInfinity} alt="IA Infinity" className="h-9 w-9 object-contain" />
-          </div>
-          <div className="flex flex-col">
-            <span className="font-bold text-lg tracking-tight text-sidebar-foreground group-hover:text-sidebar-primary transition-colors">
-              IA Infinity
-            </span>
-            <Badge 
-              variant="outline" 
-              className={`text-xs w-fit border ${portal.badge}`}
-              data-testid="badge-current-portal"
-            >
-              <Sparkles className="h-3 w-3 mr-1" />
-              {portal.label}
-            </Badge>
-          </div>
-        </Link>
+        <div className="flex items-center justify-between gap-2">
+          <Link href={getPortalUrl('/')} className="flex items-center gap-3 group flex-1">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-background shadow-lg transition-transform hover:scale-105 active:scale-95 overflow-hidden">
+              <img src={logoIaInfinity} alt="IA Infinity" className="h-9 w-9 object-contain" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-bold text-lg tracking-tight text-sidebar-foreground group-hover:text-sidebar-primary transition-colors">
+                IA Infinity
+              </span>
+              <Badge
+                variant="outline"
+                className={`text-xs w-fit border ${portal.badge}`}
+                data-testid="badge-current-portal"
+              >
+                <Sparkles className="h-3 w-3 mr-1" />
+                {portal.label}
+              </Badge>
+            </div>
+          </Link>
+          <NotificationBell />
+        </div>
       </SidebarHeader>
 
       <SidebarContent className="px-2">

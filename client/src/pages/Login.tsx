@@ -10,6 +10,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Lock, Mail, ArrowRight, Eye, EyeOff, User } from "lucide-react";
 import logoImg from "@assets/logo_iA_Infinity_1766693283199.png";
 import { saveLocalSession } from "@/hooks/use-auth";
+import { SpaceSelector } from "@/components/SpaceSelector";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -19,6 +20,7 @@ export default function Login() {
   const [name, setName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isInitMode, setIsInitMode] = useState(false);
+  const [spaceSelectionData, setSpaceSelectionData] = useState<any>(null);
 
   const { data: needsInitData, isLoading: checkingInit } = useQuery<{ needsInit: boolean }>({
     queryKey: ["/api/auth/needs-init"],
@@ -40,6 +42,12 @@ export default function Login() {
       return response.json();
     },
     onSuccess: (data: any) => {
+      // Check if user needs to select a space
+      if (data.requiresSpaceSelection) {
+        setSpaceSelectionData(data);
+        return;
+      }
+
       // Save session and auth token to localStorage for persistence
       saveLocalSession({
         authenticated: true,
@@ -49,12 +57,12 @@ export default function Login() {
         accountId: data.accountId,
         vendorContactId: data.vendorContactId,
       }, data.authToken);
-      
+
       toast({
         title: "Connexion réussie",
         description: `Bienvenue, ${data.user?.name || data.user?.email || ""}!`,
       });
-      
+
       // Force page reload to ensure session is properly set
       const role = data.role;
       if (role === "client_admin" || role === "client_member") {
@@ -124,11 +132,49 @@ export default function Login() {
     }
   };
 
+  const handleSpaceSelected = (data: any) => {
+    // Save session and auth token to localStorage for persistence
+    saveLocalSession({
+      authenticated: true,
+      user: data.user,
+      role: data.role,
+      space: data.space,
+      accountId: data.accountId,
+      vendorContactId: data.vendorContactId,
+    }, data.authToken);
+
+    toast({
+      title: "Espace sélectionné",
+      description: `Bienvenue dans votre espace ${data.space}!`,
+    });
+
+    // Redirect based on role
+    const role = data.role;
+    if (role === "client_admin" || role === "client_member") {
+      window.location.href = "/client";
+    } else if (role === "vendor") {
+      window.location.href = "/vendor";
+    } else {
+      window.location.href = "/";
+    }
+  };
+
   if (checkingInit) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-purple-50 dark:from-violet-950 dark:via-gray-900 dark:to-purple-950 flex items-center justify-center p-4">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
+    );
+  }
+
+  // Show space selector if user has multiple memberships
+  if (spaceSelectionData) {
+    return (
+      <SpaceSelector
+        user={spaceSelectionData.user}
+        availableSpaces={spaceSelectionData.availableSpaces}
+        onSpaceSelected={handleSpaceSelected}
+      />
     );
   }
 

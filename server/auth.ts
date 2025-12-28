@@ -3,8 +3,10 @@ import session from "express-session";
 import pgSession from "connect-pg-simple";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { storage } from "./storage";
+import { storage, db } from "./storage";
 import { createHash, randomBytes } from "crypto";
+import { eq, and, sql } from "drizzle-orm";
+import { users, contacts, memberships, invitations } from "@shared/schema";
 
 declare module "express-session" {
   interface SessionData {
@@ -107,12 +109,36 @@ export function registerPasswordAuthRoutes(app: Express) {
       if (!isValidPassword) {
         return res.status(401).json({ error: "Email ou mot de passe incorrect" });
       }
-      
-      const membership = await storage.getMembershipByUserAndOrg(user.id, DEFAULT_ORG_ID);
-      if (!membership) {
+
+      // Get ALL memberships for this user
+      const memberships = await storage.getMembershipsByUser(user.id, DEFAULT_ORG_ID);
+      if (!memberships || memberships.length === 0) {
         return res.status(403).json({ error: "Aucun accès à cette organisation" });
       }
-      
+
+      // If multiple memberships, return them for user to choose
+      if (memberships.length > 1) {
+        return res.json({
+          requiresSpaceSelection: true,
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            avatar: user.avatar,
+          },
+          availableSpaces: memberships.map(m => ({
+            membershipId: m.id,
+            role: m.role,
+            space: m.space,
+            accountId: m.accountId,
+            vendorContactId: m.vendorContactId,
+          })),
+        });
+      }
+
+      // Single membership - log in directly
+      const membership = memberships[0];
+
       // Generate auth token for API access
       const authToken = generateAuthToken();
       authTokens.set(authToken, {
@@ -125,13 +151,13 @@ export function registerPasswordAuthRoutes(app: Express) {
         orgId: DEFAULT_ORG_ID,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       });
-      
+
       req.session.regenerate((err) => {
         if (err) {
           console.error("Session regeneration error:", err);
           // Continue anyway with token auth
         }
-        
+
         req.session.userId = user.id;
         req.session.email = user.email;
         req.session.role = membership.role;
@@ -139,13 +165,13 @@ export function registerPasswordAuthRoutes(app: Express) {
         req.session.accountId = membership.accountId;
         req.session.vendorContactId = membership.vendorContactId;
         req.session.orgId = DEFAULT_ORG_ID;
-        
+
         req.session.save((saveErr) => {
           if (saveErr) {
             console.error("Session save error:", saveErr);
             // Continue anyway with token auth
           }
-          
+
           res.json({
             user: {
               id: user.id,
@@ -170,6 +196,148 @@ export function registerPasswordAuthRoutes(app: Express) {
     }
   });
 
+  app.post("/api/auth/select-space", async (req: Request, res: Response) => {
+    try {
+      const { membershipId, userId } = req.body;
+
+      if (!membershipId || !userId) {
+        return res.status(400).json({ error: "membershipId and userId required" });
+      }
+
+      // Get the specific membership
+      const memberships = await storage.getMembershipsByUser(userId, DEFAULT_ORG_ID);
+      const membership = memberships.find(m => m.id === membershipId);
+
+      if (!membership) {
+        return res.status(404).json({ error: "Membership not found" });
+      }
+
+      // Get user
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Generate auth token
+      const authToken = generateAuthToken();
+      authTokens.set(authToken, {
+        userId: user.id,
+        email: user.email,
+        role: membership.role,
+        space: membership.space,
+        accountId: membership.accountId,
+        vendorContactId: membership.vendorContactId,
+        orgId: DEFAULT_ORG_ID,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
+
+      req.session.regenerate((err) => {
+        if (err) {
+          console.error("Session regeneration error:", err);
+          return res.status(500).json({ error: "Erreur de session" });
+        }
+
+        req.session.userId = user.id;
+        req.session.email = user.email;
+        req.session.role = membership.role;
+        req.session.space = membership.space;
+        req.session.accountId = membership.accountId;
+        req.session.vendorContactId = membership.vendorContactId;
+        req.session.orgId = DEFAULT_ORG_ID;
+
+        req.session.save((saveErr) => {
+          if (saveErr) {
+            console.error("Session save error:", saveErr);
+            return res.status(500).json({ error: "Erreur de session" });
+          }
+
+          res.json({
+            user: {
+              id: user.id,
+              email: user.email,
+              name: user.name,
+              avatar: user.avatar,
+            },
+            role: membership.role,
+            space: membership.space,
+            accountId: membership.accountId,
+            vendorContactId: membership.vendorContactId,
+            authToken,
+          });
+        });
+      });
+    } catch (error) {
+      console.error("Select space error:", error);
+      res.status(500).json({ error: "Erreur lors de la sélection de l'espace" });
+    }
+  });
+
+  app.post("/api/auth/switch-space", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.session.userId!;
+      const { membershipId } = req.body;
+
+      if (!membershipId) {
+        return res.status(400).json({ error: "membershipId required" });
+      }
+
+      // Get all memberships for this user
+      const memberships = await storage.getMembershipsByUser(userId, DEFAULT_ORG_ID);
+      const membership = memberships.find(m => m.id === membershipId);
+
+      if (!membership) {
+        return res.status(404).json({ error: "Membership not found" });
+      }
+
+      // Update session
+      req.session.role = membership.role;
+      req.session.space = membership.space;
+      req.session.accountId = membership.accountId;
+      req.session.vendorContactId = membership.vendorContactId;
+
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          console.error("Session save error:", saveErr);
+          return res.status(500).json({ error: "Erreur de session" });
+        }
+
+        res.json({
+          success: true,
+          role: membership.role,
+          space: membership.space,
+          accountId: membership.accountId,
+          vendorContactId: membership.vendorContactId,
+        });
+      });
+    } catch (error) {
+      console.error("Switch space error:", error);
+      res.status(500).json({ error: "Erreur lors du changement d'espace" });
+    }
+  });
+
+  app.get("/api/auth/available-spaces", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.session.userId!;
+      const memberships = await storage.getMembershipsByUser(userId, DEFAULT_ORG_ID);
+
+      res.json({
+        currentSpace: req.session.space,
+        currentRole: req.session.role,
+        availableSpaces: memberships.map(m => ({
+          membershipId: m.id,
+          role: m.role,
+          space: m.space,
+          accountId: m.accountId,
+          vendorContactId: m.vendorContactId,
+          isCurrent: m.role === req.session.role && m.space === req.session.space,
+        })),
+      });
+    } catch (error) {
+      console.error("Get available spaces error:", error);
+      res.status(500).json({ error: "Erreur lors de la récupération des espaces" });
+    }
+  });
+
   app.post("/api/auth/logout", (req: Request, res: Response) => {
     req.session.destroy((err) => {
       if (err) {
@@ -181,16 +349,21 @@ export function registerPasswordAuthRoutes(app: Express) {
     });
   });
 
-  app.get("/api/auth/session", (req: Request, res: Response) => {
+  app.get("/api/auth/session", async (req: Request, res: Response) => {
     if (!req.session.userId) {
       return res.json({ authenticated: false });
     }
-    
+
+    // Fetch full user data from database
+    const user = await storage.getUser(req.session.userId);
+
     res.json({
       authenticated: true,
       user: {
         id: req.session.userId,
         email: req.session.email,
+        name: user?.name || null,
+        avatar: user?.avatar || null,
       },
       role: req.session.role,
       space: req.session.space,
@@ -233,83 +406,124 @@ export function registerPasswordAuthRoutes(app: Express) {
     try {
       const { token, password, name } = acceptInviteSchema.parse(req.body);
       const tokenHash = hashToken(token);
-      
+
       const invitation = await storage.getInvitationByToken(tokenHash);
+
       if (!invitation) {
         return res.status(404).json({ error: "Invitation invalide ou expirée" });
       }
-      
+
       if (invitation.status !== "pending") {
         return res.status(400).json({ error: "Cette invitation a déjà été utilisée" });
       }
-      
-      if (new Date(invitation.expiresAt) < new Date()) {
-        await storage.updateInvitation(invitation.id, invitation.orgId, { status: "expired" });
+
+      if (new Date() > new Date(invitation.expiresAt)) {
         return res.status(400).json({ error: "Cette invitation a expiré" });
       }
-      
+
       const hashedPassword = await bcrypt.hash(password, 10);
-      
-      let user = await storage.getUserByEmail(invitation.email.toLowerCase());
-      if (user) {
-        await storage.updateUser(user.id, { password: hashedPassword });
-      } else {
-        user = await storage.createUser({
-          email: invitation.email.toLowerCase(),
-          name: name || invitation.name || invitation.email.split("@")[0],
-          password: hashedPassword,
+
+      // ATOMIC TRANSACTION: Ensures User + Contact + Membership are created together or rolled back
+      const result = await db.transaction(async (tx) => {
+        // 1. Create or update User
+        let user = await tx.query.users.findFirst({
+          where: (users, { sql }) => sql`LOWER(${users.email}) = ${invitation.email.toLowerCase()}`
         });
-      }
-      
-      let membership = await storage.getMembershipByUserAndOrg(user.id, invitation.orgId);
-      if (!membership) {
-        membership = await storage.createMembership({
-          userId: user.id,
-          orgId: invitation.orgId,
-          role: invitation.role,
-          space: invitation.space,
-          accountId: invitation.accountId,
-          vendorContactId: invitation.vendorId,
-        });
-      }
-      
-      await storage.updateInvitation(invitation.id, invitation.orgId, {
-        status: "accepted",
-        usedAt: new Date(),
-      });
-      
-      req.session.regenerate((err) => {
-        if (err) {
-          console.error("Session regeneration error:", err);
-          return res.status(500).json({ error: "Erreur de session" });
+
+        if (user) {
+          [user] = await tx.update(users)
+            .set({ password: hashedPassword })
+            .where(eq(users.id, user.id))
+            .returning();
+        } else {
+          [user] = await tx.insert(users)
+            .values({
+              email: invitation.email.toLowerCase(),
+              name: name || invitation.name || invitation.email.split("@")[0],
+              password: hashedPassword,
+            })
+            .returning();
         }
-        
-        req.session.userId = user!.id;
-        req.session.email = user!.email;
-        req.session.role = membership!.role;
-        req.session.space = membership!.space;
-        req.session.accountId = membership!.accountId;
-        req.session.vendorContactId = membership!.vendorContactId;
-        req.session.orgId = invitation.orgId;
-        
-        req.session.save((saveErr) => {
-          if (saveErr) {
-            console.error("Session save error:", saveErr);
-            return res.status(500).json({ error: "Erreur de session" });
+
+        // 2. For vendor invitations: create Contact BEFORE Membership
+        let vendorContactId: string | null = null;
+        if (invitation.role === 'vendor' && invitation.vendorId) {
+          const existingContact = await tx.query.contacts.findFirst({
+            where: (contacts, { and, eq, sql }) => and(
+              sql`LOWER(${contacts.email}) = ${user.email.toLowerCase()}`,
+              eq(contacts.vendorId, invitation.vendorId!)
+            )
+          });
+
+          if (existingContact) {
+            vendorContactId = existingContact.id;
+            console.log(`Using existing vendor contact: ${vendorContactId}`);
+          } else {
+            const [newContact] = await tx.insert(contacts)
+              .values({
+                orgId: invitation.orgId,
+                vendorId: invitation.vendorId,
+                accountId: null,
+                authUserId: user.id,
+                name: user.name,
+                email: user.email,
+                contactType: 'vendor',
+              })
+              .returning();
+
+            vendorContactId = newContact.id;
+            console.log(`Created vendor contact: ${vendorContactId}`);
           }
-          
-          res.json({
-            success: true,
-            user: {
-              id: user!.id,
-              email: user!.email,
-              name: user!.name,
-            },
-            role: membership!.role,
-            space: membership!.space,
+        }
+
+        // 3. Create Membership with guaranteed vendorContactId for vendors
+        const [membership] = await tx.insert(memberships)
+          .values({
+            userId: user.id,
+            orgId: invitation.orgId,
+            role: invitation.role,
+            space: invitation.space,
+            accountId: invitation.accountId,
+            vendorContactId: vendorContactId, // Guaranteed non-null for vendors
+          })
+          .returning();
+
+        console.log(`Created membership: role=${invitation.role}, space=${invitation.space}, vendorContactId=${vendorContactId}`);
+
+        // 4. Mark invitation as accepted within the same transaction
+        await tx.update(invitations)
+          .set({ status: "accepted", usedAt: new Date() })
+          .where(eq(invitations.id, invitation.id));
+
+        return { user, membership };
+      });
+
+      // 5. Regenerate session after successful transaction
+      await new Promise<void>((resolve, reject) => {
+        req.session.regenerate((err) => {
+          if (err) return reject(err);
+
+          req.session.userId = result.user.id;
+          req.session.email = result.user.email;
+          req.session.role = result.membership.role;
+          req.session.space = result.membership.space;
+          req.session.accountId = result.membership.accountId;
+          req.session.vendorContactId = result.membership.vendorContactId;
+          req.session.orgId = result.membership.orgId;
+
+          req.session.save((err) => {
+            if (err) return reject(err);
+            resolve();
           });
         });
       });
+
+      res.json({
+        user: result.user,
+        membership: result.membership,
+        redirectUrl: `/${result.membership.space}`
+      });
+
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Données invalides", details: error.errors });
@@ -433,6 +647,106 @@ export async function requireVendorProjectAccess(req: Request, res: Response, ne
   }
   
   next();
+}
+
+export function requireClientAdmin(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: "Non authentifié" });
+  }
+
+  if (req.session.role !== "client_admin") {
+    return res.status(403).json({
+      error: "Accès refusé: privilèges administrateur client requis"
+    });
+  }
+
+  next();
+}
+
+export function requireWriteAccess(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: "Non authentifié" });
+  }
+
+  // Client members ne peuvent que lire
+  if (req.session.role === "client_member") {
+    return res.status(403).json({
+      error: "Accès refusé: vous n'avez que des droits de lecture"
+    });
+  }
+
+  next();
+}
+
+export async function requireChannelAccess(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Non authentifié" });
+    }
+
+    const channelId = req.params.channelId;
+    const orgId = req.session.orgId || DEFAULT_ORG_ID;
+    const role = req.session.role;
+
+    if (!channelId) {
+      return res.status(400).json({ error: "Channel ID requis" });
+    }
+
+    // Get the channel
+    const channel = await storage.getChannel(channelId, orgId);
+    if (!channel) {
+      return res.status(404).json({ error: "Channel non trouvé" });
+    }
+
+    // Admin/internal users always have access
+    if (['admin', 'sales', 'delivery', 'finance'].includes(role || '')) {
+      return next();
+    }
+
+    // Client access
+    if (role === 'client_admin' || role === 'client_member') {
+      if (channel.type !== 'client') {
+        return res.status(403).json({ error: "Accès refusé à ce canal" });
+      }
+
+      // For project-scoped channels, verify client has access to the project
+      if (channel.scope === 'project' && channel.projectId) {
+        const project = await storage.getProject(channel.projectId, orgId);
+        if (project?.accountId !== req.session.accountId) {
+          return res.status(403).json({ error: "Accès refusé à ce projet" });
+        }
+      }
+
+      return next();
+    }
+
+    // Vendor access
+    if (role === 'vendor') {
+      if (channel.type !== 'vendor') {
+        return res.status(403).json({ error: "Accès refusé à ce canal" });
+      }
+
+      // For project-scoped channels, verify vendor has access to the project
+      if (channel.scope === 'project' && channel.projectId) {
+        const { validateVendorProjectAccess } = await import("./access-control");
+        const hasAccess = await validateVendorProjectAccess(
+          orgId,
+          req.session.vendorContactId!,
+          channel.projectId
+        );
+        if (!hasAccess) {
+          return res.status(403).json({ error: "Accès refusé à ce projet" });
+        }
+      }
+
+      return next();
+    }
+
+    res.status(403).json({ error: "Accès refusé" });
+  } catch (error) {
+    console.error("Channel access check error:", error);
+    res.status(500).json({ error: "Erreur de vérification d'accès" });
+  }
 }
 
 export function getSessionData(req: Request) {

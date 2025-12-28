@@ -58,6 +58,7 @@ import {
 import { DeliveryWorkflow } from '@/components/projects/DeliveryWorkflow';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { useSpace } from '@/hooks/use-space';
 import type { Project, Account, Task, Document, Contact, User } from '@/lib/types';
 
 const statusConfig = {
@@ -118,6 +119,12 @@ export default function ProjectDetail() {
   const [newDeliverableType, setNewDeliverableType] = useState<'json' | 'pdf' | 'loom' | 'other'>('loom');
   const [newDeliverableUrl, setNewDeliverableUrl] = useState('');
   const { toast } = useToast();
+  const { currentSpace } = useSpace();
+
+  // Determine API endpoint based on portal
+  const tasksApiEndpoint = currentSpace === 'client' ? '/api/client/tasks'
+    : currentSpace === 'vendor' ? '/api/vendor/tasks'
+    : '/api/tasks';
 
   const editForm = useForm<ProjectFormValues>({
     resolver: zodResolver(projectFormSchema),
@@ -191,10 +198,10 @@ export default function ProjectDetail() {
         assigneeId: data.assigneeId || null,
         dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : null,
       };
-      return apiRequest('POST', '/api/tasks', payload);
+      return apiRequest('POST', tasksApiEndpoint, payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      queryClient.invalidateQueries({ queryKey: [tasksApiEndpoint] });
       setTaskDialogOpen(false);
       taskForm.reset();
       toast({
@@ -1214,14 +1221,14 @@ export default function ProjectDetail() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Assigné à</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select onValueChange={(val) => field.onChange(val === "none" ? "" : val)} value={field.value || "none"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-new-task-assignee">
                             <SelectValue placeholder="Sélectionner" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="">Non assigné</SelectItem>
+                          <SelectItem value="none">Non assigné</SelectItem>
                           {users.map((user) => (
                             <SelectItem key={user.id} value={user.id}>
                               {user.fullName || user.email}
