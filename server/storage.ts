@@ -352,45 +352,76 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteAccount(id: string, orgId: string): Promise<boolean> {
-    // First delete invitations referencing this account
+    console.log(`[deleteAccount] Starting deletion for account ${id}`);
+
+    // Step 1: Delete all deal-related records first (in correct order for FK constraints)
+    // Delete follow-up history for all deals of this account
+    console.log(`[deleteAccount] Deleting follow_up_history...`);
+    await db.execute(sql`DELETE FROM follow_up_history WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
+    console.log(`[deleteAccount] follow_up_history deleted`);
+
+    // Delete quote line items for all quotes of deals of this account
+    await db.execute(sql`DELETE FROM quote_line_items WHERE quote_id IN (
+      SELECT q.id FROM quotes q INNER JOIN deals d ON q.deal_id = d.id WHERE d.account_id = ${id}
+    )`);
+
+    // Delete quotes for all deals of this account
+    await db.execute(sql`DELETE FROM quotes WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
+
+    // Delete activities for all deals of this account
+    await db.execute(sql`DELETE FROM activities WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
+
+    // Delete documents for all deals of this account
+    await db.execute(sql`DELETE FROM documents WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
+
+    // Delete emails for all deals of this account
+    await db.execute(sql`DELETE FROM emails WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
+
+    // Set dealId to null on calendar_events, contracts, projects
+    await db.execute(sql`UPDATE calendar_events SET deal_id = NULL WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
+    await db.execute(sql`UPDATE contracts SET deal_id = NULL WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
+    await db.execute(sql`UPDATE projects SET deal_id = NULL WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
+
+    // Now delete all deals for this account
+    console.log(`[deleteAccount] Deleting deals...`);
+    await db.execute(sql`DELETE FROM deals WHERE account_id = ${id}`);
+    console.log(`[deleteAccount] deals deleted`);
+
+    // Step 2: Delete other account-related records
     await db.delete(invitations).where(eq(invitations.accountId, id));
-    // Delete emails referencing this account
     await db.delete(emails).where(eq(emails.accountId, id));
-    // Delete expenses referencing this account
     await db.delete(expenses).where(eq(expenses.accountId, id));
-    // Delete documents referencing this account
     await db.delete(documents).where(eq(documents.accountId, id));
-    // Get deals for this account to delete related records
-    const accountDeals = await db.select({ id: deals.id }).from(deals).where(eq(deals.accountId, id));
-    for (const deal of accountDeals) {
-      // Delete documents referencing this deal
-      await db.delete(documents).where(eq(documents.dealId, deal.id));
-      // Delete emails referencing this deal
-      await db.delete(emails).where(eq(emails.dealId, deal.id));
-      // Delete activities referencing this deal
-      await db.delete(activities).where(eq(activities.dealId, deal.id));
-      // Delete quotes referencing this deal
-      await db.delete(quotes).where(eq(quotes.dealId, deal.id));
-    }
+
     // Delete invoice line items first, then invoices
-    const accountInvoices = await db.select({ id: invoices.id }).from(invoices).where(eq(invoices.accountId, id));
-    for (const invoice of accountInvoices) {
-      await db.delete(invoiceLineItems).where(eq(invoiceLineItems.invoiceId, invoice.id));
-    }
+    await db.execute(sql`DELETE FROM invoice_line_items WHERE invoice_id IN (SELECT id FROM invoices WHERE account_id = ${id})`);
     await db.delete(invoices).where(eq(invoices.accountId, id));
-    // Delete projects and their tasks
-    const accountProjects = await db.select({ id: projects.id }).from(projects).where(eq(projects.accountId, id));
-    for (const project of accountProjects) {
-      await db.delete(tasks).where(eq(tasks.projectId, project.id));
-      await db.delete(activities).where(eq(activities.projectId, project.id));
-    }
+
+    // Delete project-related records
+    await db.execute(sql`DELETE FROM tasks WHERE project_id IN (SELECT id FROM projects WHERE account_id = ${id})`);
+    await db.execute(sql`DELETE FROM activities WHERE project_id IN (SELECT id FROM projects WHERE account_id = ${id})`);
+    await db.execute(sql`DELETE FROM project_comments WHERE project_id IN (SELECT id FROM projects WHERE account_id = ${id})`);
+    await db.execute(sql`DELETE FROM missions WHERE project_id IN (SELECT id FROM projects WHERE account_id = ${id})`);
+    await db.execute(sql`DELETE FROM documents WHERE project_id IN (SELECT id FROM projects WHERE account_id = ${id})`);
+    await db.execute(sql`DELETE FROM project_updates WHERE project_id IN (SELECT id FROM projects WHERE account_id = ${id})`);
+    await db.execute(sql`DELETE FROM project_deliverables WHERE project_id IN (SELECT id FROM projects WHERE account_id = ${id})`);
     await db.delete(projects).where(eq(projects.accountId, id));
+
     // Delete related contracts
     await db.delete(contracts).where(eq(contracts.accountId, id));
-    // Delete related deals
-    await db.delete(deals).where(eq(deals.accountId, id));
+
+    // Delete channels and messages
+    await db.execute(sql`DELETE FROM channel_messages WHERE channel_id IN (SELECT id FROM channels WHERE account_id = ${id})`);
+    await db.execute(sql`DELETE FROM channel_attachments WHERE channel_id IN (SELECT id FROM channels WHERE account_id = ${id})`);
+    await db.execute(sql`DELETE FROM channels WHERE account_id = ${id}`);
+
+    // Delete account updates and loom videos
+    await db.execute(sql`DELETE FROM account_updates WHERE account_id = ${id}`);
+    await db.execute(sql`DELETE FROM account_loom_videos WHERE account_id = ${id}`);
+
     // Delete related contacts
     await db.delete(contacts).where(eq(contacts.accountId, id));
+
     // Finally delete the account
     await db.delete(accounts)
       .where(and(eq(accounts.id, id), eq(accounts.orgId, orgId)));
@@ -483,6 +514,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteDeal(id: string, orgId: string): Promise<boolean> {
+    // Delete follow-up history referencing this deal (required FK)
+    await db.execute(sql`DELETE FROM follow_up_history WHERE deal_id = ${id}`);
+    // Delete quote line items first, then quotes (required FK)
+    await db.execute(sql`DELETE FROM quote_line_items WHERE quote_id IN (SELECT id FROM quotes WHERE deal_id = ${id})`);
+    await db.execute(sql`DELETE FROM quotes WHERE deal_id = ${id}`);
+    // Delete activities referencing this deal (nullable FK)
+    await db.execute(sql`DELETE FROM activities WHERE deal_id = ${id}`);
+    // Delete documents referencing this deal (nullable FK)
+    await db.execute(sql`DELETE FROM documents WHERE deal_id = ${id}`);
+    // Delete emails referencing this deal (nullable FK)
+    await db.execute(sql`DELETE FROM emails WHERE deal_id = ${id}`);
+    // Set dealId to null on calendar_events, contracts, projects (nullable FKs)
+    await db.execute(sql`UPDATE calendar_events SET deal_id = NULL WHERE deal_id = ${id}`);
+    await db.execute(sql`UPDATE contracts SET deal_id = NULL WHERE deal_id = ${id}`);
+    await db.execute(sql`UPDATE projects SET deal_id = NULL WHERE deal_id = ${id}`);
+    // Finally delete the deal
     await db.delete(deals).where(and(eq(deals.id, id), eq(deals.orgId, orgId)));
     return true;
   }

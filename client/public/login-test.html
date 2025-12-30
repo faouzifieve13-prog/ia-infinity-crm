@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test de Connexion - IA Infinity</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            max-width: 450px;
+            width: 100%;
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        p {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .message {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 6px;
+            display: none;
+        }
+        .message.error {
+            background: #fee;
+            border: 1px solid #fcc;
+            color: #c33;
+        }
+        .message.success {
+            background: #efe;
+            border: 1px solid #cfc;
+            color: #3c3;
+        }
+        .info-box {
+            background: #f0f4ff;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        .info-box h3 {
+            color: #667eea;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        .info-box code {
+            background: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Test de Connexion</h1>
+        <p>Utilisez exactement ces identifiants :</p>
+
+        <div class="info-box">
+            <h3>Email :</h3>
+            <code>faouzi.fieve13@gmail.com</code>
+            <h3 style="margin-top: 10px;">Mot de passe :</h3>
+            <code>Faouzi.89</code>
+        </div>
+
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input
+                    type="email"
+                    id="email"
+                    value="faouzi.fieve13@gmail.com"
+                    autocomplete="email"
+                    required
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="password">Mot de passe</label>
+                <input
+                    type="password"
+                    id="password"
+                    value="Faouzi.89"
+                    autocomplete="current-password"
+                    required
+                >
+            </div>
+
+            <button type="submit" id="submitBtn">Se connecter</button>
+        </form>
+
+        <div id="message" class="message"></div>
+    </div>
+
+    <script>
+        const form = document.getElementById('loginForm');
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        const submitBtn = document.getElementById('submitBtn');
+        const messageDiv = document.getElementById('message');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const email = emailInput.value.trim();
+            const password = passwordInput.value;
+
+            console.log('Tentative de connexion...');
+            console.log('Email:', email);
+            console.log('Password length:', password.length);
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Connexion en cours...';
+            messageDiv.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email, password }),
+                    credentials: 'include'
+                });
+
+                console.log('Response status:', response.status);
+                const data = await response.json();
+                console.log('Response data:', data);
+
+                if (response.ok) {
+                    messageDiv.className = 'message success';
+                    messageDiv.textContent = '✅ Connexion réussie ! Redirection...';
+                    messageDiv.style.display = 'block';
+
+                    // Sauvegarder dans localStorage
+                    if (data.authToken) {
+                        localStorage.setItem('authToken', data.authToken);
+                    }
+
+                    // Rediriger vers la page d'accueil
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                } else {
+                    throw new Error(data.error || 'Erreur de connexion');
+                }
+            } catch (error) {
+                console.error('Erreur:', error);
+                messageDiv.className = 'message error';
+                messageDiv.textContent = '❌ ' + error.message;
+                messageDiv.style.display = 'block';
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Se connecter';
+            }
+        });
+    </script>
+</body>
+</html>

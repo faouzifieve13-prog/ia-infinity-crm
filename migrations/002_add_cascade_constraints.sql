@@ -25,6 +25,62 @@ DROP CONSTRAINT IF EXISTS quotes_deal_id_deals_id_fk,
 ADD CONSTRAINT quotes_deal_id_deals_id_fk
   FOREIGN KEY (deal_id) REFERENCES deals(id) ON DELETE CASCADE;
 
+-- Follow-up History -> Deals
+-- When a deal is deleted, delete all associated follow-up history
+ALTER TABLE follow_up_history
+DROP CONSTRAINT IF EXISTS follow_up_history_deal_id_deals_id_fk,
+ADD CONSTRAINT follow_up_history_deal_id_deals_id_fk
+  FOREIGN KEY (deal_id) REFERENCES deals(id) ON DELETE CASCADE;
+
+-- Activities -> Deals
+-- When a deal is deleted, delete all associated activities
+ALTER TABLE activities
+DROP CONSTRAINT IF EXISTS activities_deal_id_deals_id_fk,
+ADD CONSTRAINT activities_deal_id_deals_id_fk
+  FOREIGN KEY (deal_id) REFERENCES deals(id) ON DELETE CASCADE;
+
+-- Emails -> Deals
+-- When a deal is deleted, delete all associated emails
+ALTER TABLE emails
+DROP CONSTRAINT IF EXISTS emails_deal_id_deals_id_fk,
+ADD CONSTRAINT emails_deal_id_deals_id_fk
+  FOREIGN KEY (deal_id) REFERENCES deals(id) ON DELETE CASCADE;
+
+-- Documents -> Deals
+-- When a deal is deleted, delete all associated documents
+ALTER TABLE documents
+DROP CONSTRAINT IF EXISTS documents_deal_id_deals_id_fk,
+ADD CONSTRAINT documents_deal_id_deals_id_fk
+  FOREIGN KEY (deal_id) REFERENCES deals(id) ON DELETE CASCADE;
+
+-- Calendar Events -> Deals
+-- When a deal is deleted, set dealId to null
+ALTER TABLE calendar_events
+DROP CONSTRAINT IF EXISTS calendar_events_deal_id_deals_id_fk,
+ADD CONSTRAINT calendar_events_deal_id_deals_id_fk
+  FOREIGN KEY (deal_id) REFERENCES deals(id) ON DELETE SET NULL;
+
+-- Contracts -> Deals
+-- When a deal is deleted, set dealId to null
+ALTER TABLE contracts
+DROP CONSTRAINT IF EXISTS contracts_deal_id_deals_id_fk,
+ADD CONSTRAINT contracts_deal_id_deals_id_fk
+  FOREIGN KEY (deal_id) REFERENCES deals(id) ON DELETE SET NULL;
+
+-- Projects -> Deals
+-- When a deal is deleted, set dealId to null
+ALTER TABLE projects
+DROP CONSTRAINT IF EXISTS projects_deal_id_deals_id_fk,
+ADD CONSTRAINT projects_deal_id_deals_id_fk
+  FOREIGN KEY (deal_id) REFERENCES deals(id) ON DELETE SET NULL;
+
+-- Deals -> Accounts
+-- When an account is deleted, delete all associated deals
+ALTER TABLE deals
+DROP CONSTRAINT IF EXISTS deals_account_id_accounts_id_fk,
+ADD CONSTRAINT deals_account_id_accounts_id_fk
+  FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE;
+
 -- Invitations -> Accounts
 -- When an account is deleted, delete all pending invitations
 ALTER TABLE invitations

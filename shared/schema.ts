@@ -87,7 +87,7 @@ export const accounts = pgTable("accounts", {
 export const contacts = pgTable("contacts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  accountId: varchar("account_id").references(() => accounts.id),
+  accountId: varchar("account_id").references(() => accounts.id, { onDelete: "cascade" }),
   vendorId: varchar("vendor_id"),
   authUserId: varchar("auth_user_id"),
   name: text("name").notNull(),
@@ -111,8 +111,8 @@ export const contacts = pgTable("contacts", {
 export const deals = pgTable("deals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  accountId: varchar("account_id").references(() => accounts.id),
-  contactId: varchar("contact_id").references(() => contacts.id),
+  accountId: varchar("account_id").references(() => accounts.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id").references(() => contacts.id, { onDelete: "set null" }),
   ownerId: varchar("owner_id").references(() => users.id),
   name: text("name").notNull().default('Nouvelle opportunité'),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull().default("0"),
@@ -145,7 +145,7 @@ export const deals = pgTable("deals", {
 export const followUpHistory = pgTable("follow_up_history", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  dealId: varchar("deal_id").notNull().references(() => deals.id),
+  dealId: varchar("deal_id").notNull().references(() => deals.id, { onDelete: "cascade" }),
   type: followUpTypeEnum("type").notNull(),
   subject: text("subject"),
   content: text("content").notNull(),
@@ -164,7 +164,7 @@ export const followUpHistory = pgTable("follow_up_history", {
 export const quotes = pgTable("quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  dealId: varchar("deal_id").notNull().references(() => deals.id),
+  dealId: varchar("deal_id").notNull().references(() => deals.id, { onDelete: "cascade" }),
   accountId: varchar("account_id").references(() => accounts.id),
   qontoQuoteId: varchar("qonto_quote_id"),
   number: text("number").notNull(),
