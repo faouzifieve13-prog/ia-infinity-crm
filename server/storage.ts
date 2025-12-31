@@ -410,9 +410,7 @@ export class DatabaseStorage implements IStorage {
     // Delete related contracts
     await db.delete(contracts).where(eq(contracts.accountId, id));
 
-    // Delete channels and messages
-    await db.execute(sql`DELETE FROM channel_messages WHERE channel_id IN (SELECT id FROM channels WHERE account_id = ${id})`);
-    await db.execute(sql`DELETE FROM channel_attachments WHERE channel_id IN (SELECT id FROM channels WHERE account_id = ${id})`);
+    // Delete channels - CASCADE will handle messages and attachments
     await db.execute(sql`DELETE FROM channels WHERE account_id = ${id}`);
 
     // Delete account updates and loom videos

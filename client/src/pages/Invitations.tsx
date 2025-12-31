@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Mail, Copy, UserPlus, Clock, CheckCircle, XCircle, RotateCcw, Trash2, Link2, Send, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -46,7 +46,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { format, formatDistanceToNow } from 'date-fns';
-import type { Invitation, Account, Vendor, UserRole, Space } from '@shared/schema';
+import type { Invitation, Account, Vendor, Contact, UserRole, Space } from '@shared/schema';
 
 type InvitationWithLink = Invitation & { inviteLink?: string; token?: string; emailSent?: boolean };
 
@@ -96,7 +96,17 @@ export default function Invitations() {
     expiresInMinutes: 259200, // 6 months by default
     accountId: '',
     vendorId: '',
+    vendorContactId: '', // For contacts of type 'vendor' without a vendor record
+    vendorName: '',
     sendEmail: true,
+  });
+
+  // WORKAROUND: Use ref to store the last selected vendor value
+  // This bypasses any React state timing issues
+  const selectedVendorRef = useRef<{ vendorId: string; vendorContactId: string; vendorName: string }>({
+    vendorId: '',
+    vendorContactId: '',
+    vendorName: '',
   });
 
   const { data: invitations, isLoading } = useQuery<Invitation[]>({
@@ -111,21 +121,46 @@ export default function Invitations() {
     queryKey: ['/api/vendors'],
   });
 
+  // Also load contacts of type 'vendor' that might not have a vendor record yet
+  const { data: contacts } = useQuery<Contact[]>({
+    queryKey: ['/api/contacts'],
+  });
+
+  // Filter contacts that are vendors and don't have a linked vendor record
+  const vendorContacts = contacts?.filter(c => c.contactType === 'vendor') || [];
+
   const { data: gmailStatus } = useQuery<GmailStatus>({
     queryKey: ['/api/gmail/status'],
   });
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const response = await apiRequest('POST', '/api/invitations', {
+      // IMPORTANT: Send vendorContactId separately - the backend will create a vendor from it
+      // DO NOT map vendorContactId to vendorId - they are different concepts:
+      // - vendorId = existing vendor in vendors table
+      // - vendorContactId = contact of type 'vendor' that needs a vendor record created
+
+      const payload = {
         email: data.email,
         role: data.role,
         space: data.space,
         expiresInMinutes: data.expiresInMinutes,
         accountId: data.accountId || undefined,
+        // Only send vendorId if it's a real vendor from the vendors table
         vendorId: data.vendorId || undefined,
+        // Send vendorContactId if a contact was selected - backend will create vendor from it
+        vendorContactId: data.vendorContactId || undefined,
+        vendorName: data.vendorName || undefined,
         sendEmail: data.sendEmail,
-      });
+      };
+
+      // Debug: Log the exact payload being sent
+      console.log("[Invitations] === SENDING INVITATION ===");
+      console.log("[Invitations] data.vendorId:", data.vendorId || "(empty)");
+      console.log("[Invitations] data.vendorContactId:", data.vendorContactId || "(empty)");
+      console.log("[Invitations] Full payload:", JSON.stringify(payload, null, 2));
+
+      const response = await apiRequest('POST', '/api/invitations', payload);
       return response.json() as Promise<InvitationWithLink>;
     },
     onSuccess: (data) => {
@@ -178,7 +213,32 @@ export default function Invitations() {
   });
 
   const handleCreateInvite = () => {
-    createMutation.mutate(formData);
+    // Debug: Log the exact state at the moment of submission
+    console.log("[Invitations] handleCreateInvite called");
+    console.log("[Invitations] Current formData state:", JSON.stringify(formData, null, 2));
+    console.log("[Invitations] Ref values:", JSON.stringify(selectedVendorRef.current, null, 2));
+
+    // CRITICAL FIX: Use ref values as the primary source for vendor data
+    // This bypasses any React state update timing issues
+    const vendorIdToUse = formData.vendorId || selectedVendorRef.current.vendorId;
+    const vendorContactIdToUse = formData.vendorContactId || selectedVendorRef.current.vendorContactId;
+    const vendorNameToUse = formData.vendorName || selectedVendorRef.current.vendorName;
+
+    console.log("[Invitations] Final vendor values:");
+    console.log("  - vendorId:", vendorIdToUse);
+    console.log("  - vendorContactId:", vendorContactIdToUse);
+    console.log("  - vendorName:", vendorNameToUse);
+
+    // Force the values to be included in the payload
+    const submissionData = {
+      ...formData,
+      vendorId: vendorIdToUse,
+      vendorContactId: vendorContactIdToUse,
+      vendorName: vendorNameToUse,
+    };
+
+    console.log("[Invitations] Submitting with data:", JSON.stringify(submissionData, null, 2));
+    createMutation.mutate(submissionData);
   };
 
   const handleCopyLink = (link: string) => {
@@ -193,6 +253,8 @@ export default function Invitations() {
     setIsDialogOpen(false);
     setNewInviteLink(null);
     setLastEmailSent(false);
+    // Reset both state and ref
+    selectedVendorRef.current = { vendorId: '', vendorContactId: '', vendorName: '' };
     setFormData({
       email: '',
       role: 'client_member',
@@ -200,6 +262,8 @@ export default function Invitations() {
       expiresInMinutes: 259200, // 6 months by default
       accountId: '',
       vendorId: '',
+      vendorContactId: '',
+      vendorName: '',
       sendEmail: true,
     });
   };
@@ -359,25 +423,127 @@ export default function Invitations() {
                       </Select>
                     </div>
                   )}
-                  {formData.space === 'vendor' && vendors && vendors.length > 0 && (
+                  {formData.space === 'vendor' && (
                     <div className="space-y-2">
-                      <Label htmlFor="vendor">Link to Vendor (Optional)</Label>
-                      <Select
-                        value={formData.vendorId || 'none'}
-                        onValueChange={(v) => setFormData({ ...formData, vendorId: v === 'none' ? '' : v })}
-                      >
-                        <SelectTrigger id="vendor" data-testid="select-vendor">
-                          <SelectValue placeholder="Select vendor..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">No vendor</SelectItem>
-                          {vendors.map((vendor) => (
-                            <SelectItem key={vendor.id} value={vendor.id}>
-                              {vendor.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Label htmlFor="vendor">Sous-traitant existant</Label>
+                      {((vendors && vendors.length > 0) || vendorContacts.length > 0) ? (
+                        <>
+                          <Select
+                            value={formData.vendorId ? `vendor:${formData.vendorId}` : formData.vendorContactId ? `contact:${formData.vendorContactId}` : 'new'}
+                            onValueChange={(v) => {
+                              console.log("[Invitations] Vendor Select onValueChange triggered with value:", v);
+                              if (v === 'new') {
+                                console.log("[Invitations] Setting to 'new' vendor - clearing IDs");
+                                // Update ref IMMEDIATELY (sync)
+                                selectedVendorRef.current = { vendorId: '', vendorContactId: '', vendorName: '' };
+                                setFormData(prev => ({
+                                  ...prev,
+                                  vendorId: '',
+                                  vendorContactId: '',
+                                  vendorName: '',
+                                }));
+                              } else if (v.startsWith('vendor:')) {
+                                const vendorId = v.replace('vendor:', '');
+                                const selectedVendor = vendors?.find(vendor => vendor.id === vendorId);
+                                console.log("[Invitations] Selected vendor:", vendorId, "Vendor object:", selectedVendor);
+                                // Update ref IMMEDIATELY (sync) - this is the critical fix
+                                selectedVendorRef.current = {
+                                  vendorId: vendorId,
+                                  vendorContactId: '',
+                                  vendorName: selectedVendor?.name || '',
+                                };
+                                console.log("[Invitations] Ref updated to:", selectedVendorRef.current);
+                                setFormData(prev => {
+                                  const newState = {
+                                    ...prev,
+                                    vendorId: vendorId,
+                                    vendorContactId: '',
+                                    vendorName: selectedVendor?.name || '',
+                                    email: selectedVendor?.email && !prev.email ? selectedVendor.email : prev.email
+                                  };
+                                  console.log("[Invitations] New formData state will be:", newState);
+                                  return newState;
+                                });
+                              } else if (v.startsWith('contact:')) {
+                                const contactId = v.replace('contact:', '');
+                                const selectedContact = vendorContacts.find(c => c.id === contactId);
+                                console.log("[Invitations] Selected contact:", contactId, "Contact object:", selectedContact);
+
+                                // CRITICAL FIX: If contact already has a vendorId, use it directly!
+                                const existingVendorId = selectedContact?.vendorId || '';
+                                console.log("[Invitations] Contact's existing vendorId:", existingVendorId || "(none)");
+
+                                // Update ref IMMEDIATELY (sync)
+                                selectedVendorRef.current = {
+                                  // Use contact's vendorId if it exists, otherwise we'll need vendorContactId
+                                  vendorId: existingVendorId,
+                                  vendorContactId: existingVendorId ? '' : contactId, // Only set if no vendorId
+                                  vendorName: selectedContact?.name || '',
+                                };
+                                console.log("[Invitations] Ref updated to:", selectedVendorRef.current);
+
+                                setFormData(prev => {
+                                  const newState = {
+                                    ...prev,
+                                    // Use contact's vendorId if it exists
+                                    vendorId: existingVendorId,
+                                    // Only set vendorContactId if contact doesn't have a vendorId yet
+                                    vendorContactId: existingVendorId ? '' : contactId,
+                                    vendorName: selectedContact?.name || '',
+                                    email: selectedContact?.email && !prev.email ? selectedContact.email : prev.email
+                                  };
+                                  console.log("[Invitations] New formData state will be:", newState);
+                                  return newState;
+                                });
+                              }
+                            }}
+                          >
+                            <SelectTrigger id="vendor" data-testid="select-vendor">
+                              <SelectValue placeholder="Sélectionner un sous-traitant..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="new">+ Créer un nouveau sous-traitant</SelectItem>
+                              {vendors && vendors.length > 0 && (
+                                <>
+                                  <div className="px-2 py-1 text-xs text-muted-foreground font-semibold">Sous-traitants</div>
+                                  {vendors.map((vendor) => (
+                                    <SelectItem key={`vendor:${vendor.id}`} value={`vendor:${vendor.id}`}>
+                                      {vendor.name} {vendor.email ? `(${vendor.email})` : ''}
+                                    </SelectItem>
+                                  ))}
+                                </>
+                              )}
+                              {vendorContacts.length > 0 && (
+                                <>
+                                  <div className="px-2 py-1 text-xs text-muted-foreground font-semibold">Contacts (type sous-traitant)</div>
+                                  {vendorContacts.map((contact) => (
+                                    <SelectItem key={`contact:${contact.id}`} value={`contact:${contact.id}`}>
+                                      {contact.name} {contact.email ? `(${contact.email})` : ''}
+                                    </SelectItem>
+                                  ))}
+                                </>
+                              )}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            {formData.vendorId || formData.vendorContactId
+                              ? "Le compte sera lié à ce sous-traitant existant"
+                              : "Un nouveau sous-traitant sera créé automatiquement"
+                            }
+                          </p>
+                          {/* Debug info - can be removed after fixing */}
+                          <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded text-xs">
+                            <strong>Debug State:</strong>
+                            <div>vendorId: "{formData.vendorId || '(empty)'}"</div>
+                            <div>vendorContactId: "{formData.vendorContactId || '(empty)'}"</div>
+                            <div>vendorName: "{formData.vendorName || '(empty)'}"</div>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-sm text-muted-foreground p-2 bg-muted rounded">
+                          Aucun sous-traitant existant. Un nouveau sera créé automatiquement.
+                        </p>
+                      )}
                     </div>
                   )}
                   <div className="space-y-2">

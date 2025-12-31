@@ -623,29 +623,47 @@ export async function requireVendorProjectAccess(req: Request, res: Response, ne
   if (!req.session.userId) {
     return res.status(401).json({ error: "Non authentifié" });
   }
-  
+
   if (req.session.role !== "vendor") {
     return next();
   }
-  
+
   const projectId = req.params.projectId || req.params.id;
   if (!projectId) {
     return next();
   }
-  
+
   const orgId = req.session.orgId || DEFAULT_ORG_ID;
+  const vendorContactId = req.session.vendorContactId;
+
+  if (!vendorContactId) {
+    return res.status(403).json({ error: "Accès refusé: profil prestataire non lié" });
+  }
+
   const project = await storage.getProject(projectId, orgId);
   if (!project) {
     return res.status(404).json({ error: "Projet non trouvé" });
   }
-  
+
+  // Get the contact to find the actual vendorId
+  const contact = await storage.getContact(vendorContactId, orgId);
+  if (!contact || !contact.vendorId) {
+    return res.status(403).json({ error: "Accès refusé: prestataire non trouvé" });
+  }
+
+  // Check if project is directly assigned to this vendor
+  if (project.vendorId === contact.vendorId) {
+    return next();
+  }
+
+  // Check if vendor has a mission on this project
   const missions = await storage.getMissions(orgId, projectId);
-  const vendorMission = missions.find(m => m.vendorId === req.session.vendorContactId);
-  
+  const vendorMission = missions.find(m => m.vendorId === contact.vendorId);
+
   if (!vendorMission) {
     return res.status(403).json({ error: "Accès refusé: vous n'êtes pas assigné à ce projet" });
   }
-  
+
   next();
 }
 

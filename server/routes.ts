@@ -4088,13 +4088,31 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     expiresInMinutes: z.number().min(5).max(525600).default(30), // Max 1 year
     accountId: z.string().uuid().optional(),
     vendorId: z.string().uuid().optional(),
+    vendorContactId: z.string().uuid().optional(), // Contact of type 'vendor' to create vendor from
+    // Fields for creating a new vendor on-the-fly
+    vendorName: z.string().optional(),
+    vendorCompany: z.string().optional(),
+    vendorDailyRate: z.number().optional(),
+    vendorSkills: z.array(z.string()).optional(),
     sendEmail: z.boolean().default(false),
   });
 
   app.post("/api/invitations", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
+      console.log("========================================");
+      console.log("[POST /api/invitations] NOUVELLE REQUÊTE");
+      console.log("========================================");
+      console.log("[POST /api/invitations] Request body:", JSON.stringify(req.body, null, 2));
+      console.log("[POST /api/invitations] vendorId reçu:", req.body.vendorId || "(vide)");
+      console.log("[POST /api/invitations] vendorContactId reçu:", req.body.vendorContactId || "(vide)");
+
       const orgId = getOrgId(req);
+      console.log("[POST /api/invitations] orgId:", orgId);
+
       const parsed = createInvitationSchema.parse(req.body);
+      console.log("[POST /api/invitations] Parsed - vendorId:", parsed.vendorId || "(vide)");
+      console.log("[POST /api/invitations] Parsed - vendorContactId:", parsed.vendorContactId || "(vide)");
+      console.log("[POST /api/invitations] Parsed - role:", parsed.role);
 
       // STRICT VALIDATION: Ensure client invitations have accountId
       if ((parsed.role === 'client_admin' || parsed.role === 'client_member') && !parsed.accountId) {
@@ -4104,12 +4122,69 @@ Génère un contrat complet et professionnel adapté à ce client.`;
         });
       }
 
-      // STRICT VALIDATION: Ensure vendor invitations have vendorId
-      if (parsed.role === 'vendor' && !parsed.vendorId) {
-        return res.status(400).json({
-          error: 'Validation Error',
-          message: 'vendorId est obligatoire pour les invitations vendor'
-        });
+      // For vendor invitations: either provide vendorId, vendorContactId, OR create a new vendor
+      let finalVendorId = parsed.vendorId;
+
+      if (parsed.role === 'vendor') {
+        console.log("[POST /api/invitations] Role = vendor, processing...");
+
+        if (parsed.vendorId) {
+          // Use existing vendor
+          finalVendorId = parsed.vendorId;
+          console.log(`[POST /api/invitations] ✅ Using existing vendor ${finalVendorId}`);
+        } else if (parsed.vendorContactId) {
+          console.log(`[POST /api/invitations] ⚙️ Creating vendor from contact ${parsed.vendorContactId}`);
+          // Create vendor from contact
+          const contact = await storage.getContact(parsed.vendorContactId, orgId);
+          console.log("[POST /api/invitations] Contact trouvé:", contact ? contact.name : "NULL");
+
+          if (!contact) {
+            console.log("[POST /api/invitations] ❌ Contact non trouvé!");
+            return res.status(404).json({
+              error: 'Contact Not Found',
+              message: `Contact ${parsed.vendorContactId} n'existe pas`
+            });
+          }
+
+          // Check if contact already has a linked vendor
+          if (contact.vendorId) {
+            finalVendorId = contact.vendorId;
+            console.log(`[POST /api/invitations] Contact already linked to vendor ${finalVendorId}`);
+          } else {
+            // Create new vendor from contact data
+            const newVendor = await storage.createVendor({
+              orgId,
+              name: contact.name,
+              email: contact.email || parsed.email,
+              company: null,
+              dailyRate: '0',
+              skills: [],
+              availability: 'available',
+              performance: 100,
+            });
+            finalVendorId = newVendor.id;
+
+            // Link vendor to contact
+            await storage.updateContact(contact.id, orgId, { vendorId: newVendor.id });
+            console.log(`[POST /api/invitations] Created vendor ${newVendor.id} from contact ${contact.id}`);
+          }
+        } else {
+          // Create a new vendor on-the-fly (no vendorId and no vendorContactId provided)
+          console.log("[POST /api/invitations] ⚙️ Creating NEW vendor on-the-fly (no contact selected)");
+          const vendorName = parsed.vendorName || parsed.email.split('@')[0];
+          const newVendor = await storage.createVendor({
+            orgId,
+            name: vendorName,
+            email: parsed.email,
+            company: parsed.vendorCompany || null,
+            dailyRate: parsed.vendorDailyRate?.toString() || '0',
+            skills: parsed.vendorSkills || [],
+            availability: 'available',
+            performance: 100,
+          });
+          finalVendorId = newVendor.id;
+          console.log(`[POST /api/invitations] Created new vendor ${newVendor.id} for invitation to ${parsed.email}`);
+        }
       }
 
       // Verify that the account exists if accountId is provided
@@ -4123,7 +4198,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
         }
       }
 
-      // Verify that the vendor exists if vendorId is provided
+      // Verify that the vendor exists if vendorId is provided (existing vendor)
       if (parsed.vendorId) {
         const vendor = await storage.getVendor(parsed.vendorId, orgId);
         if (!vendor) {
@@ -4147,7 +4222,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
         expiresAt,
         status: 'pending',
         accountId: parsed.accountId || null,
-        vendorId: parsed.vendorId || null,
+        vendorId: finalVendorId || null,
       });
       
       const baseUrl = process.env.REPLIT_DEV_DOMAIN 
@@ -4175,11 +4250,15 @@ Génère un contrat complet et professionnel adapté à ce client.`;
         emailSent,
       });
     } catch (error) {
+      console.error("[POST /api/invitations] Error:", error);
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: error.errors });
+        console.error("[POST /api/invitations] Zod validation errors:", JSON.stringify(error.errors, null, 2));
+        return res.status(400).json({ error: "Validation Error", details: error.errors });
       }
-      console.error("Create invitation error:", error);
-      res.status(500).json({ error: "Failed to create invitation" });
+      res.status(500).json({
+        error: "Failed to create invitation",
+        message: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 
