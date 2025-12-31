@@ -645,25 +645,20 @@ export async function requireVendorProjectAccess(req: Request, res: Response, ne
     return res.status(404).json({ error: "Projet non trouvé" });
   }
 
-  // Get the contact to find the actual vendorId
-  const contact = await storage.getContact(vendorContactId, orgId);
-  if (!contact || !contact.vendorId) {
-    return res.status(403).json({ error: "Accès refusé: prestataire non trouvé" });
-  }
+  // STRICT ISOLATION: Only the specific vendor contact assigned to the project can access it
+  console.log("🔍 DEBUG requireVendorProjectAccess:", {
+    projectId,
+    projectVendorContactId: project.vendorContactId,
+    sessionVendorContactId: vendorContactId,
+    match: project.vendorContactId === vendorContactId,
+  });
 
-  // Check if project is directly assigned to this vendor
-  if (project.vendorId === contact.vendorId) {
-    return next();
-  }
-
-  // Check if vendor has a mission on this project
-  const missions = await storage.getMissions(orgId, projectId);
-  const vendorMission = missions.find(m => m.vendorId === contact.vendorId);
-
-  if (!vendorMission) {
+  if (project.vendorContactId !== vendorContactId) {
+    console.log("❌ DEBUG Middleware Access Denied");
     return res.status(403).json({ error: "Accès refusé: vous n'êtes pas assigné à ce projet" });
   }
 
+  console.log("✅ DEBUG Middleware Access Granted");
   next();
 }
 

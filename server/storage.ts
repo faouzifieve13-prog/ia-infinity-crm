@@ -1604,6 +1604,15 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(projectUpdates.updateDate));
   }
 
+  async getProjectUpdate(id: string, orgId: string): Promise<ProjectUpdate | undefined> {
+    return db.query.projectUpdates.findFirst({
+      where: (updates, { and, eq }) => and(
+        eq(updates.id, id),
+        eq(updates.orgId, orgId)
+      )
+    });
+  }
+
   async createProjectUpdate(update: InsertProjectUpdate): Promise<ProjectUpdate> {
     const [created] = await db.insert(projectUpdates).values(update).returning();
     return created;

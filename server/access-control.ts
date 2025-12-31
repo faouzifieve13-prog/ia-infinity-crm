@@ -39,8 +39,6 @@ export async function getVendorProjectIds(
     // Requête directe: chercher les projets où vendor_contact_id = vendorContactId
     const projects = await storage.getProjects(orgId);
     const vendorProjects = projects.filter(p => p.vendorContactId === vendorContactId);
-
-    console.log("Vendor projects found:", vendorProjects.map(p => ({ id: p.id, name: p.name })));
     return vendorProjects.map(p => p.id);
   } catch (error) {
     console.error("Error getting vendor project IDs:", error);

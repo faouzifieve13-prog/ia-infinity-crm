@@ -15,7 +15,7 @@ import {
 } from "@shared/schema";
 import { sendInvitationEmail, sendClientWelcomeEmail, testGmailConnection, getInboxEmails } from "./gmail";
 import { uploadFileToDrive } from "./drive";
-import { requireAuth, requireAdmin, requireClient, requireVendor, requireClientAdmin, requireWriteAccess, requireChannelAccess, getSessionData } from "./auth";
+import { requireAuth, requireAdmin, requireClient, requireVendor, requireClientAdmin, requireWriteAccess, requireChannelAccess, requireVendorProjectAccess, getSessionData } from "./auth";
 import {
   getAccessContext,
   filterProjectsByAccess,
@@ -6603,13 +6603,143 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
   app.get("/api/vendor/projects", requireVendor, async (req: Request, res: Response) => {
     try {
       const context = getAccessContext(req);
+
+      console.log("🔍 DEBUG Vendor Projects List - Context:", {
+        vendorContactId: context.vendorContactId,
+        role: context.role,
+        userId: context.userId,
+        orgId: context.orgId,
+      });
+
       const allProjects = await storage.getProjects(context.orgId);
+
+      console.log("🔍 DEBUG All Projects:", allProjects.map(p => ({
+        id: p.id,
+        name: p.name,
+        vendorContactId: p.vendorContactId,
+        vendorId: p.vendorId,
+      })));
+
       const vendorProjects = await filterProjectsByAccess(allProjects, context);
+
+      console.log("🔍 DEBUG Filtered Vendor Projects:", vendorProjects.map(p => ({
+        id: p.id,
+        name: p.name,
+        vendorContactId: p.vendorContactId,
+      })));
 
       res.json(vendorProjects);
     } catch (error) {
       console.error("Get vendor projects error:", error);
       res.status(500).json({ error: "Failed to get vendor projects" });
+    }
+  });
+
+  // Update project (vendor can only modify projects specifically assigned to them)
+  app.patch("/api/vendor/projects/:projectId", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const projectId = req.params.projectId;
+
+      // Get existing project for comparison
+      const existingProject = await storage.getProject(projectId, orgId);
+      if (!existingProject) {
+        return res.status(404).json({ error: "Projet non trouvé" });
+      }
+
+      // Define which fields vendors are allowed to update
+      const allowedFields = {
+        status: req.body.status,
+        progress: req.body.progress,
+        description: req.body.description,
+        deliverySteps: req.body.deliverySteps,
+      };
+
+      // Remove undefined fields
+      const updateData = Object.fromEntries(
+        Object.entries(allowedFields).filter(([_, value]) => value !== undefined)
+      );
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ error: "Aucun champ à mettre à jour" });
+      }
+
+      const updatedProject = await storage.updateProject(projectId, orgId, updateData);
+
+      if (!updatedProject) {
+        return res.status(404).json({ error: "Projet non trouvé" });
+      }
+
+      // Notify if project status changed
+      if (updateData.status && updateData.status !== existingProject.status) {
+        await notifyProjectStatusChange({
+          orgId,
+          projectId: updatedProject.id,
+          projectName: updatedProject.name,
+          oldStatus: existingProject.status,
+          newStatus: updateData.status,
+          changedBy: req.session.userId!,
+        });
+      }
+
+      res.json(updatedProject);
+    } catch (error) {
+      console.error("Update vendor project error:", error);
+      res.status(500).json({ error: "Échec de la mise à jour du projet" });
+    }
+  });
+
+  // DIAGNOSTIC: Check vendor session and project assignments
+  app.get("/api/vendor/debug", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.session.vendorContactId;
+      const userId = req.session.userId;
+
+      // Get vendor contact info
+      let vendorContact = null;
+      if (vendorContactId) {
+        vendorContact = await storage.getContact(vendorContactId, orgId);
+      }
+
+      // Get user memberships
+      const memberships = await storage.getMembershipsByOrg(orgId);
+      const userMembership = memberships.find(m => m.userId === userId);
+
+      // Get all projects
+      const allProjects = await storage.getProjects(orgId);
+
+      res.json({
+        session: {
+          userId,
+          vendorContactId,
+          role: req.session.role,
+          email: req.session.email,
+        },
+        vendorContact: vendorContact ? {
+          id: vendorContact.id,
+          name: vendorContact.name,
+          email: vendorContact.email,
+          vendorId: vendorContact.vendorId,
+          authUserId: vendorContact.authUserId,
+        } : null,
+        membership: userMembership ? {
+          id: userMembership.id,
+          role: userMembership.role,
+          vendorContactId: userMembership.vendorContactId,
+        } : null,
+        projects: allProjects.map(p => ({
+          id: p.id,
+          name: p.name,
+          vendorContactId: p.vendorContactId,
+          vendorId: p.vendorId,
+          hasVendorContactId: !!p.vendorContactId,
+          matchesSession: p.vendorContactId === vendorContactId,
+        })),
+      });
+    } catch (error) {
+      console.error("Vendor debug error:", error);
+      res.status(500).json({ error: "Debug failed" });
     }
   });
 
@@ -7164,13 +7294,33 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       const vendorContactId = req.session.vendorContactId;
       const projectId = req.params.projectId;
 
+      console.log("🔍 DEBUG Vendor Project Access:", {
+        vendorContactId,
+        projectId,
+        orgId,
+      });
+
       if (!vendorContactId) {
         return res.status(403).json({ error: "Aucun profil vendeur associé" });
       }
 
       // Verify vendor has access to this project
       const project = await storage.getProject(projectId, orgId);
+
+      console.log("🔍 DEBUG Project Found:", {
+        projectId: project?.id,
+        projectName: project?.name,
+        projectVendorContactId: project?.vendorContactId,
+        sessionVendorContactId: vendorContactId,
+        match: project?.vendorContactId === vendorContactId,
+      });
+
       if (!project || project.vendorContactId !== vendorContactId) {
+        console.log("❌ DEBUG Access Denied:", {
+          projectExists: !!project,
+          projectVendorContactId: project?.vendorContactId,
+          sessionVendorContactId: vendorContactId,
+        });
         return res.status(403).json({ error: "Accès refusé à ce projet" });
       }
 
@@ -7227,6 +7377,171 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     } catch (error) {
       console.error("Get vendor project details error:", error);
       res.status(500).json({ error: "Échec de récupération des détails du projet" });
+    }
+  });
+
+  // Get project updates (CR - Comptes Rendus) for vendor
+  app.get("/api/vendor/projects/:projectId/updates", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const projectId = req.params.projectId;
+
+      const updates = await storage.getProjectUpdates(projectId, orgId);
+      res.json(updates);
+    } catch (error) {
+      console.error("Get vendor project updates error:", error);
+      res.status(500).json({ error: "Échec de récupération des CR" });
+    }
+  });
+
+  // Create project update (CR) for vendor
+  app.post("/api/vendor/projects/:projectId/updates", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = req.session.userId;
+      const projectId = req.params.projectId;
+
+      const update = await storage.createProjectUpdate({
+        ...req.body,
+        orgId,
+        projectId,
+        createdById: userId,
+        updateDate: req.body.updateDate ? new Date(req.body.updateDate) : new Date(),
+      });
+
+      res.status(201).json(update);
+    } catch (error) {
+      console.error("Create vendor project update error:", error);
+      res.status(500).json({ error: "Échec de création du CR" });
+    }
+  });
+
+  // Generate AI-powered project update (CR) for vendor
+  app.post("/api/vendor/projects/:projectId/updates/generate-ai", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const projectId = req.params.projectId;
+      const { instructions } = req.body;
+
+      // Get project and related data
+      const project = await storage.getProject(projectId, orgId);
+      if (!project) {
+        return res.status(404).json({ error: "Projet non trouvé" });
+      }
+
+      // Get client info
+      let account = null;
+      if (project.accountId) {
+        account = await storage.getAccount(project.accountId, orgId);
+      }
+
+      // Get tasks and existing updates
+      const allTasks = await storage.getTasks(orgId);
+      const projectTasks = allTasks.filter(t => t.projectId === projectId);
+      const existingUpdates = await storage.getProjectUpdates(projectId, orgId);
+
+      // Import OpenAI
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+
+      const contextData = {
+        projet: {
+          nom: project.name,
+          description: project.description,
+          statut: project.status,
+          progression: project.progress,
+          dateDebut: project.startDate,
+          dateFin: project.endDate,
+        },
+        client: account ? {
+          nom: account.name,
+          secteur: account.industry,
+        } : null,
+        taches: projectTasks.map(t => ({
+          titre: t.title,
+          statut: t.status,
+          priorite: t.priority,
+        })),
+        derniersCR: existingUpdates.slice(-3).map(u => ({
+          date: u.updateDate,
+          titre: u.title,
+          type: u.type,
+        })),
+      };
+
+      const systemPrompt = `Tu es un consultant professionnel qui rédige des comptes rendus de suivi de projet pour des sous-traitants.
+
+Rédige un compte rendu de suivi clair, professionnel et structuré en français. Le CR doit inclure:
+- Un résumé de l'avancement du projet
+- Les réalisations depuis le dernier CR
+- Les tâches en cours
+- Les points d'attention ou blocages éventuels
+- Les prochaines étapes prévues
+
+Adapte le ton et le contenu aux instructions fournies par le sous-traitant.`;
+
+      const userPrompt = `${instructions ? `Instructions spécifiques: ${instructions}\n\n` : ''}Génère un compte rendu de suivi pour le projet suivant:\n\n${JSON.stringify(contextData, null, 2)}`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        max_completion_tokens: 1500,
+      });
+
+      const generatedContent = response.choices[0]?.message?.content || "";
+
+      res.json({
+        content: generatedContent,
+        project: {
+          id: project.id,
+          name: project.name,
+        },
+      });
+    } catch (error) {
+      console.error("Generate AI project update error:", error);
+      res.status(500).json({ error: "Échec de génération du CR avec l'IA" });
+    }
+  });
+
+  // Update project update (CR) for vendor
+  app.patch("/api/vendor/projects/:projectId/updates/:id", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const updateId = req.params.id;
+      const projectId = req.params.projectId;
+
+      // Verify the update belongs to this project
+      const existingUpdate = await storage.getProjectUpdate(updateId, orgId);
+      if (!existingUpdate || existingUpdate.projectId !== projectId) {
+        return res.status(404).json({ error: "CR non trouvé" });
+      }
+
+      const allowedFields = {
+        title: req.body.title,
+        content: req.body.content,
+        type: req.body.type,
+        updateDate: req.body.updateDate ? new Date(req.body.updateDate) : undefined,
+      };
+
+      const updateData = Object.fromEntries(
+        Object.entries(allowedFields).filter(([_, value]) => value !== undefined)
+      );
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ error: "Aucun champ à mettre à jour" });
+      }
+
+      const updated = await storage.updateProjectUpdate(updateId, orgId, updateData);
+      res.json(updated);
+    } catch (error) {
+      console.error("Update vendor project update error:", error);
+      res.status(500).json({ error: "Échec de mise à jour du CR" });
     }
   });
 
