@@ -178,8 +178,9 @@ const navCategories: NavCategory[] = [
     icon: FolderKanban,
     spaces: ['internal', 'client', 'vendor'],
     items: [
-      { title: 'Vue Projets', url: '/projects', icon: FolderKanban, spaces: ['internal', 'client', 'vendor'] },
-      { title: 'Mes Missions', url: '/missions', icon: UserCog, spaces: ['vendor'] },
+      { title: 'Vue Projets', url: '/projects', icon: FolderKanban, spaces: ['internal', 'client'] },
+      { title: 'Vue Projets', url: '/vendor/projects', icon: FolderKanban, spaces: ['vendor'] },
+      { title: 'Mes Missions', url: '/vendor/missions', icon: UserCog, spaces: ['vendor'] },
     ],
   },
   {
@@ -197,7 +198,8 @@ const navCategories: NavCategory[] = [
     icon: ListTodo,
     spaces: ['internal', 'client', 'vendor'],
     items: [
-      { title: 'Toutes les tâches', url: '/tasks', icon: ListTodo, spaces: ['internal', 'client', 'vendor'] },
+      { title: 'Toutes les tâches', url: '/tasks', icon: ListTodo, spaces: ['internal', 'client'] },
+      { title: 'Toutes les tâches', url: '/vendor/tasks', icon: ListTodo, spaces: ['vendor'] },
     ],
   },
   {
@@ -213,10 +215,12 @@ const navCategories: NavCategory[] = [
     icon: FolderOpen,
     spaces: ['internal', 'client', 'vendor'],
     items: [
-      { title: 'Tous les documents', url: '/documents', icon: FileText, spaces: ['internal', 'client', 'vendor'] },
+      { title: 'Tous les documents', url: '/documents', icon: FileText, spaces: ['internal', 'client'] },
+      { title: 'Tous les documents', url: '/vendor/documents', icon: FileText, spaces: ['vendor'] },
       { title: 'Devis', url: '/quotes', icon: Receipt, spaces: ['internal', 'client'] },
-      { title: 'Contrats', url: '/contracts', icon: FileSignature, spaces: ['internal', 'client', 'vendor'] },
-      { title: 'Mes Factures', url: '/my-invoices', icon: Receipt, spaces: ['vendor'] },
+      { title: 'Contrats', url: '/contracts', icon: FileSignature, spaces: ['internal', 'client'] },
+      { title: 'Contrats', url: '/vendor/contracts', icon: FileSignature, spaces: ['vendor'] },
+      { title: 'Mes Factures', url: '/vendor/invoices', icon: Receipt, spaces: ['vendor'] },
     ],
   },
   {

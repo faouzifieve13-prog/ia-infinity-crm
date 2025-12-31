@@ -56,6 +56,7 @@ import VendorContracts from "@/pages/VendorContracts";
 import VendorInvoices from "@/pages/VendorInvoices";
 import VendorChannels from "@/pages/VendorChannels";
 import VendorProjectDetail from "@/pages/VendorProjectDetail";
+import VendorProjects from "@/pages/VendorProjects";
 import ClientContracts from "@/pages/ClientContracts";
 import NotFound from "@/pages/not-found";
 
@@ -228,7 +229,7 @@ function AppContent() {
             <Route path="/vendor" component={VendorDashboard} />
             <Route path="/vendor/services" component={ClientServices} />
             <Route path="/vendor/missions" component={Missions} />
-            <Route path="/vendor/projects" component={Projects} />
+            <Route path="/vendor/projects" component={VendorProjects} />
             <Route path="/vendor/projects/:id" component={VendorProjectDetail} />
             <Route path="/vendor/documents" component={Documents} />
             <Route path="/vendor/contracts" component={VendorContracts} />
