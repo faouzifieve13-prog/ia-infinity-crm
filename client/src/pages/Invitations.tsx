@@ -531,13 +531,6 @@ export default function Invitations() {
                               : "Un nouveau sous-traitant sera créé automatiquement"
                             }
                           </p>
-                          {/* Debug info - can be removed after fixing */}
-                          <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded text-xs">
-                            <strong>Debug State:</strong>
-                            <div>vendorId: "{formData.vendorId || '(empty)'}"</div>
-                            <div>vendorContactId: "{formData.vendorContactId || '(empty)'}"</div>
-                            <div>vendorName: "{formData.vendorName || '(empty)'}"</div>
-                          </div>
                         </>
                       ) : (
                         <p className="text-sm text-muted-foreground p-2 bg-muted rounded">

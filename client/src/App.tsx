@@ -37,6 +37,7 @@ import NotionSync from "@/pages/NotionSync";
 import Invitations from "@/pages/Invitations";
 import AcceptInvite from "@/pages/AcceptInvite";
 import VendorAcceptInvite from "@/pages/VendorAcceptInvite";
+import VendorDashboard from "@/pages/VendorDashboard";
 import ContractSign from "@/pages/ContractSign";
 import ContractPreview from "@/pages/ContractPreview";
 import SignQuote from "@/pages/SignQuote";
@@ -217,13 +218,13 @@ function AppContent() {
     );
   }
 
-  // Vendor portal routes
-  if (location.startsWith("/vendor/")) {
+  // Vendor portal routes (match /vendor and /vendor/*)
+  if (location === "/vendor" || location.startsWith("/vendor/")) {
     return (
       <SpaceProvider defaultSpace="vendor">
         <AppLayout>
           <Switch>
-            <Route path="/vendor" component={() => <VendorDashboard />} />
+            <Route path="/vendor" component={VendorDashboard} />
             <Route path="/vendor/services" component={ClientServices} />
             <Route path="/vendor/missions" component={Missions} />
             <Route path="/vendor/projects" component={Projects} />
