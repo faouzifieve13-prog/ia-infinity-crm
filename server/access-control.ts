@@ -36,19 +36,12 @@ export async function getVendorProjectIds(
   vendorContactId: string
 ): Promise<string[]> {
   try {
-    // Get the contact to find its vendorId
-    const contact = await storage.getContact(vendorContactId, orgId);
-    if (!contact || !contact.vendorId) {
-      console.log("No vendor found for contact:", vendorContactId);
-      return [];
-    }
+    // Requête directe: chercher les projets où vendor_contact_id = vendorContactId
+    const projects = await storage.getProjects(orgId);
+    const vendorProjects = projects.filter(p => p.vendorContactId === vendorContactId);
 
-    // Single optimized query to get all projects for this vendor
-    const projects = await storage.getProjectsByVendor(contact.vendorId, orgId);
-
-    console.log("Vendor projects found:", projects.map(p => ({ id: p.id, name: p.name })));
-
-    return projects.map(p => p.id);
+    console.log("Vendor projects found:", vendorProjects.map(p => ({ id: p.id, name: p.name })));
+    return vendorProjects.map(p => p.id);
   } catch (error) {
     console.error("Error getting vendor project IDs:", error);
     return [];
