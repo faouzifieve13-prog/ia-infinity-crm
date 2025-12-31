@@ -201,10 +201,9 @@ function AppContent() {
       <SpaceProvider defaultSpace="client">
         <AppLayout>
           <Switch>
-            <Route path="/client" component={ClientPortal} />
             <Route path="/client/services" component={ClientServices} />
-            <Route path="/client/projects" component={Projects} />
             <Route path="/client/projects/:id" component={ClientProjectDetail} />
+            <Route path="/client/projects" component={Projects} />
             <Route path="/client/quotes" component={ClientQuotes} />
             <Route path="/client/documents" component={Documents} />
             <Route path="/client/invoices" component={ClientInvoices} />
@@ -213,6 +212,7 @@ function AppContent() {
             <Route path="/client/messages" component={ChannelsPage} />
             <Route path="/client/settings" component={Settings} />
             <Route path="/client/profile" component={Profile} />
+            <Route path="/client" component={ClientPortal} />
             <Route component={NotFound} />
           </Switch>
         </AppLayout>
@@ -226,11 +226,10 @@ function AppContent() {
       <SpaceProvider defaultSpace="vendor">
         <AppLayout>
           <Switch>
-            <Route path="/vendor" component={VendorDashboard} />
             <Route path="/vendor/services" component={ClientServices} />
             <Route path="/vendor/missions" component={Missions} />
-            <Route path="/vendor/projects" component={VendorProjects} />
             <Route path="/vendor/projects/:id" component={VendorProjectDetail} />
+            <Route path="/vendor/projects" component={VendorProjects} />
             <Route path="/vendor/documents" component={Documents} />
             <Route path="/vendor/contracts" component={VendorContracts} />
             <Route path="/vendor/my-invoices" component={VendorInvoices} />
@@ -239,6 +238,7 @@ function AppContent() {
             <Route path="/vendor/messages" component={ChannelsPage} />
             <Route path="/vendor/settings" component={Settings} />
             <Route path="/vendor/profile" component={Profile} />
+            <Route path="/vendor" component={VendorDashboard} />
             <Route component={NotFound} />
           </Switch>
         </AppLayout>
