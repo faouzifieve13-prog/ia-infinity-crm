@@ -54,6 +54,38 @@ function getOrgId(req: Request): string {
   return DEFAULT_ORG_ID;
 }
 
+// Helper function to check if user has access to a project
+// Access is granted if:
+// 1. User is a client AND project.accountId matches their accountId
+// 2. OR User is a vendor AND project.vendorContactId matches their vendorContactId
+async function hasProjectAccess(
+  project: { accountId?: string | null; vendorContactId?: string | null } | null,
+  req: Request
+): Promise<boolean> {
+  if (!project) return false;
+  
+  const accountId = req.session.accountId;
+  const vendorContactId = req.session.vendorContactId;
+  const role = req.session.role;
+  
+  // Client access: project belongs to their account
+  if (accountId && project.accountId === accountId) {
+    return true;
+  }
+  
+  // Vendor access: project is assigned to them
+  if (vendorContactId && project.vendorContactId === vendorContactId) {
+    return true;
+  }
+  
+  // Admin access (in case this is called from admin context)
+  if (role === 'admin') {
+    return true;
+  }
+  
+  return false;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -6280,7 +6312,7 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       const allInvitations = await storage.getInvitations(orgId);
       const invitation = allInvitations.find(i => i.id === req.params.id);
 
-      if (!invitation || invitation.accountId !== accountId) {
+      if (!invitation || !invitation.accountId || invitation.accountId !== accountId) {
         return res.status(403).json({ error: "Accès refusé" });
       }
 
@@ -6335,9 +6367,9 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
         return res.status(400).json({ error: "Project ID is required" });
       }
 
-      // Verify the project belongs to this client
+      // Verify user has access to this project (client or vendor)
       const project = await storage.getProject(projectId, orgId);
-      if (!project || project.accountId !== accountId) {
+      if (!await hasProjectAccess(project, req)) {
         return res.status(403).json({ error: "Access denied to this project" });
       }
 
@@ -6370,7 +6402,7 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       }
 
       const project = await storage.getProject(existingTask.projectId, orgId);
-      if (!project || project.accountId !== accountId) {
+      if (!await hasProjectAccess(project, req)) {
         return res.status(403).json({ error: "Access denied to this task" });
       }
 
@@ -6399,7 +6431,7 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       }
 
       const project = await storage.getProject(existingTask.projectId, orgId);
-      if (!project || project.accountId !== accountId) {
+      if (!await hasProjectAccess(project, req)) {
         return res.status(403).json({ error: "Access denied to this task" });
       }
 
@@ -6469,10 +6501,10 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       }
       
       const project = await storage.getProject(projectId, orgId);
-      if (!project || project.accountId !== accountId) {
+      if (!await hasProjectAccess(project, req)) {
         return res.status(404).json({ error: "Project not found" });
       }
-      
+
       // Get tasks for this project
       const allTasks = await storage.getTasks(orgId);
       const projectTasks = allTasks.filter(t => t.projectId === projectId);
@@ -6531,10 +6563,10 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       }
       
       const project = await storage.getProject(projectId, orgId);
-      if (!project || project.accountId !== accountId) {
+      if (!await hasProjectAccess(project, req)) {
         return res.status(404).json({ error: "Project not found" });
       }
-      
+
       const comment = await storage.createProjectComment({
         orgId,
         projectId,

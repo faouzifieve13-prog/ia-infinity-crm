@@ -730,7 +730,7 @@ export async function requireChannelAccess(req: Request, res: Response, next: Ne
       // For project-scoped channels, verify client has access to the project
       if (channel.scope === 'project' && channel.projectId) {
         const project = await storage.getProject(channel.projectId, orgId);
-        if (project?.accountId !== req.session.accountId) {
+        if (!project?.accountId || project.accountId !== req.session.accountId) {
           return res.status(403).json({ error: "Accès refusé à ce projet" });
         }
       }
