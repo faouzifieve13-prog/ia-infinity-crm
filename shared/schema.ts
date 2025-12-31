@@ -261,6 +261,7 @@ export const projects = pgTable("projects", {
   clientApprovalSignature: text("client_approval_signature"),
   clientApprovalDate: timestamp("client_approval_date"),
   clientApprovedBy: text("client_approved_by"),
+  workflowState: text("workflow_state"),
   notionPageId: text("notion_page_id"),
   notionLastEditedAt: timestamp("notion_last_edited_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

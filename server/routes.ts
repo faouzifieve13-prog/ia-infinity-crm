@@ -6940,6 +6940,296 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     }
   });
 
+  // Upload files to Google Drive for vendor projects (Loom videos, PDF, DOCX, images)
+  app.post("/api/vendor/projects/:projectId/files", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.session.vendorContactId;
+      const projectId = req.params.projectId;
+
+      if (!vendorContactId) {
+        return res.status(403).json({ error: "Aucun profil vendeur associé" });
+      }
+
+      // Verify vendor has access to this project
+      const project = await storage.getProject(projectId, orgId);
+      if (!project || project.vendorContactId !== vendorContactId) {
+        return res.status(403).json({ error: "Accès refusé à ce projet" });
+      }
+
+      const { fileData, fileName, mimeType, description } = req.body;
+
+      if (!fileData || !fileName || !mimeType) {
+        return res.status(400).json({ error: "Fichier, nom et type requis" });
+      }
+
+      // Validate file types (PDF, DOCX, images, videos)
+      const allowedTypes = [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'image/png', 'image/jpeg', 'image/gif', 'image/webp',
+        'video/mp4', 'video/webm', 'video/quicktime'
+      ];
+
+      if (!allowedTypes.includes(mimeType)) {
+        return res.status(400).json({ error: "Type de fichier non supporté" });
+      }
+
+      // Strip base64 header if present (e.g., "data:application/pdf;base64,")
+      let base64Data = fileData;
+      if (base64Data.includes(',')) {
+        base64Data = base64Data.split(',')[1];
+      }
+
+      // Validate base64 data
+      if (!base64Data || base64Data.length === 0) {
+        return res.status(400).json({ error: "Données de fichier invalides" });
+      }
+
+      // File size limit (10MB)
+      const maxSize = 10 * 1024 * 1024;
+      const estimatedSize = (base64Data.length * 3) / 4;
+      if (estimatedSize > maxSize) {
+        return res.status(400).json({ error: "Fichier trop volumineux (max 10MB)" });
+      }
+
+      const buffer = Buffer.from(base64Data, 'base64');
+
+      // Upload to Google Drive in project-specific folder
+      const folderName = `IA Infinity - Projet ${project.name}`;
+      const driveFile = await uploadFileToDrive(buffer, fileName, mimeType, folderName);
+
+      // Create document record in database
+      const document = await storage.createDocument({
+        orgId,
+        projectId,
+        accountId: project.accountId || null,
+        name: fileName,
+        description: description || null,
+        fileUrl: driveFile.webViewLink || '',
+        fileType: mimeType,
+        uploadedBy: req.session.userId || null,
+      });
+
+      res.status(201).json({
+        document,
+        driveFile: {
+          id: driveFile.id,
+          webViewLink: driveFile.webViewLink,
+          webContentLink: driveFile.webContentLink,
+        }
+      });
+    } catch (error) {
+      console.error("Vendor file upload error:", error);
+      res.status(500).json({ error: "Échec de l'upload du fichier" });
+    }
+  });
+
+  // Get client info for a vendor's project
+  app.get("/api/vendor/projects/:projectId/client", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.session.vendorContactId;
+      const projectId = req.params.projectId;
+
+      if (!vendorContactId) {
+        return res.status(403).json({ error: "Aucun profil vendeur associé" });
+      }
+
+      // Verify vendor has access to this project
+      const project = await storage.getProject(projectId, orgId);
+      if (!project || project.vendorContactId !== vendorContactId) {
+        return res.status(403).json({ error: "Accès refusé à ce projet" });
+      }
+
+      if (!project.accountId) {
+        return res.status(404).json({ error: "Aucun client associé à ce projet" });
+      }
+
+      // Get account info
+      const account = await storage.getAccount(project.accountId, orgId);
+      if (!account) {
+        return res.status(404).json({ error: "Client non trouvé" });
+      }
+
+      // Get primary contact for this account
+      const allContacts = await storage.getContacts(orgId);
+      const primaryContact = allContacts.find(c => c.accountId === account.id && c.isPrimary);
+
+      res.json({
+        account: {
+          id: account.id,
+          name: account.name,
+          industry: account.industry,
+          website: account.website,
+        },
+        contact: primaryContact ? {
+          id: primaryContact.id,
+          name: primaryContact.name,
+          email: primaryContact.email,
+          phone: primaryContact.phone,
+          title: primaryContact.title,
+        } : null,
+      });
+    } catch (error) {
+      console.error("Get vendor project client error:", error);
+      res.status(500).json({ error: "Échec de récupération des infos client" });
+    }
+  });
+
+  // Get workflow state for a vendor's project
+  app.get("/api/vendor/projects/:projectId/workflow", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.session.vendorContactId;
+      const projectId = req.params.projectId;
+
+      if (!vendorContactId) {
+        return res.status(403).json({ error: "Aucun profil vendeur associé" });
+      }
+
+      // Verify vendor has access to this project
+      const project = await storage.getProject(projectId, orgId);
+      if (!project || project.vendorContactId !== vendorContactId) {
+        return res.status(403).json({ error: "Accès refusé à ce projet" });
+      }
+
+      // Parse workflow state JSON
+      let workflowState = null;
+      if (project.workflowState) {
+        try {
+          workflowState = JSON.parse(project.workflowState);
+        } catch (e) {
+          workflowState = null;
+        }
+      }
+
+      res.json({
+        projectId: project.id,
+        projectName: project.name,
+        workflowState,
+      });
+    } catch (error) {
+      console.error("Get vendor project workflow error:", error);
+      res.status(500).json({ error: "Échec de récupération du workflow" });
+    }
+  });
+
+  // Update workflow state for a vendor's project
+  app.patch("/api/vendor/projects/:projectId/workflow", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.session.vendorContactId;
+      const projectId = req.params.projectId;
+
+      if (!vendorContactId) {
+        return res.status(403).json({ error: "Aucun profil vendeur associé" });
+      }
+
+      // Verify vendor has access to this project
+      const project = await storage.getProject(projectId, orgId);
+      if (!project || project.vendorContactId !== vendorContactId) {
+        return res.status(403).json({ error: "Accès refusé à ce projet" });
+      }
+
+      const { workflowState } = req.body;
+
+      if (workflowState === undefined) {
+        return res.status(400).json({ error: "workflowState est requis" });
+      }
+
+      // Serialize workflow state to JSON
+      const workflowStateJson = JSON.stringify(workflowState);
+
+      // Update project
+      const updatedProject = await storage.updateProject(projectId, orgId, {
+        workflowState: workflowStateJson,
+      });
+
+      res.json({
+        projectId: updatedProject?.id,
+        projectName: updatedProject?.name,
+        workflowState,
+      });
+    } catch (error) {
+      console.error("Update vendor project workflow error:", error);
+      res.status(500).json({ error: "Échec de mise à jour du workflow" });
+    }
+  });
+
+  // Get single project details for vendor (with client info and workflow)
+  app.get("/api/vendor/projects/:projectId/details", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.session.vendorContactId;
+      const projectId = req.params.projectId;
+
+      if (!vendorContactId) {
+        return res.status(403).json({ error: "Aucun profil vendeur associé" });
+      }
+
+      // Verify vendor has access to this project
+      const project = await storage.getProject(projectId, orgId);
+      if (!project || project.vendorContactId !== vendorContactId) {
+        return res.status(403).json({ error: "Accès refusé à ce projet" });
+      }
+
+      // Get client info
+      let account = null;
+      let primaryContact = null;
+      if (project.accountId) {
+        account = await storage.getAccount(project.accountId, orgId);
+        if (account) {
+          const allContacts = await storage.getContacts(orgId);
+          primaryContact = allContacts.find(c => c.accountId === account!.id && c.isPrimary);
+        }
+      }
+
+      // Parse workflow state
+      let workflowState = null;
+      if (project.workflowState) {
+        try {
+          workflowState = JSON.parse(project.workflowState);
+        } catch (e) {
+          workflowState = null;
+        }
+      }
+
+      // Get tasks, missions, documents for this project
+      const allTasks = await storage.getTasks(orgId);
+      const projectTasks = allTasks.filter(t => t.projectId === projectId);
+
+      const allMissions = await storage.getMissions(orgId);
+      const projectMissions = allMissions.filter(m => m.projectId === projectId);
+
+      const allDocuments = await storage.getDocuments(orgId);
+      const projectDocuments = allDocuments.filter(d => d.projectId === projectId);
+
+      res.json({
+        project,
+        client: account ? {
+          id: account.id,
+          name: account.name,
+          industry: account.industry,
+          website: account.website,
+          contact: primaryContact ? {
+            name: primaryContact.name,
+            email: primaryContact.email,
+            phone: primaryContact.phone,
+            title: primaryContact.title,
+          } : null,
+        } : null,
+        workflowState,
+        tasks: projectTasks,
+        missions: projectMissions,
+        documents: projectDocuments,
+      });
+    } catch (error) {
+      console.error("Get vendor project details error:", error);
+      res.status(500).json({ error: "Échec de récupération des détails du projet" });
+    }
+  });
+
   // =====================
   // Helper Functions for Channels
   // =====================
