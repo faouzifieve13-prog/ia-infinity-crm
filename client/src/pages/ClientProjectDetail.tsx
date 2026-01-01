@@ -47,7 +47,15 @@ import {
   Send,
   AlertCircle,
   Loader2,
-  Plus
+  Plus,
+  StickyNote,
+  Package,
+  Video,
+  FileJson,
+  File,
+  ExternalLink,
+  RotateCcw,
+  ThumbsUp
 } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -119,6 +127,32 @@ interface Comment {
   createdAt: string;
 }
 
+interface ProjectUpdate {
+  id: string;
+  updateDate: string;
+  title: string;
+  content: string;
+  type: string;
+  createdAt: string;
+  createdById?: string;
+}
+
+interface ProjectDeliverable {
+  id: string;
+  deliverableNumber: number;
+  version: string;
+  title: string;
+  description?: string;
+  type: string;
+  url?: string;
+  fileName?: string;
+  fileSize?: number;
+  status: string;
+  clientComment?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface ProjectDetail {
   project: Project;
   tasks: Task[];
@@ -179,6 +213,9 @@ export default function ClientProjectDetail() {
   const projectId = params?.id;
   const [newComment, setNewComment] = useState("");
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [revisionDialogOpen, setRevisionDialogOpen] = useState(false);
+  const [selectedDeliverable, setSelectedDeliverable] = useState<ProjectDeliverable | null>(null);
+  const [revisionComment, setRevisionComment] = useState("");
   const { toast } = useToast();
 
   const taskForm = useForm<TaskFormValues>({
@@ -194,6 +231,18 @@ export default function ClientProjectDetail() {
 
   const { data, isLoading, error } = useQuery<ProjectDetail>({
     queryKey: ["/api/client/projects", projectId],
+    enabled: !!projectId,
+  });
+
+  // Project Updates (CR)
+  const { data: projectUpdates = [] } = useQuery<ProjectUpdate[]>({
+    queryKey: [`/api/client/projects/${projectId}/updates`],
+    enabled: !!projectId,
+  });
+
+  // Project Deliverables
+  const { data: projectDeliverables = [] } = useQuery<ProjectDeliverable[]>({
+    queryKey: [`/api/client/projects/${projectId}/deliverables`],
     enabled: !!projectId,
   });
 
@@ -243,6 +292,49 @@ export default function ClientProjectDetail() {
       toast({
         title: "Erreur",
         description: error.message || "Impossible de créer la tâche.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const requestRevisionMutation = useMutation({
+    mutationFn: async ({ deliverableId, comment }: { deliverableId: string; comment: string }) => {
+      return apiRequest("POST", `/api/client/projects/${projectId}/deliverables/${deliverableId}/request-revision`, { comment });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/client/projects/${projectId}/deliverables`] });
+      setRevisionDialogOpen(false);
+      setSelectedDeliverable(null);
+      setRevisionComment("");
+      toast({
+        title: "Demande de révision envoyée",
+        description: "Le sous-traitant a été notifié de votre demande de modification.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Erreur",
+        description: "Impossible d'envoyer la demande de révision.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const approveDeliverableMutation = useMutation({
+    mutationFn: async (deliverableId: string) => {
+      return apiRequest("POST", `/api/client/projects/${projectId}/deliverables/${deliverableId}/approve`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/client/projects/${projectId}/deliverables`] });
+      toast({
+        title: "Livrable approuvé",
+        description: "Le livrable a été validé avec succès.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Erreur",
+        description: "Impossible d'approuver le livrable.",
         variant: "destructive",
       });
     },
@@ -370,25 +462,219 @@ export default function ClientProjectDetail() {
           </Card>
         </div>
 
-        <Tabs defaultValue="tasks" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+        <Tabs defaultValue="livrables" className="w-full">
+          <TabsList className="grid w-full grid-cols-6">
+            <TabsTrigger value="livrables" data-testid="tab-livrables">
+              <Package className="h-4 w-4 mr-2" />
+              Livrables
+            </TabsTrigger>
+            <TabsTrigger value="cr" data-testid="tab-cr">
+              <StickyNote className="h-4 w-4 mr-2" />
+              CR ({projectUpdates.length})
+            </TabsTrigger>
             <TabsTrigger value="tasks" data-testid="tab-tasks">
               <ListTodo className="h-4 w-4 mr-2" />
               Tâches ({tasks.length})
             </TabsTrigger>
             <TabsTrigger value="missions" data-testid="tab-missions">
               <FolderKanban className="h-4 w-4 mr-2" />
-              Missions ({missions.length})
+              Missions
             </TabsTrigger>
             <TabsTrigger value="documents" data-testid="tab-documents">
               <FileText className="h-4 w-4 mr-2" />
-              Documents ({documents.length})
+              Docs ({documents.length})
             </TabsTrigger>
             <TabsTrigger value="comments" data-testid="tab-comments">
               <MessageSquare className="h-4 w-4 mr-2" />
-              Messages ({comments.length})
+              Messages
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="livrables">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Package className="h-5 w-5 text-violet-600" />
+                  Livrables du projet
+                </CardTitle>
+                <CardDescription>
+                  Chaque projet comprend 3 livrables avec 3 versions: V1 (initial), V2 (retouche), V3 (actualisation selon vos retours)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {projectDeliverables.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Aucun livrable disponible pour le moment</p>
+                    <p className="text-sm mt-2">Les livrables seront ajoutés par le sous-traitant au fur et à mesure.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {[1, 2, 3].map((num) => {
+                      const deliverablesByNum = projectDeliverables.filter(d => d.deliverableNumber === num);
+                      if (deliverablesByNum.length === 0) return null;
+
+                      return (
+                        <div key={num} className="border rounded-lg p-4">
+                          <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
+                            <span className="w-8 h-8 rounded-full bg-violet-100 dark:bg-violet-900 flex items-center justify-center text-violet-700 dark:text-violet-300 text-sm font-bold">
+                              {num}
+                            </span>
+                            Livrable {num}
+                          </h3>
+                          <div className="grid gap-3">
+                            {['v1', 'v2', 'v3'].map((version) => {
+                              const deliverable = deliverablesByNum.find(d => d.version === version);
+                              if (!deliverable) return null;
+
+                              const statusColors = {
+                                pending: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+                                submitted: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
+                                approved: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300',
+                                revision_requested: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300',
+                              };
+
+                              const statusLabels = {
+                                pending: 'En attente',
+                                submitted: 'Soumis',
+                                approved: 'Approuvé',
+                                revision_requested: 'Révision demandée',
+                              };
+
+                              return (
+                                <div key={deliverable.id} className="flex items-start gap-4 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                                  <div className="flex-shrink-0">
+                                    {deliverable.type === 'loom' && <Video className="h-6 w-6 text-purple-500" />}
+                                    {deliverable.type === 'json' && <FileJson className="h-6 w-6 text-amber-500" />}
+                                    {deliverable.type === 'pdf' && <FileText className="h-6 w-6 text-red-500" />}
+                                    {deliverable.type === 'other' && <File className="h-6 w-6 text-gray-500" />}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <Badge variant="outline" className="font-semibold">
+                                        {version.toUpperCase()}
+                                      </Badge>
+                                      <span className="font-medium">{deliverable.title}</span>
+                                      <Badge className={statusColors[deliverable.status as keyof typeof statusColors] || statusColors.pending}>
+                                        {statusLabels[deliverable.status as keyof typeof statusLabels] || deliverable.status}
+                                      </Badge>
+                                    </div>
+                                    {deliverable.description && (
+                                      <p className="text-sm text-muted-foreground">{deliverable.description}</p>
+                                    )}
+                                    {deliverable.clientComment && (
+                                      <p className="text-sm text-amber-600 dark:text-amber-400 mt-1 italic">
+                                        Votre commentaire: {deliverable.clientComment}
+                                      </p>
+                                    )}
+                                    <p className="text-xs text-muted-foreground mt-2">
+                                      Mis à jour le {format(new Date(deliverable.updatedAt), "d MMM yyyy à HH:mm", { locale: fr })}
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {deliverable.url && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => window.open(deliverable.url, '_blank')}
+                                      >
+                                        <ExternalLink className="h-4 w-4" />
+                                      </Button>
+                                    )}
+                                    {deliverable.status === 'submitted' && (
+                                      <>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => {
+                                            setSelectedDeliverable(deliverable);
+                                            setRevisionDialogOpen(true);
+                                          }}
+                                          className="text-amber-600 hover:text-amber-700"
+                                        >
+                                          <RotateCcw className="h-4 w-4 mr-1" />
+                                          Révision
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          onClick={() => approveDeliverableMutation.mutate(deliverable.id)}
+                                          disabled={approveDeliverableMutation.isPending}
+                                          className="bg-emerald-600 hover:bg-emerald-700"
+                                        >
+                                          <ThumbsUp className="h-4 w-4 mr-1" />
+                                          Approuver
+                                        </Button>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="cr">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <StickyNote className="h-5 w-5 text-violet-600" />
+                  Comptes-Rendus de Suivi
+                </CardTitle>
+                <CardDescription>
+                  Historique des rapports d'avancement du projet
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {projectUpdates.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <StickyNote className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Aucun compte-rendu pour le moment</p>
+                    <p className="text-sm mt-2">Les CR seront ajoutés par l'équipe au fil du projet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4 max-h-[500px] overflow-y-auto">
+                    {projectUpdates
+                      .sort((a, b) => new Date(b.updateDate).getTime() - new Date(a.updateDate).getTime())
+                      .map((update) => {
+                        const typeColors = {
+                          suivi: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300',
+                          avancement: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300',
+                          probleme: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
+                          livraison: 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300',
+                          autre: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+                        };
+
+                        return (
+                          <div key={update.id} className="p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <div className="flex items-center gap-2">
+                                <Badge className={typeColors[update.type as keyof typeof typeColors] || typeColors.autre}>
+                                  {update.type.charAt(0).toUpperCase() + update.type.slice(1)}
+                                </Badge>
+                                <span className="text-sm text-muted-foreground">
+                                  {format(new Date(update.updateDate), "d MMMM yyyy", { locale: fr })}
+                                </span>
+                              </div>
+                            </div>
+                            <h4 className="font-semibold mb-2">{update.title}</h4>
+                            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                              {update.content}
+                            </p>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="tasks">
             <Card>
@@ -767,6 +1053,68 @@ export default function ClientProjectDetail() {
                 </div>
               </form>
             </Form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={revisionDialogOpen} onOpenChange={setRevisionDialogOpen}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>Demander une révision</DialogTitle>
+              <DialogDescription>
+                {selectedDeliverable && (
+                  <>Livrable: {selectedDeliverable.title} ({selectedDeliverable.version.toUpperCase()})</>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium mb-2 block">
+                  Décrivez les modifications souhaitées *
+                </label>
+                <Textarea
+                  placeholder="Expliquez ce qui doit être modifié..."
+                  value={revisionComment}
+                  onChange={(e) => setRevisionComment(e.target.value)}
+                  rows={4}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setRevisionDialogOpen(false);
+                    setSelectedDeliverable(null);
+                    setRevisionComment("");
+                  }}
+                >
+                  Annuler
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (selectedDeliverable && revisionComment.trim()) {
+                      requestRevisionMutation.mutate({
+                        deliverableId: selectedDeliverable.id,
+                        comment: revisionComment.trim(),
+                      });
+                    }
+                  }}
+                  disabled={!revisionComment.trim() || requestRevisionMutation.isPending}
+                  className="bg-amber-600 hover:bg-amber-700"
+                >
+                  {requestRevisionMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Envoi...
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Demander la révision
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

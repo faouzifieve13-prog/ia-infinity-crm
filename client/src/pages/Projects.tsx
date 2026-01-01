@@ -90,6 +90,13 @@ export default function Projects() {
   // Clients and vendors can only view, not create/edit/delete
   const isReadOnly = currentSpace === 'client' || currentSpace === 'vendor';
 
+  // Get the correct project URL based on current space
+  const getProjectUrl = (projectId: string) => {
+    if (currentSpace === 'client') return `/client/projects/${projectId}`;
+    if (currentSpace === 'vendor') return `/vendor/projects/${projectId}`;
+    return `/projects/${projectId}`;
+  };
+
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(projectFormSchema),
     defaultValues: {
@@ -617,7 +624,7 @@ export default function Projects() {
             <ProjectCard
               key={project.id}
               project={project}
-              onClick={() => navigate(`/projects/${project.id}`)}
+              onClick={() => navigate(getProjectUrl(project.id))}
               onEdit={isReadOnly ? undefined : () => handleEdit(project)}
               onArchive={isReadOnly ? undefined : () => handleArchive(project)}
               onDelete={isReadOnly ? undefined : () => handleDelete(project)}

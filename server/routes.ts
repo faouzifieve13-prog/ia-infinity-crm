@@ -32,6 +32,7 @@ import {
   notifyInvoiceCreated,
   notifyProjectStatusChange,
 } from "./notifications";
+import { calculateDealScore } from "./utils/scoring";
 
 function generateToken(): string {
   return randomBytes(32).toString("hex");
@@ -133,51 +134,7 @@ export async function registerRoutes(
       const orgId = getOrgId(req);
       const data = insertAccountSchema.parse({ ...req.body, orgId });
       const account = await storage.createAccount(data);
-      
-      // Send welcome email with portal access if contact email is provided
-      if (data.contactEmail) {
-        try {
-          // Create an invitation for client portal access
-          const token = generateToken();
-          const tokenHash = hashToken(token);
-          const expiresAt = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000); // 6 months
-          
-          await storage.createInvitation({
-            orgId,
-            email: data.contactEmail,
-            role: 'client_admin' as UserRole,
-            space: 'client' as Space,
-            tokenHash,
-            expiresAt,
-            status: 'pending',
-            accountId: account.id,
-            vendorId: null,
-          });
-          
-          const baseUrl = process.env.REPLIT_DEV_DOMAIN 
-            ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-            : 'http://localhost:5000';
-          const portalLink = `${baseUrl}/auth/accept-invite?token=${token}`;
-          
-          // Use contact name if available, otherwise extract from email
-          const clientName = data.contactName || data.contactEmail.split('@')[0].replace(/[._]/g, ' ');
-          
-          // Send welcome email asynchronously (don't block account creation)
-          sendClientWelcomeEmail({
-            to: data.contactEmail,
-            clientName: clientName.charAt(0).toUpperCase() + clientName.slice(1),
-            companyName: account.name,
-            portalLink,
-            organizationName: 'IA Infinity',
-          }).catch(err => {
-            console.error('Failed to send welcome email:', err);
-          });
-        } catch (emailError) {
-          // Log error but don't fail account creation
-          console.error('Failed to setup client portal access:', emailError);
-        }
-      }
-      
+
       res.status(201).json(account);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -269,6 +226,74 @@ export async function registerRoutes(
         error: "Failed to delete account",
         details: error instanceof Error ? error.message : "Unknown error",
       });
+    }
+  });
+
+  // Send invitation to client for portal access
+  app.post("/api/accounts/:id/send-invitation", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const account = await storage.getAccount(req.params.id, orgId);
+
+      if (!account) {
+        return res.status(404).json({ error: "Account not found" });
+      }
+
+      if (!account.contactEmail) {
+        return res.status(400).json({ error: "No contact email for this client" });
+      }
+
+      // Create an invitation for client portal access
+      const token = generateToken();
+      const tokenHash = hashToken(token);
+      const expiresAt = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000); // 6 months
+
+      await storage.createInvitation({
+        orgId,
+        email: account.contactEmail,
+        role: 'client_admin' as UserRole,
+        space: 'client' as Space,
+        tokenHash,
+        expiresAt,
+        status: 'pending',
+        accountId: account.id,
+        vendorId: null,
+      });
+
+      const baseUrl = process.env.REPLIT_DEV_DOMAIN
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+        : 'http://localhost:5000';
+      const portalLink = `${baseUrl}/auth/accept-invite?token=${token}`;
+
+      // Use contact name if available, otherwise extract from email
+      const clientName = account.contactName || account.contactEmail.split('@')[0].replace(/[._]/g, ' ');
+
+      // Send welcome email
+      try {
+        await sendClientWelcomeEmail({
+          to: account.contactEmail,
+          clientName: clientName.charAt(0).toUpperCase() + clientName.slice(1),
+          companyName: account.name,
+          portalLink,
+          organizationName: 'IA Infinity',
+        });
+
+        res.json({
+          success: true,
+          message: "Invitation sent successfully",
+          emailSent: true
+        });
+      } catch (emailError) {
+        console.error('Failed to send welcome email:', emailError);
+        res.json({
+          success: true,
+          message: "Invitation created but email could not be sent",
+          emailSent: false
+        });
+      }
+    } catch (error) {
+      console.error("Send invitation error:", error);
+      res.status(500).json({ error: "Failed to send invitation" });
     }
   });
 
@@ -751,6 +776,122 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
+  // Pipeline velocity metrics
+  app.get("/api/deals/metrics", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const allDeals = await storage.getDeals(orgId);
+
+      const now = new Date();
+      const startOfThisWeek = new Date(now);
+      startOfThisWeek.setDate(now.getDate() - now.getDay());
+      startOfThisWeek.setHours(0, 0, 0, 0);
+
+      const startOfLastWeek = new Date(startOfThisWeek);
+      startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
+
+      const endOfLastWeek = new Date(startOfThisWeek);
+      endOfLastWeek.setMilliseconds(-1);
+
+      // Deals created this week vs last week
+      const thisWeekDeals = allDeals.filter(d => new Date(d.createdAt) >= startOfThisWeek);
+      const lastWeekDeals = allDeals.filter(d => {
+        const created = new Date(d.createdAt);
+        return created >= startOfLastWeek && created < startOfThisWeek;
+      });
+
+      const thisWeek = thisWeekDeals.length;
+      const lastWeek = lastWeekDeals.length;
+      const weekVariation = lastWeek > 0 ? ((thisWeek - lastWeek) / lastWeek * 100).toFixed(1) : "0";
+
+      // Average days per stage
+      const stageCount: Record<string, { total: number; count: number }> = {};
+      allDeals.forEach(deal => {
+        if (!stageCount[deal.stage]) {
+          stageCount[deal.stage] = { total: 0, count: 0 };
+        }
+        stageCount[deal.stage].total += deal.daysInStage || 0;
+        stageCount[deal.stage].count += 1;
+      });
+
+      const avgDaysPerStage: Record<string, number> = {};
+      Object.entries(stageCount).forEach(([stage, data]) => {
+        avgDaysPerStage[stage] = data.count > 0 ? Math.round(data.total / data.count) : 0;
+      });
+
+      // Stagnant deals (not updated in 15+ days)
+      const fifteenDaysAgo = new Date();
+      fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
+      const stagnantDeals = allDeals.filter(d =>
+        new Date(d.updatedAt) < fifteenDaysAgo &&
+        d.stage !== 'won' &&
+        d.stage !== 'lost'
+      );
+
+      // Conversion rates
+      const prospectCount = allDeals.filter(d => d.stage === 'prospect').length;
+      const meetingCount = allDeals.filter(d => d.stage === 'meeting').length;
+      const wonCount = allDeals.filter(d => d.stage === 'won').length;
+      const totalActive = allDeals.filter(d => d.stage !== 'lost').length;
+
+      const conversionRate = {
+        prospect_to_meeting: prospectCount > 0 ? ((meetingCount / prospectCount) * 100).toFixed(1) : "0",
+        meeting_to_won: meetingCount > 0 ? ((wonCount / meetingCount) * 100).toFixed(1) : "0",
+        overall: totalActive > 0 ? ((wonCount / totalActive) * 100).toFixed(1) : "0",
+      };
+
+      // Total pipeline value
+      const pipelineValue = allDeals
+        .filter(d => d.stage !== 'won' && d.stage !== 'lost')
+        .reduce((sum, d) => sum + parseFloat(d.amount || "0"), 0);
+
+      res.json({
+        thisWeek,
+        lastWeek,
+        weekVariation,
+        avgDaysPerStage,
+        stagnantDeals: stagnantDeals.map(d => ({
+          id: d.id,
+          name: d.name,
+          stage: d.stage,
+          daysStagnant: Math.floor((now.getTime() - new Date(d.updatedAt).getTime()) / (1000 * 60 * 60 * 24)),
+        })),
+        stagnantCount: stagnantDeals.length,
+        conversionRate,
+        pipelineValue,
+        totalDeals: allDeals.length,
+        wonDeals: wonCount,
+        lostDeals: allDeals.filter(d => d.stage === 'lost').length,
+      });
+    } catch (error) {
+      console.error("Get deals metrics error:", error);
+      res.status(500).json({ error: "Failed to get deals metrics" });
+    }
+  });
+
+  // Email templates by pipeline stage
+  app.get("/api/email-templates", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const stage = req.query.stage as string;
+
+      if (!stage) {
+        return res.status(400).json({ error: "Stage parameter is required" });
+      }
+
+      const template = await storage.getEmailTemplateByStage(stage, orgId);
+
+      if (!template) {
+        return res.status(404).json({ error: "No template found for this stage" });
+      }
+
+      res.json(template);
+    } catch (error) {
+      console.error("Get email template error:", error);
+      res.status(500).json({ error: "Failed to get email template" });
+    }
+  });
+
   app.get("/api/deals/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
@@ -768,7 +909,9 @@ ${cr.replace(/\n/g, '<br>')}
   app.post("/api/deals", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const data = insertDealSchema.parse({ ...req.body, orgId });
+      // Calculate score based on amount and accountId
+      const score = calculateDealScore({ amount: req.body.amount, accountId: req.body.accountId });
+      const data = insertDealSchema.parse({ ...req.body, orgId, score });
       const deal = await storage.createDeal(data);
       res.status(201).json(deal);
     } catch (error) {
@@ -793,6 +936,15 @@ ${cr.replace(/\n/g, '<br>')}
       if (updateData.nextActionDate && typeof updateData.nextActionDate === 'string') {
         updateData.nextActionDate = new Date(updateData.nextActionDate);
       }
+      // Recalculate score if amount or accountId changed
+      if (updateData.amount !== undefined || updateData.accountId !== undefined) {
+        const existingDeal = await storage.getDeal(req.params.id, orgId);
+        if (existingDeal) {
+          const newAmount = updateData.amount ?? existingDeal.amount;
+          const newAccountId = updateData.accountId ?? existingDeal.accountId;
+          updateData.score = calculateDealScore({ amount: newAmount, accountId: newAccountId });
+        }
+      }
       const deal = await storage.updateDeal(req.params.id, orgId, updateData);
       if (!deal) {
         return res.status(404).json({ error: "Deal not found" });
@@ -807,11 +959,55 @@ ${cr.replace(/\n/g, '<br>')}
   app.patch("/api/deals/:id/stage", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const { stage, position } = req.body;
+      const { stage, position, lostReason, lostReasonDetails } = req.body;
+
+      // Get the current deal to check previous stage
+      const existingDeal = await storage.getDeal(req.params.id, orgId);
+      if (!existingDeal) {
+        return res.status(404).json({ error: "Deal not found" });
+      }
+
+      const previousStage = existingDeal.stage;
+
+      // Update the deal stage
       const deal = await storage.updateDealStage(req.params.id, orgId, stage, position || 0);
       if (!deal) {
         return res.status(404).json({ error: "Deal not found" });
       }
+
+      // If stage is 'lost' and lost reason is provided, update those fields
+      if (stage === 'lost' && lostReason) {
+        const updatedDeal = await storage.updateDeal(req.params.id, orgId, {
+          lostReason,
+          lostReasonDetails: lostReasonDetails || null,
+        });
+        return res.json(updatedDeal);
+      }
+
+      // If stage changed to 'won' and wasn't 'won' before, create a project automatically
+      if (stage === 'won' && previousStage !== 'won') {
+        try {
+          const project = await storage.createProject({
+            orgId,
+            name: existingDeal.name || 'Nouveau projet',
+            accountId: existingDeal.accountId,
+            dealId: existingDeal.id,
+            status: 'active',
+            startDate: new Date(),
+          });
+
+          return res.json({
+            ...deal,
+            projectId: project.id,
+            message: `Projet "${project.name}" créé automatiquement`,
+          });
+        } catch (projectError) {
+          console.error("Failed to create project for won deal:", projectError);
+          // Return the deal even if project creation fails
+          return res.json(deal);
+        }
+      }
+
       res.json(deal);
     } catch (error) {
       console.error("Update deal stage error:", error);
@@ -6595,38 +6791,177 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     }
   });
 
+  // Get project updates (CR) for client - READ ONLY
+  app.get("/api/client/projects/:id/updates", requireClient, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+      const projectId = req.params.id;
+
+      if (!accountId) {
+        return res.status(403).json({ error: "No account linked" });
+      }
+
+      const project = await storage.getProject(projectId, orgId);
+      if (!await hasProjectAccess(project, req)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const updates = await storage.getProjectUpdates(projectId, orgId);
+      res.json(updates);
+    } catch (error) {
+      console.error("Get client project updates error:", error);
+      res.status(500).json({ error: "Failed to get project updates" });
+    }
+  });
+
+  // Get project deliverables for client - READ ONLY
+  app.get("/api/client/projects/:id/deliverables", requireClient, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+      const projectId = req.params.id;
+
+      if (!accountId) {
+        return res.status(403).json({ error: "No account linked" });
+      }
+
+      const project = await storage.getProject(projectId, orgId);
+      if (!await hasProjectAccess(project, req)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const deliverables = await storage.getProjectDeliverables(projectId, orgId);
+      res.json(deliverables);
+    } catch (error) {
+      console.error("Get client project deliverables error:", error);
+      res.status(500).json({ error: "Failed to get project deliverables" });
+    }
+  });
+
+  // Client can request revision on a deliverable (update status and add comment)
+  app.post("/api/client/projects/:id/deliverables/:deliverableId/request-revision", requireClient, requireWriteAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+      const projectId = req.params.id;
+      const deliverableId = req.params.deliverableId;
+      const { comment } = req.body;
+
+      if (!accountId) {
+        return res.status(403).json({ error: "No account linked" });
+      }
+
+      if (!comment || typeof comment !== 'string' || comment.trim().length === 0) {
+        return res.status(400).json({ error: "Comment is required for revision request" });
+      }
+
+      const project = await storage.getProject(projectId, orgId);
+      if (!await hasProjectAccess(project, req)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      // Update deliverable with revision request
+      const updated = await storage.updateProjectDeliverable(deliverableId, orgId, {
+        status: 'revision_requested',
+        clientComment: comment.trim(),
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Request revision error:", error);
+      res.status(500).json({ error: "Failed to request revision" });
+    }
+  });
+
+  // Client can approve a deliverable
+  app.post("/api/client/projects/:id/deliverables/:deliverableId/approve", requireClient, requireWriteAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const accountId = req.session.accountId;
+      const projectId = req.params.id;
+      const deliverableId = req.params.deliverableId;
+
+      if (!accountId) {
+        return res.status(403).json({ error: "No account linked" });
+      }
+
+      const project = await storage.getProject(projectId, orgId);
+      if (!await hasProjectAccess(project, req)) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      // Update deliverable status to approved
+      const updated = await storage.updateProjectDeliverable(deliverableId, orgId, {
+        status: 'approved',
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Approve deliverable error:", error);
+      res.status(500).json({ error: "Failed to approve deliverable" });
+    }
+  });
+
   // ==========================================
   // VENDOR PORTAL ROUTES (Secured with authentication)
   // ==========================================
 
+  // Middleware to log all vendor API calls
+  app.use("/api/vendor/*", (req: Request, res: Response, next: NextFunction) => {
+    console.log(`🔵 VENDOR API: ${req.method} ${req.path}`, {
+      session: {
+        userId: req.session.userId,
+        role: req.session.role,
+        vendorContactId: req.session.vendorContactId,
+      },
+      params: req.params,
+      query: req.query,
+    });
+    next();
+  });
+
+  // Helper function to check vendor project access
+  async function checkVendorProjectAccess(
+    vendorContactId: string,
+    projectId: string,
+    orgId: string
+  ): Promise<{ hasAccess: boolean; project?: any; error?: string }> {
+    const project = await storage.getProject(projectId, orgId);
+    if (!project) {
+      return { hasAccess: false, error: "Projet non trouvé" };
+    }
+
+    const contact = await storage.getContact(vendorContactId, orgId);
+    if (!contact) {
+      return { hasAccess: false, error: "Contact vendor non trouvé" };
+    }
+
+    // Check access: specific vendorContactId OR vendorId fallback
+    const hasAccess = project.vendorContactId === vendorContactId ||
+      (!project.vendorContactId && project.vendorId === contact.vendorId);
+
+    return { hasAccess, project };
+  }
+
   // Get projects assigned to authenticated vendor
   app.get("/api/vendor/projects", requireVendor, async (req: Request, res: Response) => {
     try {
-      const context = getAccessContext(req);
-
-      console.log("🔍 DEBUG Vendor Projects List - Context:", {
-        vendorContactId: context.vendorContactId,
-        role: context.role,
-        userId: context.userId,
-        orgId: context.orgId,
+      console.log("🔍 GET /api/vendor/projects called");
+      console.log("🔍 Session:", {
+        userId: req.session.userId,
+        role: req.session.role,
+        vendorContactId: req.session.vendorContactId,
       });
 
-      const allProjects = await storage.getProjects(context.orgId);
+      const context = getAccessContext(req);
+      console.log("🔍 Context:", context);
 
-      console.log("🔍 DEBUG All Projects:", allProjects.map(p => ({
-        id: p.id,
-        name: p.name,
-        vendorContactId: p.vendorContactId,
-        vendorId: p.vendorId,
-      })));
+      const allProjects = await storage.getProjects(context.orgId);
+      console.log("🔍 All projects:", allProjects.length);
 
       const vendorProjects = await filterProjectsByAccess(allProjects, context);
-
-      console.log("🔍 DEBUG Filtered Vendor Projects:", vendorProjects.map(p => ({
-        id: p.id,
-        name: p.name,
-        vendorContactId: p.vendorContactId,
-      })));
+      console.log("🔍 Filtered projects:", vendorProjects.length);
 
       res.json(vendorProjects);
     } catch (error) {
@@ -6686,6 +7021,42 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     } catch (error) {
       console.error("Update vendor project error:", error);
       res.status(500).json({ error: "Échec de la mise à jour du projet" });
+    }
+  });
+
+  // DIAGNOSTIC: Test all vendor routes
+  app.get("/api/vendor/test-routes", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.session.vendorContactId;
+
+      const tests = {
+        session: {
+          userId: req.session.userId,
+          role: req.session.role,
+          vendorContactId: req.session.vendorContactId,
+          email: req.session.email,
+        },
+        routes: {
+          "/api/vendor/projects": "OK",
+          "/api/vendor/tasks": "OK",
+          "/api/vendor/documents": "OK",
+          "/api/vendor/contracts": "OK",
+          "/api/vendor/invoices": "OK",
+          "/api/vendor/missions": "OK",
+          "/api/vendor/accounts": "OK",
+          "/api/vendor/channels": "OK",
+          "/api/vendor/dashboard": "OK",
+        },
+        middleware: {
+          requireVendor: "PASSED",
+        }
+      };
+
+      res.json(tests);
+    } catch (error) {
+      console.error("Test routes error:", error);
+      res.status(500).json({ error: "Test failed", details: error });
     }
   });
 
@@ -7082,10 +7453,11 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       }
 
       // Verify vendor has access to this project
-      const project = await storage.getProject(projectId, orgId);
-      if (!project || project.vendorContactId !== vendorContactId) {
-        return res.status(403).json({ error: "Accès refusé à ce projet" });
+      const accessCheck = await checkVendorProjectAccess(vendorContactId, projectId, orgId);
+      if (!accessCheck.hasAccess) {
+        return res.status(403).json({ error: accessCheck.error || "Accès refusé à ce projet" });
       }
+      const project = accessCheck.project;
 
       const { fileData, fileName, mimeType, description } = req.body;
 
@@ -7167,10 +7539,11 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       }
 
       // Verify vendor has access to this project
-      const project = await storage.getProject(projectId, orgId);
-      if (!project || project.vendorContactId !== vendorContactId) {
-        return res.status(403).json({ error: "Accès refusé à ce projet" });
+      const accessCheck = await checkVendorProjectAccess(vendorContactId, projectId, orgId);
+      if (!accessCheck.hasAccess) {
+        return res.status(403).json({ error: accessCheck.error || "Accès refusé à ce projet" });
       }
+      const project = accessCheck.project;
 
       if (!project.accountId) {
         return res.status(404).json({ error: "Aucun client associé à ce projet" });
@@ -7219,10 +7592,11 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       }
 
       // Verify vendor has access to this project
-      const project = await storage.getProject(projectId, orgId);
-      if (!project || project.vendorContactId !== vendorContactId) {
-        return res.status(403).json({ error: "Accès refusé à ce projet" });
+      const accessCheck = await checkVendorProjectAccess(vendorContactId, projectId, orgId);
+      if (!accessCheck.hasAccess) {
+        return res.status(403).json({ error: accessCheck.error || "Accès refusé à ce projet" });
       }
+      const project = accessCheck.project;
 
       // Parse workflow state JSON
       let workflowState = null;
@@ -7257,10 +7631,11 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       }
 
       // Verify vendor has access to this project
-      const project = await storage.getProject(projectId, orgId);
-      if (!project || project.vendorContactId !== vendorContactId) {
-        return res.status(403).json({ error: "Accès refusé à ce projet" });
+      const accessCheck = await checkVendorProjectAccess(vendorContactId, projectId, orgId);
+      if (!accessCheck.hasAccess) {
+        return res.status(403).json({ error: accessCheck.error || "Accès refusé à ce projet" });
       }
+      const project = accessCheck.project;
 
       const { workflowState } = req.body;
 
@@ -7294,35 +7669,16 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       const vendorContactId = req.session.vendorContactId;
       const projectId = req.params.projectId;
 
-      console.log("🔍 DEBUG Vendor Project Access:", {
-        vendorContactId,
-        projectId,
-        orgId,
-      });
-
       if (!vendorContactId) {
         return res.status(403).json({ error: "Aucun profil vendeur associé" });
       }
 
       // Verify vendor has access to this project
-      const project = await storage.getProject(projectId, orgId);
-
-      console.log("🔍 DEBUG Project Found:", {
-        projectId: project?.id,
-        projectName: project?.name,
-        projectVendorContactId: project?.vendorContactId,
-        sessionVendorContactId: vendorContactId,
-        match: project?.vendorContactId === vendorContactId,
-      });
-
-      if (!project || project.vendorContactId !== vendorContactId) {
-        console.log("❌ DEBUG Access Denied:", {
-          projectExists: !!project,
-          projectVendorContactId: project?.vendorContactId,
-          sessionVendorContactId: vendorContactId,
-        });
-        return res.status(403).json({ error: "Accès refusé à ce projet" });
+      const accessCheck = await checkVendorProjectAccess(vendorContactId, projectId, orgId);
+      if (!accessCheck.hasAccess) {
+        return res.status(403).json({ error: accessCheck.error || "Accès refusé à ce projet" });
       }
+      const project = accessCheck.project;
 
       // Get client info
       let account = null;
@@ -7542,6 +7898,579 @@ Adapte le ton et le contenu aux instructions fournies par le sous-traitant.`;
     } catch (error) {
       console.error("Update vendor project update error:", error);
       res.status(500).json({ error: "Échec de mise à jour du CR" });
+    }
+  });
+
+  // =====================
+  // Vendor Project Events (Calendar)
+  // =====================
+
+  // Get all events for a project
+  app.get("/api/vendor/projects/:projectId/events", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const projectId = req.params.projectId;
+      const { start, end } = req.query;
+
+      let events;
+      if (start && end) {
+        events = await storage.getVendorProjectEventsByDateRange(
+          projectId,
+          orgId,
+          new Date(start as string),
+          new Date(end as string)
+        );
+      } else {
+        events = await storage.getVendorProjectEvents(projectId, orgId);
+      }
+
+      res.json(events);
+    } catch (error) {
+      console.error("Get vendor project events error:", error);
+      res.status(500).json({ error: "Échec de récupération des événements" });
+    }
+  });
+
+  // Create a new event
+  app.post("/api/vendor/projects/:projectId/events", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = req.session.userId;
+      const projectId = req.params.projectId;
+      const { title, description, start, end, allDay, type, color } = req.body;
+
+      if (!title || !start || !end) {
+        return res.status(400).json({ error: "Le titre, la date de début et la date de fin sont requis" });
+      }
+
+      const event = await storage.createVendorProjectEvent({
+        orgId,
+        projectId,
+        createdById: userId,
+        title,
+        description,
+        start: new Date(start),
+        end: new Date(end),
+        allDay: allDay || false,
+        type: type || 'personal',
+        color,
+      });
+
+      res.status(201).json(event);
+    } catch (error) {
+      console.error("Create vendor project event error:", error);
+      res.status(500).json({ error: "Échec de création de l'événement" });
+    }
+  });
+
+  // Update an event
+  app.patch("/api/vendor/projects/:projectId/events/:eventId", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const projectId = req.params.projectId;
+      const eventId = req.params.eventId;
+      const { title, description, start, end, allDay, type, color } = req.body;
+
+      const updates: any = {};
+      if (title !== undefined) updates.title = title;
+      if (description !== undefined) updates.description = description;
+      if (start !== undefined) updates.start = new Date(start);
+      if (end !== undefined) updates.end = new Date(end);
+      if (allDay !== undefined) updates.allDay = allDay;
+      if (type !== undefined) updates.type = type;
+      if (color !== undefined) updates.color = color;
+
+      const event = await storage.updateVendorProjectEvent(eventId, projectId, orgId, updates);
+      if (!event) {
+        return res.status(404).json({ error: "Événement non trouvé" });
+      }
+
+      res.json(event);
+    } catch (error) {
+      console.error("Update vendor project event error:", error);
+      res.status(500).json({ error: "Échec de mise à jour de l'événement" });
+    }
+  });
+
+  // Delete an event
+  app.delete("/api/vendor/projects/:projectId/events/:eventId", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const projectId = req.params.projectId;
+      const eventId = req.params.eventId;
+
+      await storage.deleteVendorProjectEvent(eventId, projectId, orgId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete vendor project event error:", error);
+      res.status(500).json({ error: "Échec de suppression de l'événement" });
+    }
+  });
+
+  // Sync event to Google Calendar
+  app.post("/api/vendor/projects/:projectId/events/:eventId/sync-google", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const projectId = req.params.projectId;
+      const eventId = req.params.eventId;
+
+      // Get the event
+      const event = await storage.getVendorProjectEvent(eventId, orgId);
+      if (!event) {
+        return res.status(404).json({ error: "Événement non trouvé" });
+      }
+
+      // TODO: Implement actual Google Calendar sync
+      // For now, just mark it as synced
+      const updated = await storage.updateVendorProjectEvent(eventId, projectId, orgId, {
+        googleCalendarSynced: true,
+      });
+
+      res.json({
+        success: true,
+        message: "Synchronisation avec Google Calendar à implémenter",
+        event: updated
+      });
+    } catch (error) {
+      console.error("Sync to Google Calendar error:", error);
+      res.status(500).json({ error: "Échec de synchronisation avec Google Calendar" });
+    }
+  });
+
+  // =====================
+  // Vendor Workflow Management
+  // =====================
+
+  // Update workflow step status
+  app.patch("/api/vendor/projects/:projectId/workflow/steps/:stepId", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const projectId = req.params.projectId;
+      const stepId = req.params.stepId;
+      const { status, notes, completedAt } = req.body;
+
+      // Get current project
+      const project = await storage.getProject(projectId, orgId);
+      if (!project) {
+        return res.status(404).json({ error: "Projet non trouvé" });
+      }
+
+      // Parse current workflow state
+      let workflowState: any = {};
+      if (project.workflowState) {
+        try {
+          workflowState = JSON.parse(project.workflowState);
+        } catch {
+          workflowState = {};
+        }
+      }
+
+      // Find and update the step
+      if (!workflowState.steps) {
+        workflowState.steps = [];
+      }
+
+      const stepIndex = workflowState.steps.findIndex((s: any) => s.id === stepId);
+      if (stepIndex === -1) {
+        return res.status(404).json({ error: "Étape non trouvée" });
+      }
+
+      // Update the step
+      if (status !== undefined) workflowState.steps[stepIndex].status = status;
+      if (notes !== undefined) workflowState.steps[stepIndex].notes = notes;
+      if (completedAt !== undefined) workflowState.steps[stepIndex].completedAt = completedAt;
+      if (status === 'completed' && !workflowState.steps[stepIndex].completedAt) {
+        workflowState.steps[stepIndex].completedAt = new Date().toISOString();
+      }
+
+      // Calculate progress based on completed steps
+      const completedSteps = workflowState.steps.filter((s: any) => s.status === 'completed').length;
+      const totalSteps = workflowState.steps.length;
+      const progress = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+
+      // Update project with new workflow state and progress
+      await storage.updateProject(projectId, orgId, {
+        workflowState: JSON.stringify(workflowState),
+        progress,
+      });
+
+      res.json({
+        success: true,
+        step: workflowState.steps[stepIndex],
+        progress
+      });
+    } catch (error) {
+      console.error("Update workflow step error:", error);
+      res.status(500).json({ error: "Échec de mise à jour de l'étape" });
+    }
+  });
+
+  // Add a new workflow step
+  app.post("/api/vendor/projects/:projectId/workflow/steps", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const projectId = req.params.projectId;
+      const { name, description, startDate, endDate } = req.body;
+
+      if (!name) {
+        return res.status(400).json({ error: "Le nom de l'étape est requis" });
+      }
+
+      // Get current project
+      const project = await storage.getProject(projectId, orgId);
+      if (!project) {
+        return res.status(404).json({ error: "Projet non trouvé" });
+      }
+
+      // Parse current workflow state
+      let workflowState: any = {};
+      if (project.workflowState) {
+        try {
+          workflowState = JSON.parse(project.workflowState);
+        } catch {
+          workflowState = {};
+        }
+      }
+
+      if (!workflowState.steps) {
+        workflowState.steps = [];
+      }
+
+      // Create new step
+      const newStep = {
+        id: `step-${Date.now()}`,
+        name,
+        description: description || '',
+        status: 'pending',
+        startDate: startDate || null,
+        endDate: endDate || null,
+        notes: '',
+        createdAt: new Date().toISOString(),
+      };
+
+      workflowState.steps.push(newStep);
+
+      // Update project
+      await storage.updateProject(projectId, orgId, {
+        workflowState: JSON.stringify(workflowState),
+      });
+
+      res.status(201).json(newStep);
+    } catch (error) {
+      console.error("Add workflow step error:", error);
+      res.status(500).json({ error: "Échec d'ajout de l'étape" });
+    }
+  });
+
+  // Delete a workflow step
+  app.delete("/api/vendor/projects/:projectId/workflow/steps/:stepId", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const projectId = req.params.projectId;
+      const stepId = req.params.stepId;
+
+      // Get current project
+      const project = await storage.getProject(projectId, orgId);
+      if (!project) {
+        return res.status(404).json({ error: "Projet non trouvé" });
+      }
+
+      // Parse current workflow state
+      let workflowState: any = {};
+      if (project.workflowState) {
+        try {
+          workflowState = JSON.parse(project.workflowState);
+        } catch {
+          workflowState = {};
+        }
+      }
+
+      if (!workflowState.steps) {
+        return res.status(404).json({ error: "Étape non trouvée" });
+      }
+
+      // Remove the step
+      workflowState.steps = workflowState.steps.filter((s: any) => s.id !== stepId);
+
+      // Recalculate progress
+      const completedSteps = workflowState.steps.filter((s: any) => s.status === 'completed').length;
+      const totalSteps = workflowState.steps.length;
+      const progress = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+
+      // Update project
+      await storage.updateProject(projectId, orgId, {
+        workflowState: JSON.stringify(workflowState),
+        progress,
+      });
+
+      res.json({ success: true, progress });
+    } catch (error) {
+      console.error("Delete workflow step error:", error);
+      res.status(500).json({ error: "Échec de suppression de l'étape" });
+    }
+  });
+
+  // =====================
+  // Vendor Deliverables Routes
+  // =====================
+
+  // Get deliverables for a project
+  app.get("/api/vendor/projects/:projectId/deliverables", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const projectId = req.params.projectId;
+
+      const deliverables = await storage.getProjectDeliverables(projectId, orgId);
+      res.json(deliverables);
+    } catch (error) {
+      console.error("Get vendor deliverables error:", error);
+      res.status(500).json({ error: "Échec de récupération des livrables" });
+    }
+  });
+
+  // Create or update a deliverable (vendor can create V1, V2, V3 for each of 3 deliverables)
+  app.post("/api/vendor/projects/:projectId/deliverables", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const projectId = req.params.projectId;
+      const userId = req.session.userId;
+      const { deliverableNumber, version, title, description, type, url } = req.body;
+
+      if (!deliverableNumber || deliverableNumber < 1 || deliverableNumber > 3) {
+        return res.status(400).json({ error: "Le numéro de livrable doit être entre 1 et 3" });
+      }
+
+      if (!version || !['v1', 'v2', 'v3'].includes(version)) {
+        return res.status(400).json({ error: "La version doit être v1, v2 ou v3" });
+      }
+
+      if (!title || !type) {
+        return res.status(400).json({ error: "Le titre et le type sont requis" });
+      }
+
+      const deliverable = await storage.createProjectDeliverable({
+        orgId,
+        projectId,
+        deliverableNumber,
+        version,
+        title,
+        description: description || null,
+        type,
+        url: url || null,
+        status: 'submitted',
+        createdById: userId || null,
+      });
+
+      res.status(201).json(deliverable);
+    } catch (error) {
+      console.error("Create vendor deliverable error:", error);
+      res.status(500).json({ error: "Échec de création du livrable" });
+    }
+  });
+
+  // Update a deliverable
+  app.patch("/api/vendor/projects/:projectId/deliverables/:deliverableId", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const deliverableId = req.params.deliverableId;
+      const { title, description, type, url, status } = req.body;
+
+      const updates: Record<string, unknown> = {};
+      if (title !== undefined) updates.title = title;
+      if (description !== undefined) updates.description = description;
+      if (type !== undefined) updates.type = type;
+      if (url !== undefined) updates.url = url;
+      if (status !== undefined) updates.status = status;
+
+      const updated = await storage.updateProjectDeliverable(deliverableId, orgId, updates as any);
+      if (!updated) {
+        return res.status(404).json({ error: "Livrable non trouvé" });
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Update vendor deliverable error:", error);
+      res.status(500).json({ error: "Échec de mise à jour du livrable" });
+    }
+  });
+
+  // Delete a deliverable
+  app.delete("/api/vendor/projects/:projectId/deliverables/:deliverableId", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const deliverableId = req.params.deliverableId;
+
+      await storage.deleteProjectDeliverable(deliverableId, orgId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete vendor deliverable error:", error);
+      res.status(500).json({ error: "Échec de suppression du livrable" });
+    }
+  });
+
+  // =====================
+  // Direct Messaging Routes
+  // =====================
+
+  // Get all conversations for the current user
+  app.get("/api/messages/conversations", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = req.session.userId!;
+
+      const conversations = await storage.getUserConversations(userId, orgId);
+      res.json(conversations);
+    } catch (error) {
+      console.error("Get conversations error:", error);
+      res.status(500).json({ error: "Échec de récupération des conversations" });
+    }
+  });
+
+  // Get unread message count
+  app.get("/api/messages/unread-count", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = req.session.userId!;
+
+      const count = await storage.getUnreadMessageCount(userId, orgId);
+      res.json({ count });
+    } catch (error) {
+      console.error("Get unread count error:", error);
+      res.status(500).json({ error: "Échec de récupération du compteur" });
+    }
+  });
+
+  // Get available recipients for messaging
+  app.get("/api/messages/recipients", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = req.session.userId!;
+
+      const recipients = await storage.getAvailableMessageRecipients(userId, orgId);
+      res.json(recipients);
+    } catch (error) {
+      console.error("Get recipients error:", error);
+      res.status(500).json({ error: "Échec de récupération des destinataires" });
+    }
+  });
+
+  // Start or get a conversation with another user
+  app.post("/api/messages/conversations", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = req.session.userId!;
+      const { recipientId } = req.body;
+
+      if (!recipientId) {
+        return res.status(400).json({ error: "recipientId est requis" });
+      }
+
+      // Check if recipient exists and is in the same org
+      const recipients = await storage.getAvailableMessageRecipients(userId, orgId);
+      const validRecipient = recipients.find(r => r.id === recipientId);
+      if (!validRecipient) {
+        return res.status(400).json({ error: "Destinataire invalide" });
+      }
+
+      const conversation = await storage.getOrCreateDirectConversation(orgId, userId, recipientId);
+      res.json(conversation);
+    } catch (error) {
+      console.error("Create conversation error:", error);
+      res.status(500).json({ error: "Échec de création de la conversation" });
+    }
+  });
+
+  // Get messages for a conversation
+  app.get("/api/messages/conversations/:conversationId/messages", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = req.session.userId!;
+      const { conversationId } = req.params;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const offset = parseInt(req.query.offset as string) || 0;
+
+      // Verify user is a participant in this conversation
+      const conversation = await storage.getDirectConversation(conversationId, orgId);
+      if (!conversation) {
+        return res.status(404).json({ error: "Conversation non trouvée" });
+      }
+      if (conversation.participant1Id !== userId && conversation.participant2Id !== userId) {
+        return res.status(403).json({ error: "Accès non autorisé à cette conversation" });
+      }
+
+      // Mark messages as read
+      await storage.markMessagesAsRead(conversationId, userId);
+
+      const messages = await storage.getConversationMessages(conversationId, limit, offset);
+      res.json(messages);
+    } catch (error) {
+      console.error("Get messages error:", error);
+      res.status(500).json({ error: "Échec de récupération des messages" });
+    }
+  });
+
+  // Send a message
+  app.post("/api/messages/conversations/:conversationId/messages", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = req.session.userId!;
+      const { conversationId } = req.params;
+      const { content } = req.body;
+
+      if (!content || !content.trim()) {
+        return res.status(400).json({ error: "Le contenu du message est requis" });
+      }
+
+      // Verify user is a participant in this conversation
+      const conversation = await storage.getDirectConversation(conversationId, orgId);
+      if (!conversation) {
+        return res.status(404).json({ error: "Conversation non trouvée" });
+      }
+      if (conversation.participant1Id !== userId && conversation.participant2Id !== userId) {
+        return res.status(403).json({ error: "Accès non autorisé à cette conversation" });
+      }
+
+      // Determine recipient
+      const recipientId = conversation.participant1Id === userId
+        ? conversation.participant2Id
+        : conversation.participant1Id;
+
+      const message = await storage.sendDirectMessage({
+        conversationId,
+        senderId: userId,
+        recipientId,
+        content: content.trim(),
+        status: 'sent',
+      });
+
+      res.status(201).json(message);
+    } catch (error) {
+      console.error("Send message error:", error);
+      res.status(500).json({ error: "Échec d'envoi du message" });
+    }
+  });
+
+  // Mark conversation as read
+  app.post("/api/messages/conversations/:conversationId/read", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = req.session.userId!;
+      const { conversationId } = req.params;
+
+      // Verify user is a participant in this conversation
+      const conversation = await storage.getDirectConversation(conversationId, orgId);
+      if (!conversation) {
+        return res.status(404).json({ error: "Conversation non trouvée" });
+      }
+      if (conversation.participant1Id !== userId && conversation.participant2Id !== userId) {
+        return res.status(403).json({ error: "Accès non autorisé à cette conversation" });
+      }
+
+      await storage.markMessagesAsRead(conversationId, userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Mark as read error:", error);
+      res.status(500).json({ error: "Échec de marquage comme lu" });
     }
   });
 

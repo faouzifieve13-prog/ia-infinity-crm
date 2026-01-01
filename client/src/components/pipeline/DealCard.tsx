@@ -2,12 +2,13 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
-import { GripVertical, Calendar, TrendingUp, Clock, AlertCircle, FileEdit, PhoneCall, XCircle } from 'lucide-react';
+import { GripVertical, Calendar, TrendingUp, Clock, AlertCircle, FileEdit, PhoneCall, XCircle, Mail } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import type { ProspectStatus } from '@/lib/types';
+import type { ProspectStatus, DealStage } from '@/lib/types';
 
 interface DealOwner {
   id: string;
@@ -20,6 +21,7 @@ interface DealCardDeal {
   id: string;
   accountName: string;
   contactName: string;
+  contactEmail?: string | null;
   amount: string;
   probability: number;
   nextAction?: string | null;
@@ -29,7 +31,15 @@ interface DealCardDeal {
   prospectStatus?: ProspectStatus | null;
   followUpDate?: string | null;
   followUpNotes?: string | null;
+  score?: string | null;
+  stage: DealStage;
 }
+
+const scoreConfig: Record<string, { label: string; className: string }> = {
+  A: { label: 'A', className: 'bg-emerald-500 text-white border-emerald-600' },
+  B: { label: 'B', className: 'bg-amber-500 text-white border-amber-600' },
+  C: { label: 'C', className: 'bg-slate-400 text-white border-slate-500' },
+};
 
 const prospectStatusConfig: Record<ProspectStatus, { label: string; color: string; icon: typeof AlertCircle }> = {
   active: { label: 'Actif', color: 'bg-emerald-500/20 text-emerald-500 border-emerald-500/30', icon: TrendingUp },
@@ -40,6 +50,7 @@ const prospectStatusConfig: Record<ProspectStatus, { label: string; color: strin
 
 interface DealCardProps {
   deal: DealCardDeal;
+  onEmailClick?: (deal: DealCardDeal) => void;
 }
 
 const getProbabilityColor = (probability: number) => {
@@ -54,7 +65,7 @@ const getDaysColor = (days: number) => {
   return 'text-red-500';
 };
 
-export function DealCard({ deal }: DealCardProps) {
+export function DealCard({ deal, onEmailClick }: DealCardProps) {
   const [, navigate] = useLocation();
   const {
     attributes,
@@ -118,9 +129,19 @@ export function DealCard({ deal }: DealCardProps) {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2 mb-1">
-                <h4 className="font-semibold text-sm truncate group-hover:text-primary transition-colors">
-                  {deal.accountName}
-                </h4>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {deal.score && scoreConfig[deal.score] && (
+                    <Badge
+                      className={`text-[10px] px-1.5 py-0 h-4 font-bold shrink-0 ${scoreConfig[deal.score].className}`}
+                      data-testid={`badge-score-${deal.id}`}
+                    >
+                      {scoreConfig[deal.score].label}
+                    </Badge>
+                  )}
+                  <h4 className="font-semibold text-sm truncate group-hover:text-primary transition-colors">
+                    {deal.accountName}
+                  </h4>
+                </div>
                 <Badge variant="secondary" className="font-bold text-xs shrink-0 bg-primary/10 text-primary border-0">
                   {amountNum.toLocaleString('fr-FR')}€
                 </Badge>
@@ -211,6 +232,25 @@ export function DealCard({ deal }: DealCardProps) {
                     </TooltipTrigger>
                     <TooltipContent>Jours dans cette étape</TooltipContent>
                   </Tooltip>
+                  {onEmailClick && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEmailClick(deal);
+                          }}
+                          data-testid={`deal-email-btn-${deal.id}`}
+                        >
+                          <Mail className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Envoyer un email</TooltipContent>
+                    </Tooltip>
+                  )}
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Avatar className="h-6 w-6 ring-2 ring-background">

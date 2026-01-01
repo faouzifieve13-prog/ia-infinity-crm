@@ -7,7 +7,7 @@ import {
   projects, tasks, invoices, invoiceLineItems, vendors, missions, documents,
   workflowRuns, importJobs, contracts, expenses, invitations, emails, calendarEvents, followUpHistory, projectComments,
   channels, channelMessages, channelAttachments, accountLoomVideos, accountUpdates, projectUpdates, projectDeliverables,
-  notifications,
+  notifications, vendorProjectEvents, directConversations, directMessages, emailTemplates,
   type Organization, type InsertOrganization,
   type User, type InsertUser,
   type Membership, type InsertMembership,
@@ -41,9 +41,13 @@ import {
   type ProjectUpdate, type InsertProjectUpdate,
   type ProjectDeliverable, type InsertProjectDeliverable,
   type Notification, type InsertNotification,
+  type VendorProjectEvent, type InsertVendorProjectEvent,
+  type DirectConversation, type InsertDirectConversation,
+  type DirectMessage, type InsertDirectMessage,
+  type EmailTemplate, type InsertEmailTemplate,
   type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
   type ExpenseStatus, type ExpenseCategory, type InvitationStatus, type FollowUpType,
-  type ChannelType, type ChannelScope
+  type ChannelType, type ChannelScope, type VendorProjectEventType, type DirectMessageStatus
 } from "@shared/schema";
 
 export interface IStorage {
@@ -352,77 +356,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteAccount(id: string, orgId: string): Promise<boolean> {
-    console.log(`[deleteAccount] Starting deletion for account ${id}`);
+    console.log(`[deleteAccount] Deleting account ${id} (CASCADE will handle all linked entities)...`);
 
-    // Step 1: Delete all deal-related records first (in correct order for FK constraints)
-    // Delete follow-up history for all deals of this account
-    console.log(`[deleteAccount] Deleting follow_up_history...`);
-    await db.execute(sql`DELETE FROM follow_up_history WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
-    console.log(`[deleteAccount] follow_up_history deleted`);
-
-    // Delete quote line items for all quotes of deals of this account
-    await db.execute(sql`DELETE FROM quote_line_items WHERE quote_id IN (
-      SELECT q.id FROM quotes q INNER JOIN deals d ON q.deal_id = d.id WHERE d.account_id = ${id}
-    )`);
-
-    // Delete quotes for all deals of this account
-    await db.execute(sql`DELETE FROM quotes WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
-
-    // Delete activities for all deals of this account
-    await db.execute(sql`DELETE FROM activities WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
-
-    // Delete documents for all deals of this account
-    await db.execute(sql`DELETE FROM documents WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
-
-    // Delete emails for all deals of this account
-    await db.execute(sql`DELETE FROM emails WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
-
-    // Set dealId to null on calendar_events, contracts, projects
-    await db.execute(sql`UPDATE calendar_events SET deal_id = NULL WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
-    await db.execute(sql`UPDATE contracts SET deal_id = NULL WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
-    await db.execute(sql`UPDATE projects SET deal_id = NULL WHERE deal_id IN (SELECT id FROM deals WHERE account_id = ${id})`);
-
-    // Now delete all deals for this account
-    console.log(`[deleteAccount] Deleting deals...`);
-    await db.execute(sql`DELETE FROM deals WHERE account_id = ${id}`);
-    console.log(`[deleteAccount] deals deleted`);
-
-    // Step 2: Delete other account-related records
-    await db.delete(invitations).where(eq(invitations.accountId, id));
-    await db.delete(emails).where(eq(emails.accountId, id));
-    await db.delete(expenses).where(eq(expenses.accountId, id));
-    await db.delete(documents).where(eq(documents.accountId, id));
-
-    // Delete invoice line items first, then invoices
-    await db.execute(sql`DELETE FROM invoice_line_items WHERE invoice_id IN (SELECT id FROM invoices WHERE account_id = ${id})`);
-    await db.delete(invoices).where(eq(invoices.accountId, id));
-
-    // Delete project-related records
-    await db.execute(sql`DELETE FROM tasks WHERE project_id IN (SELECT id FROM projects WHERE account_id = ${id})`);
-    await db.execute(sql`DELETE FROM activities WHERE project_id IN (SELECT id FROM projects WHERE account_id = ${id})`);
-    await db.execute(sql`DELETE FROM project_comments WHERE project_id IN (SELECT id FROM projects WHERE account_id = ${id})`);
-    await db.execute(sql`DELETE FROM missions WHERE project_id IN (SELECT id FROM projects WHERE account_id = ${id})`);
-    await db.execute(sql`DELETE FROM documents WHERE project_id IN (SELECT id FROM projects WHERE account_id = ${id})`);
-    await db.execute(sql`DELETE FROM project_updates WHERE project_id IN (SELECT id FROM projects WHERE account_id = ${id})`);
-    await db.execute(sql`DELETE FROM project_deliverables WHERE project_id IN (SELECT id FROM projects WHERE account_id = ${id})`);
-    await db.delete(projects).where(eq(projects.accountId, id));
-
-    // Delete related contracts
-    await db.delete(contracts).where(eq(contracts.accountId, id));
-
-    // Delete channels - CASCADE will handle messages and attachments
-    await db.execute(sql`DELETE FROM channels WHERE account_id = ${id}`);
-
-    // Delete account updates and loom videos
-    await db.execute(sql`DELETE FROM account_updates WHERE account_id = ${id}`);
-    await db.execute(sql`DELETE FROM account_loom_videos WHERE account_id = ${id}`);
-
-    // Delete related contacts
-    await db.delete(contacts).where(eq(contacts.accountId, id));
-
-    // Finally delete the account
+    // Thanks to CASCADE constraints at the DB level, a single query is sufficient
+    // This will automatically delete: projects, contacts, deals, memberships, invitations,
+    // channels, and all their child entities (tasks, invoices, documents, etc.)
     await db.delete(accounts)
       .where(and(eq(accounts.id, id), eq(accounts.orgId, orgId)));
+
+    console.log(`[deleteAccount] Account deleted successfully with all linked entities via CASCADE`);
     return true;
   }
 
@@ -1648,6 +1590,32 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
 
+  async updateProjectDeliverable(id: string, orgId: string, updates: Partial<{
+    title: string;
+    description: string | null;
+    type: string;
+    url: string | null;
+    fileName: string | null;
+    fileSize: number | null;
+    mimeType: string | null;
+    fileData: string | null;
+    version: string;
+    status: string;
+    clientComment: string | null;
+  }>): Promise<ProjectDeliverable | null> {
+    const [updated] = await db.update(projectDeliverables)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(eq(projectDeliverables.id, id), eq(projectDeliverables.orgId, orgId)))
+      .returning();
+    return updated || null;
+  }
+
+  async getProjectDeliverableById(id: string, orgId: string): Promise<ProjectDeliverable | null> {
+    const [deliverable] = await db.select().from(projectDeliverables)
+      .where(and(eq(projectDeliverables.id, id), eq(projectDeliverables.orgId, orgId)));
+    return deliverable || null;
+  }
+
   // Notifications
   async getNotifications(userId: string, orgId: string, limit: number = 20): Promise<Notification[]> {
     return db.select().from(notifications)
@@ -1703,6 +1671,256 @@ export class DatabaseStorage implements IStorage {
         sql`${notifications.createdAt} < ${cutoffDate}`
       ));
     return true;
+  }
+
+  // Vendor Project Events
+  async getVendorProjectEvents(projectId: string, orgId: string): Promise<VendorProjectEvent[]> {
+    return db.select().from(vendorProjectEvents)
+      .where(and(eq(vendorProjectEvents.projectId, projectId), eq(vendorProjectEvents.orgId, orgId)))
+      .orderBy(asc(vendorProjectEvents.start));
+  }
+
+  async getVendorProjectEventsByDateRange(projectId: string, orgId: string, startDate: Date, endDate: Date): Promise<VendorProjectEvent[]> {
+    return db.select().from(vendorProjectEvents)
+      .where(and(
+        eq(vendorProjectEvents.projectId, projectId),
+        eq(vendorProjectEvents.orgId, orgId),
+        sql`${vendorProjectEvents.start} >= ${startDate}`,
+        sql`${vendorProjectEvents.end} <= ${endDate}`
+      ))
+      .orderBy(asc(vendorProjectEvents.start));
+  }
+
+  async createVendorProjectEvent(event: InsertVendorProjectEvent): Promise<VendorProjectEvent> {
+    const [created] = await db.insert(vendorProjectEvents).values(event).returning();
+    return created;
+  }
+
+  async updateVendorProjectEvent(id: string, projectId: string, orgId: string, updates: Partial<InsertVendorProjectEvent>): Promise<VendorProjectEvent | undefined> {
+    const [updated] = await db.update(vendorProjectEvents)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(
+        eq(vendorProjectEvents.id, id),
+        eq(vendorProjectEvents.projectId, projectId),
+        eq(vendorProjectEvents.orgId, orgId)
+      ))
+      .returning();
+    return updated;
+  }
+
+  async deleteVendorProjectEvent(id: string, projectId: string, orgId: string): Promise<boolean> {
+    await db.delete(vendorProjectEvents)
+      .where(and(
+        eq(vendorProjectEvents.id, id),
+        eq(vendorProjectEvents.projectId, projectId),
+        eq(vendorProjectEvents.orgId, orgId)
+      ));
+    return true;
+  }
+
+  async getVendorProjectEvent(id: string, orgId: string): Promise<VendorProjectEvent | undefined> {
+    const [event] = await db.select().from(vendorProjectEvents)
+      .where(and(eq(vendorProjectEvents.id, id), eq(vendorProjectEvents.orgId, orgId)));
+    return event;
+  }
+
+  // Direct Messaging
+  async getOrCreateDirectConversation(orgId: string, userId1: string, userId2: string): Promise<DirectConversation> {
+    // Normalize participant order to avoid duplicates
+    const [participant1Id, participant2Id] = [userId1, userId2].sort();
+
+    // Check if conversation exists
+    const [existing] = await db.select().from(directConversations)
+      .where(and(
+        eq(directConversations.orgId, orgId),
+        eq(directConversations.participant1Id, participant1Id),
+        eq(directConversations.participant2Id, participant2Id)
+      ));
+
+    if (existing) {
+      return existing;
+    }
+
+    // Create new conversation
+    const [created] = await db.insert(directConversations).values({
+      orgId,
+      participant1Id,
+      participant2Id,
+    }).returning();
+
+    return created;
+  }
+
+  async getUserConversations(userId: string, orgId: string): Promise<(DirectConversation & {
+    otherParticipant: { id: string; name: string; email: string; role?: string };
+    unreadCount: number;
+  })[]> {
+    // Get all conversations where the user is a participant
+    const conversations = await db.select().from(directConversations)
+      .where(and(
+        eq(directConversations.orgId, orgId),
+        sql`(${directConversations.participant1Id} = ${userId} OR ${directConversations.participant2Id} = ${userId})`
+      ))
+      .orderBy(desc(directConversations.lastMessageAt));
+
+    // For each conversation, get the other participant and unread count
+    const result = await Promise.all(conversations.map(async (conv) => {
+      const otherParticipantId = conv.participant1Id === userId ? conv.participant2Id : conv.participant1Id;
+
+      // Get other participant info
+      const [otherUser] = await db.select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+      }).from(users).where(eq(users.id, otherParticipantId));
+
+      // Get user's role
+      const [membership] = await db.select({
+        role: memberships.role
+      }).from(memberships).where(and(
+        eq(memberships.userId, otherParticipantId),
+        eq(memberships.orgId, orgId)
+      ));
+
+      // Get unread count
+      const [unreadResult] = await db.select({
+        count: sql<number>`count(*)::int`
+      }).from(directMessages)
+        .where(and(
+          eq(directMessages.conversationId, conv.id),
+          eq(directMessages.recipientId, userId),
+          eq(directMessages.status, 'sent')
+        ));
+
+      return {
+        ...conv,
+        otherParticipant: {
+          ...otherUser,
+          role: membership?.role,
+        },
+        unreadCount: unreadResult?.count || 0,
+      };
+    }));
+
+    return result;
+  }
+
+  async getConversationMessages(conversationId: string, limit: number = 50, offset: number = 0): Promise<DirectMessage[]> {
+    return db.select().from(directMessages)
+      .where(eq(directMessages.conversationId, conversationId))
+      .orderBy(desc(directMessages.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  async sendDirectMessage(message: InsertDirectMessage): Promise<DirectMessage> {
+    const [created] = await db.insert(directMessages).values(message).returning();
+
+    // Update conversation with last message info
+    await db.update(directConversations)
+      .set({
+        lastMessageAt: new Date(),
+        lastMessagePreview: message.content.substring(0, 100),
+        updatedAt: new Date(),
+      })
+      .where(eq(directConversations.id, message.conversationId));
+
+    return created;
+  }
+
+  async markMessagesAsRead(conversationId: string, userId: string): Promise<void> {
+    await db.update(directMessages)
+      .set({
+        status: 'read',
+        readAt: new Date(),
+      })
+      .where(and(
+        eq(directMessages.conversationId, conversationId),
+        eq(directMessages.recipientId, userId),
+        eq(directMessages.status, 'sent')
+      ));
+  }
+
+  async getUnreadMessageCount(userId: string, orgId: string): Promise<number> {
+    // Get all conversations for user
+    const conversations = await db.select({ id: directConversations.id })
+      .from(directConversations)
+      .where(and(
+        eq(directConversations.orgId, orgId),
+        sql`(${directConversations.participant1Id} = ${userId} OR ${directConversations.participant2Id} = ${userId})`
+      ));
+
+    if (conversations.length === 0) return 0;
+
+    const conversationIds = conversations.map(c => c.id);
+
+    const [result] = await db.select({
+      count: sql<number>`count(*)::int`
+    }).from(directMessages)
+      .where(and(
+        sql`${directMessages.conversationId} IN (${sql.join(conversationIds.map(id => sql`${id}`), sql`, `)})`,
+        eq(directMessages.recipientId, userId),
+        eq(directMessages.status, 'sent')
+      ));
+
+    return result?.count || 0;
+  }
+
+  async getAvailableMessageRecipients(userId: string, orgId: string): Promise<{
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    type: 'admin' | 'vendor' | 'client';
+  }[]> {
+    // Get all users in the organization who can receive messages
+    const allMembers = await db.select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      role: memberships.role,
+    }).from(users)
+      .innerJoin(memberships, eq(users.id, memberships.userId))
+      .where(and(
+        eq(memberships.orgId, orgId),
+        sql`${users.id} != ${userId}`
+      ));
+
+    return allMembers.map(member => ({
+      ...member,
+      role: member.role || 'member',
+      type: (['admin', 'sales', 'delivery', 'finance'].includes(member.role || '')) ? 'admin' as const :
+            (member.role === 'vendor') ? 'vendor' as const : 'client' as const,
+    }));
+  }
+
+  async getDirectConversation(conversationId: string, orgId: string): Promise<DirectConversation | undefined> {
+    const [conv] = await db.select().from(directConversations)
+      .where(and(
+        eq(directConversations.id, conversationId),
+        eq(directConversations.orgId, orgId)
+      ));
+    return conv;
+  }
+
+  async getEmailTemplateByStage(stage: string, orgId?: string): Promise<EmailTemplate | undefined> {
+    // First try to find org-specific template
+    if (orgId) {
+      const [orgTemplate] = await db.select().from(emailTemplates)
+        .where(and(
+          eq(emailTemplates.stage, stage),
+          eq(emailTemplates.orgId, orgId)
+        ));
+      if (orgTemplate) return orgTemplate;
+    }
+
+    // Fall back to global template (orgId is null)
+    const [globalTemplate] = await db.select().from(emailTemplates)
+      .where(and(
+        eq(emailTemplates.stage, stage),
+        isNull(emailTemplates.orgId)
+      ));
+    return globalTemplate;
   }
 }
 

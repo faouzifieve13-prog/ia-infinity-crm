@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useLocation } from 'wouter';
-import { Plus, Loader2, Building2, Mail, Globe, Phone, Search, MoreHorizontal, Eye, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Loader2, Building2, Mail, Globe, Phone, Search, MoreHorizontal, Eye, Pencil, Trash2, Send, Archive, ArchiveRestore } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -54,7 +54,7 @@ const accountFormSchema = z.object({
   contactLinkedIn: z.string().optional(),
   domain: z.string().optional(),
   plan: z.enum(['audit', 'automatisation']).default('audit'),
-  status: z.enum(['active', 'inactive', 'churned']).default('active'),
+  status: z.enum(['active', 'inactive', 'churned', 'archived']).default('active'),
 });
 
 type AccountFormValues = z.infer<typeof accountFormSchema>;
@@ -68,6 +68,7 @@ const statusConfig = {
   active: { label: 'Actif', variant: 'default' as const, color: 'bg-emerald-500' },
   inactive: { label: 'Inactif', variant: 'secondary' as const, color: 'bg-amber-500' },
   churned: { label: 'Perdu', variant: 'destructive' as const, color: 'bg-red-500' },
+  archived: { label: 'Archivé', variant: 'secondary' as const, color: 'bg-gray-500' },
 };
 
 export default function Accounts() {
@@ -147,8 +148,63 @@ export default function Accounts() {
     },
   });
 
+  const sendInvitationMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest('POST', `/api/accounts/${id}/send-invitation`);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: 'Invitation envoyée',
+        description: data.emailSent
+          ? "L'invitation a été envoyée avec succès par email."
+          : "L'invitation a été créée mais l'email n'a pas pu être envoyé.",
+        variant: data.emailSent ? 'default' : 'destructive',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || "Impossible d'envoyer l'invitation.",
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: async ({ id, archived }: { id: string; archived: boolean }) => {
+      return apiRequest('PATCH', `/api/accounts/${id}`, {
+        status: archived ? 'active' : 'archived',
+      });
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/accounts'] });
+      toast({
+        title: variables.archived ? 'Client désarchivé' : 'Client archivé',
+        description: variables.archived
+          ? 'Le client a été désarchivé et est maintenant actif.'
+          : 'Le client a été archivé.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible d\'archiver le client.',
+        variant: 'destructive',
+      });
+    },
+  });
+
   const onSubmit = (data: AccountFormValues) => {
     createMutation.mutate(data);
+  };
+
+  const handleArchive = (account: Account, e: React.MouseEvent) => {
+    e.stopPropagation();
+    archiveMutation.mutate({
+      id: account.id,
+      archived: account.status === 'archived'
+    });
   };
 
   const filteredAccounts = accounts.filter((account) => {
@@ -342,6 +398,7 @@ export default function Accounts() {
                             <SelectItem value="active">Actif</SelectItem>
                             <SelectItem value="inactive">Inactif</SelectItem>
                             <SelectItem value="churned">Perdu</SelectItem>
+                            <SelectItem value="archived">Archivé</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -394,6 +451,7 @@ export default function Accounts() {
             <SelectItem value="active">Actif</SelectItem>
             <SelectItem value="inactive">Inactif</SelectItem>
             <SelectItem value="churned">Perdu</SelectItem>
+            <SelectItem value="archived">Archivé</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -457,7 +515,7 @@ export default function Accounts() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem 
+                        <DropdownMenuItem
                           onClick={(e) => { e.stopPropagation(); navigate(`/accounts/${account.id}`); }}
                           data-testid={`button-view-account-${account.id}`}
                         >
@@ -468,7 +526,35 @@ export default function Accounts() {
                           <Pencil className="mr-2 h-4 w-4" />
                           Modifier
                         </DropdownMenuItem>
-                        <DropdownMenuItem 
+                        {account.contactEmail && (
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              sendInvitationMutation.mutate(account.id);
+                            }}
+                            data-testid={`button-send-invitation-${account.id}`}
+                          >
+                            <Send className="mr-2 h-4 w-4" />
+                            Envoyer accès
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem
+                          onClick={(e) => handleArchive(account, e)}
+                          data-testid={`button-archive-account-${account.id}`}
+                        >
+                          {account.status === 'archived' ? (
+                            <>
+                              <ArchiveRestore className="mr-2 h-4 w-4" />
+                              Désarchiver
+                            </>
+                          ) : (
+                            <>
+                              <Archive className="mr-2 h-4 w-4" />
+                              Archiver
+                            </>
+                          )}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
                           className="text-destructive"
                           onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(account.id); }}
                           data-testid={`button-delete-account-${account.id}`}

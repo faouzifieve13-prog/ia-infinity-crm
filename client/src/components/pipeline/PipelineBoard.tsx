@@ -11,7 +11,7 @@ import {
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { PipelineColumn } from './PipelineColumn';
 import { DealCard } from './DealCard';
-import type { DealStage } from '@/lib/types';
+import type { DealStage, ProspectStatus } from '@/lib/types';
 
 interface DealOwner {
   id: string;
@@ -24,6 +24,7 @@ interface PipelineDeal {
   id: string;
   accountName: string;
   contactName: string;
+  contactEmail?: string | null;
   amount: string;
   probability: number;
   stage: DealStage;
@@ -31,16 +32,21 @@ interface PipelineDeal {
   daysInStage: number;
   owner: DealOwner;
   missionTypes?: string[] | null;
+  prospectStatus?: ProspectStatus | null;
+  followUpDate?: string | null;
+  followUpNotes?: string | null;
+  score?: string | null;
 }
 
 interface PipelineBoardProps {
   deals: PipelineDeal[];
   onDealMove?: (dealId: string, newStage: DealStage) => void;
+  onEmailClick?: (deal: PipelineDeal) => void;
 }
 
 const stages: DealStage[] = ['prospect', 'meeting', 'proposal', 'audit', 'negotiation', 'won', 'lost'];
 
-export function PipelineBoard({ deals, onDealMove }: PipelineBoardProps) {
+export function PipelineBoard({ deals, onDealMove, onEmailClick }: PipelineBoardProps) {
   const [localDeals, setLocalDeals] = useState(deals);
   const [activeDeal, setActiveDeal] = useState<PipelineDeal | null>(null);
 
@@ -99,6 +105,7 @@ export function PipelineBoard({ deals, onDealMove }: PipelineBoardProps) {
               stage={stage}
               deals={getDealsByStage(stage)}
               totalValue={getTotalValue(stage)}
+              onEmailClick={onEmailClick}
             />
           ))}
         </div>

@@ -222,25 +222,48 @@ function AppContent() {
 
   // Vendor portal routes (match /vendor and /vendor/*)
   if (location === "/vendor" || location.startsWith("/vendor/")) {
+    console.log("🔵 VENDOR ROUTE MATCHED:", location);
+
+    // Route directly without Switch for testing
+    let PageComponent = VendorDashboard;
+
+    if (location === "/vendor/projects") PageComponent = VendorProjects;
+    else if (location.startsWith("/vendor/projects/")) PageComponent = VendorProjectDetail;
+    else if (location === "/vendor/tasks") PageComponent = Tasks;
+    else if (location === "/vendor/documents") PageComponent = Documents;
+    else if (location === "/vendor/contracts") PageComponent = VendorContracts;
+    else if (location === "/vendor/invoices") PageComponent = VendorInvoices;
+    else if (location === "/vendor/my-invoices") PageComponent = VendorInvoices;
+    else if (location === "/vendor/missions") PageComponent = Missions;
+    else if (location === "/vendor/channels") PageComponent = VendorChannels;
+    else if (location === "/vendor/messages") PageComponent = ChannelsPage;
+    else if (location === "/vendor/services") PageComponent = ClientServices;
+    else if (location === "/vendor/settings") PageComponent = Settings;
+    else if (location === "/vendor/profile") PageComponent = Profile;
+    else if (location !== "/vendor") {
+      PageComponent = () => (
+        <div style={{ padding: '20px' }}>
+          <h1>404 - Vendor Route Not Found</h1>
+          <p>Location: {location}</p>
+          <p>Available routes:</p>
+          <ul>
+            <li>/vendor</li>
+            <li>/vendor/projects</li>
+            <li>/vendor/tasks</li>
+            <li>/vendor/documents</li>
+            <li>/vendor/contracts</li>
+            <li>/vendor/invoices</li>
+            <li>/vendor/missions</li>
+            <li>/vendor/channels</li>
+          </ul>
+        </div>
+      );
+    }
+
     return (
       <SpaceProvider defaultSpace="vendor">
         <AppLayout>
-          <Switch>
-            <Route path="/vendor/services" component={ClientServices} />
-            <Route path="/vendor/missions" component={Missions} />
-            <Route path="/vendor/projects/:id" component={VendorProjectDetail} />
-            <Route path="/vendor/projects" component={VendorProjects} />
-            <Route path="/vendor/documents" component={Documents} />
-            <Route path="/vendor/contracts" component={VendorContracts} />
-            <Route path="/vendor/my-invoices" component={VendorInvoices} />
-            <Route path="/vendor/channels" component={VendorChannels} />
-            <Route path="/vendor/tasks" component={Tasks} />
-            <Route path="/vendor/messages" component={ChannelsPage} />
-            <Route path="/vendor/settings" component={Settings} />
-            <Route path="/vendor/profile" component={Profile} />
-            <Route path="/vendor" component={VendorDashboard} />
-            <Route component={NotFound} />
-          </Switch>
+          <PageComponent />
         </AppLayout>
       </SpaceProvider>
     );

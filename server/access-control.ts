@@ -36,9 +36,22 @@ export async function getVendorProjectIds(
   vendorContactId: string
 ): Promise<string[]> {
   try {
-    // Requête directe: chercher les projets où vendor_contact_id = vendorContactId
+    // Get vendor contact to find vendorId
+    const contact = await storage.getContact(vendorContactId, orgId);
+    if (!contact || !contact.vendorId) {
+      return [];
+    }
+
     const projects = await storage.getProjects(orgId);
-    const vendorProjects = projects.filter(p => p.vendorContactId === vendorContactId);
+
+    // Filter projects:
+    // 1. Projects specifically assigned to this vendorContactId (priority)
+    // 2. Projects assigned to the vendor company (vendorId) but without specific vendorContactId (fallback)
+    const vendorProjects = projects.filter(p =>
+      p.vendorContactId === vendorContactId ||
+      (!p.vendorContactId && p.vendorId === contact.vendorId)
+    );
+
     return vendorProjects.map(p => p.id);
   } catch (error) {
     console.error("Error getting vendor project IDs:", error);

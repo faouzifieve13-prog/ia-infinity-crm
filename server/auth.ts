@@ -645,21 +645,24 @@ export async function requireVendorProjectAccess(req: Request, res: Response, ne
     return res.status(404).json({ error: "Projet non trouvé" });
   }
 
-  // STRICT ISOLATION: Only the specific vendor contact assigned to the project can access it
-  console.log("🔍 DEBUG requireVendorProjectAccess:", {
-    projectId,
-    projectVendorContactId: project.vendorContactId,
-    sessionVendorContactId: vendorContactId,
-    match: project.vendorContactId === vendorContactId,
-  });
-
-  if (project.vendorContactId !== vendorContactId) {
-    console.log("❌ DEBUG Middleware Access Denied");
-    return res.status(403).json({ error: "Accès refusé: vous n'êtes pas assigné à ce projet" });
+  // Get vendor contact to check vendorId
+  const contact = await storage.getContact(vendorContactId, orgId);
+  if (!contact) {
+    return res.status(403).json({ error: "Accès refusé: contact vendor non trouvé" });
   }
 
-  console.log("✅ DEBUG Middleware Access Granted");
-  next();
+  // STRICT ISOLATION: Check if vendor contact is assigned to this project
+  // Priority 1: Specific vendorContactId assignment
+  if (project.vendorContactId === vendorContactId) {
+    return next();
+  }
+
+  // Fallback: If project has no specific vendorContactId, check vendorId (company level)
+  if (!project.vendorContactId && project.vendorId && project.vendorId === contact.vendorId) {
+    return next();
+  }
+
+  return res.status(403).json({ error: "Accès refusé: vous n'êtes pas assigné à ce projet" });
 }
 
 export function requireClientAdmin(req: Request, res: Response, next: NextFunction) {

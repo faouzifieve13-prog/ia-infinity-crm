@@ -34,6 +34,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { PipelineBoard } from '@/components/pipeline/PipelineBoard';
+import { PipelineMetrics } from '@/components/PipelineMetrics';
+import { EmailTemplateDialog } from '@/components/pipeline/EmailTemplateDialog';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import type { Deal, DealStage, Account } from '@/lib/types';
@@ -52,13 +54,32 @@ const prospectFormSchema = z.object({
 
 type ProspectFormValues = z.infer<typeof prospectFormSchema>;
 
+const lostReasonFormSchema = z.object({
+  lostReason: z.string().min(1, 'Veuillez sélectionner une raison'),
+  lostReasonDetails: z.string().optional(),
+});
+
+type LostReasonFormValues = z.infer<typeof lostReasonFormSchema>;
+
 interface DealWithRelations extends Deal {
   owner: { id: string; name: string; email: string; avatar?: string | null };
 }
 
 export default function Pipeline() {
   const [ownerFilter, setOwnerFilter] = useState<string>('all');
+  const [scoreFilter, setScoreFilter] = useState<string>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [lostReasonDialogOpen, setLostReasonDialogOpen] = useState(false);
+  const [pendingDealMove, setPendingDealMove] = useState<{ dealId: string; newStage: DealStage } | null>(null);
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [selectedDealForEmail, setSelectedDealForEmail] = useState<{
+    id: string;
+    accountName: string;
+    contactName: string;
+    contactEmail?: string;
+    amount: string;
+    stage: string;
+  } | null>(null);
   const { toast } = useToast();
 
   const form = useForm<ProspectFormValues>({
@@ -73,6 +94,14 @@ export default function Pipeline() {
       probability: '10',
       nextAction: '',
       missionTypes: [],
+    },
+  });
+
+  const lostReasonForm = useForm<LostReasonFormValues>({
+    resolver: zodResolver(lostReasonFormSchema),
+    defaultValues: {
+      lostReason: '',
+      lostReasonDetails: '',
     },
   });
 
@@ -141,11 +170,49 @@ export default function Pipeline() {
   };
 
   const updateDealStageMutation = useMutation({
-    mutationFn: async ({ dealId, stage, position }: { dealId: string; stage: DealStage; position: number }) => {
-      return apiRequest('PATCH', `/api/deals/${dealId}/stage`, { stage, position });
+    mutationFn: async ({
+      dealId,
+      stage,
+      position,
+      lostReason,
+      lostReasonDetails
+    }: {
+      dealId: string;
+      stage: DealStage;
+      position: number;
+      lostReason?: string;
+      lostReasonDetails?: string;
+    }) => {
+      const response = await apiRequest('PATCH', `/api/deals/${dealId}/stage`, {
+        stage,
+        position,
+        ...(lostReason && { lostReason }),
+        ...(lostReasonDetails && { lostReasonDetails }),
+      });
+      return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: { projectId?: string; message?: string }) => {
       queryClient.invalidateQueries({ queryKey: ['/api/deals'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
+
+      if (data.projectId && data.message) {
+        toast({
+          title: 'Deal gagné !',
+          description: data.message,
+        });
+      } else {
+        toast({
+          title: 'Deal mis à jour',
+          description: 'Le statut du deal a été modifié avec succès.',
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de mettre à jour le deal.',
+        variant: 'destructive',
+      });
     },
   });
 
@@ -153,6 +220,7 @@ export default function Pipeline() {
     id: deal.id,
     accountName: deal.accountName || 'Unknown Account',
     contactName: deal.contactName || 'Unknown Contact',
+    contactEmail: deal.contactEmail || null,
     amount: deal.amount,
     probability: deal.probability,
     stage: deal.stage,
@@ -162,21 +230,60 @@ export default function Pipeline() {
     prospectStatus: deal.prospectStatus,
     followUpDate: deal.followUpDate,
     followUpNotes: deal.followUpNotes,
-    owner: { 
-      id: deal.ownerId || '', 
-      name: deal.ownerName || 'Unknown', 
-      email: deal.ownerEmail || '', 
-      avatar: null 
+    score: deal.score || 'C',
+    owner: {
+      id: deal.ownerId || '',
+      name: deal.ownerName || 'Unknown',
+      email: deal.ownerEmail || '',
+      avatar: null
     },
   }));
 
-  const filteredDeals = ownerFilter === 'all'
-    ? dealsWithRelations
-    : dealsWithRelations.filter((deal) => deal.owner.id === ownerFilter);
+  const filteredDeals = dealsWithRelations
+    .filter((deal) => ownerFilter === 'all' || deal.owner.id === ownerFilter)
+    .filter((deal) => scoreFilter === 'all' || deal.score === scoreFilter);
 
   const handleDealMove = (dealId: string, newStage: DealStage) => {
     console.log(`Deal ${dealId} moved to stage ${newStage}`);
-    updateDealStageMutation.mutate({ dealId, stage: newStage, position: 0 });
+
+    // If moving to "lost" stage, show the lost reason dialog
+    if (newStage === 'lost') {
+      setPendingDealMove({ dealId, newStage });
+      setLostReasonDialogOpen(true);
+      lostReasonForm.reset(); // Reset form when opening
+    } else {
+      // For other stages, proceed normally
+      updateDealStageMutation.mutate({ dealId, stage: newStage, position: 0 });
+    }
+  };
+
+  const onLostReasonSubmit = (data: LostReasonFormValues) => {
+    if (!pendingDealMove) return;
+
+    updateDealStageMutation.mutate({
+      dealId: pendingDealMove.dealId,
+      stage: pendingDealMove.newStage,
+      position: 0,
+      lostReason: data.lostReason,
+      lostReasonDetails: data.lostReasonDetails,
+    });
+
+    // Close dialog and clear pending move
+    setLostReasonDialogOpen(false);
+    setPendingDealMove(null);
+    lostReasonForm.reset();
+  };
+
+  const handleEmailClick = (deal: { id: string; accountName: string; contactName: string; contactEmail?: string | null; amount: string; stage: DealStage }) => {
+    setSelectedDealForEmail({
+      id: deal.id,
+      accountName: deal.accountName,
+      contactName: deal.contactName,
+      contactEmail: deal.contactEmail || undefined,
+      amount: deal.amount,
+      stage: deal.stage,
+    });
+    setEmailDialogOpen(true);
   };
 
   if (dealsLoading) {
@@ -196,6 +303,18 @@ export default function Pipeline() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Select value={scoreFilter} onValueChange={setScoreFilter}>
+            <SelectTrigger className="w-32" data-testid="select-score-filter">
+              <SelectValue placeholder="Score" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous scores</SelectItem>
+              <SelectItem value="A">Score A</SelectItem>
+              <SelectItem value="B">Score B</SelectItem>
+              <SelectItem value="C">Score C</SelectItem>
+            </SelectContent>
+          </Select>
+
           <Select value={ownerFilter} onValueChange={setOwnerFilter}>
             <SelectTrigger className="w-40" data-testid="select-owner-filter">
               <SelectValue placeholder="Filter by owner" />
@@ -447,7 +566,108 @@ export default function Pipeline() {
         </div>
       </div>
 
-      <PipelineBoard deals={filteredDeals} onDealMove={handleDealMove} />
+      <PipelineMetrics />
+
+      <PipelineBoard deals={filteredDeals} onDealMove={handleDealMove} onEmailClick={handleEmailClick} />
+
+      {/* Lost Reason Dialog */}
+      <Dialog open={lostReasonDialogOpen} onOpenChange={(open) => {
+        setLostReasonDialogOpen(open);
+        if (!open) {
+          setPendingDealMove(null);
+          lostReasonForm.reset();
+        }
+      }}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Raison de perte</DialogTitle>
+            <DialogDescription>
+              Veuillez indiquer pourquoi ce deal a été perdu. Cette information nous aidera à améliorer notre processus de vente.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...lostReasonForm}>
+            <form onSubmit={lostReasonForm.handleSubmit(onLostReasonSubmit)} className="space-y-4">
+              <FormField
+                control={lostReasonForm.control}
+                name="lostReason"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Raison de perte *</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-lost-reason">
+                          <SelectValue placeholder="Sélectionnez une raison" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="Prix trop élevé">Prix trop élevé</SelectItem>
+                        <SelectItem value="Délais trop longs">Délais trop longs</SelectItem>
+                        <SelectItem value="Pas de budget">Pas de budget</SelectItem>
+                        <SelectItem value="Concurrent choisi">Concurrent choisi</SelectItem>
+                        <SelectItem value="Projet annulé">Projet annulé</SelectItem>
+                        <SelectItem value="Autre">Autre</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={lostReasonForm.control}
+                name="lostReasonDetails"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Détails additionnels</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Ajoutez des détails supplémentaires sur la raison de perte..."
+                        className="min-h-[100px]"
+                        data-testid="textarea-lost-reason-details"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setLostReasonDialogOpen(false);
+                    setPendingDealMove(null);
+                    lostReasonForm.reset();
+                  }}
+                >
+                  Annuler
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={updateDealStageMutation.isPending}
+                  data-testid="button-submit-lost-reason"
+                >
+                  {updateDealStageMutation.isPending && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Confirmer
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Email Template Dialog */}
+      {selectedDealForEmail && (
+        <EmailTemplateDialog
+          open={emailDialogOpen}
+          onOpenChange={setEmailDialogOpen}
+          deal={selectedDealForEmail}
+        />
+      )}
     </div>
   );
 }

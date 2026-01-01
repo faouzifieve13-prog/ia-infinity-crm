@@ -2,7 +2,7 @@ import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Badge } from '@/components/ui/badge';
 import { DealCard } from './DealCard';
-import type { DealStage } from '@/lib/types';
+import type { DealStage, ProspectStatus } from '@/lib/types';
 
 interface DealOwner {
   id: string;
@@ -15,18 +15,25 @@ interface ColumnDeal {
   id: string;
   accountName: string;
   contactName: string;
+  contactEmail?: string | null;
   amount: string;
   probability: number;
   stage: DealStage;
   nextAction?: string | null;
   daysInStage: number;
   owner: DealOwner;
+  missionTypes?: string[] | null;
+  prospectStatus?: ProspectStatus | null;
+  followUpDate?: string | null;
+  followUpNotes?: string | null;
+  score?: string | null;
 }
 
 interface PipelineColumnProps {
   stage: DealStage;
   deals: ColumnDeal[];
   totalValue: number;
+  onEmailClick?: (deal: ColumnDeal) => void;
 }
 
 const stageConfig: Record<DealStage, { label: string; color: string }> = {
@@ -39,7 +46,7 @@ const stageConfig: Record<DealStage, { label: string; color: string }> = {
   lost: { label: 'Lost', color: 'bg-pipeline-lost' },
 };
 
-export function PipelineColumn({ stage, deals, totalValue }: PipelineColumnProps) {
+export function PipelineColumn({ stage, deals, totalValue, onEmailClick }: PipelineColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: stage });
   const config = stageConfig[stage];
 
@@ -69,7 +76,7 @@ export function PipelineColumn({ stage, deals, totalValue }: PipelineColumnProps
       >
         <SortableContext items={deals.map(d => d.id)} strategy={verticalListSortingStrategy}>
           {deals.map((deal) => (
-            <DealCard key={deal.id} deal={deal} />
+            <DealCard key={deal.id} deal={deal} onEmailClick={onEmailClick} />
           ))}
         </SortableContext>
       </div>

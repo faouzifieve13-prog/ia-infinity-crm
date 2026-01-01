@@ -11,7 +11,7 @@ export const projectStatusEnum = pgEnum('project_status', ['active', 'on_hold', 
 export const taskStatusEnum = pgEnum('task_status', ['pending', 'in_progress', 'review', 'completed']);
 export const taskPriorityEnum = pgEnum('task_priority', ['low', 'medium', 'high', 'urgent']);
 export const invoiceStatusEnum = pgEnum('invoice_status', ['draft', 'sent', 'paid', 'overdue', 'cancelled']);
-export const accountStatusEnum = pgEnum('account_status', ['active', 'inactive', 'churned']);
+export const accountStatusEnum = pgEnum('account_status', ['active', 'inactive', 'churned', 'archived']);
 export const vendorAvailabilityEnum = pgEnum('vendor_availability', ['available', 'busy', 'unavailable']);
 export const missionStatusEnum = pgEnum('mission_status', ['pending', 'in_progress', 'review', 'completed']);
 export const activityTypeEnum = pgEnum('activity_type', ['call', 'email', 'meeting', 'note']);
@@ -54,7 +54,7 @@ export const memberships = pgTable("memberships", {
   userId: varchar("user_id").notNull().references(() => users.id),
   role: userRoleEnum("role").notNull().default('sales'),
   space: spaceEnum("space").notNull().default('internal'),
-  accountId: varchar("account_id"),
+  accountId: varchar("account_id").references(() => accounts.id, { onDelete: "cascade" }),
   vendorContactId: varchar("vendor_contact_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
@@ -132,6 +132,9 @@ export const deals = pgTable("deals", {
   prospectStatusUpdatedAt: timestamp("prospect_status_updated_at"),
   followUpDate: timestamp("follow_up_date"),
   followUpNotes: text("follow_up_notes"),
+  lostReason: text("lost_reason"),
+  lostReasonDetails: text("lost_reason_details"),
+  score: text("score").default("C"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
@@ -245,7 +248,7 @@ export const activities = pgTable("activities", {
 export const projects = pgTable("projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  accountId: varchar("account_id").references(() => accounts.id),
+  accountId: varchar("account_id").references(() => accounts.id, { onDelete: "cascade" }),
   dealId: varchar("deal_id").references(() => deals.id),
   vendorContactId: varchar("vendor_contact_id").references(() => contacts.id),
   vendorId: varchar("vendor_id").references(() => vendors.id, { onDelete: "set null" }),
@@ -452,10 +455,13 @@ export const projectUpdates = pgTable("project_updates", {
 ]);
 
 // Project Deliverables (fichiers livrables: JSON, PDF, Loom)
+// Chaque projet a 3 livrables fixes avec des versions V1, V2, V3
 export const projectDeliverables = pgTable("project_deliverables", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  deliverableNumber: integer("deliverable_number").notNull(), // 1, 2, ou 3 (les 3 livrables fixes)
+  version: text("version").notNull().default('v1'), // 'v1', 'v2', 'v3'
   title: text("title").notNull(),
   description: text("description"),
   type: text("type").notNull(), // 'json', 'pdf', 'loom', 'other'
@@ -464,12 +470,16 @@ export const projectDeliverables = pgTable("project_deliverables", {
   fileSize: integer("file_size"), // Taille en bytes
   mimeType: text("mime_type"), // Type MIME du fichier
   fileData: text("file_data"), // Données base64 pour petits fichiers
+  status: text("status").notNull().default('pending'), // 'pending', 'submitted', 'approved', 'revision_requested'
+  clientComment: text("client_comment"), // Commentaire client pour V2/V3
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
   createdById: varchar("created_by_id").references(() => users.id),
 }, (table) => [
   index("project_deliverables_project_idx").on(table.projectId),
   index("project_deliverables_org_idx").on(table.orgId),
   index("project_deliverables_type_idx").on(table.projectId, table.type),
+  index("project_deliverables_version_idx").on(table.projectId, table.deliverableNumber, table.version),
 ]);
 
 export const workflowRuns = pgTable("workflow_runs", {
@@ -595,7 +605,7 @@ export const invitations = pgTable("invitations", {
   name: text("name"),
   role: userRoleEnum("role").notNull(),
   space: spaceEnum("space").notNull(),
-  accountId: varchar("account_id").references(() => accounts.id),
+  accountId: varchar("account_id").references(() => accounts.id, { onDelete: "cascade" }),
   vendorId: varchar("vendor_id").references(() => vendors.id),
   status: invitationStatusEnum("status").notNull().default('pending'),
   expiresAt: timestamp("expires_at").notNull(),
@@ -987,7 +997,7 @@ export type TaskStatus = 'pending' | 'in_progress' | 'review' | 'completed';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
 export type InvoiceType = 'prestation' | 'materiel' | 'frais';
-export type AccountStatus = 'active' | 'inactive' | 'churned';
+export type AccountStatus = 'active' | 'inactive' | 'churned' | 'archived';
 export type VendorAvailability = 'available' | 'busy' | 'unavailable';
 export type MissionStatus = 'pending' | 'in_progress' | 'review' | 'completed';
 export type ActivityType = 'call' | 'email' | 'meeting' | 'note';
@@ -1087,7 +1097,7 @@ export const channels = pgTable("channels", {
   type: channelTypeEnum("type").notNull(), // 'client' or 'vendor'
   scope: channelScopeEnum("scope").notNull(), // 'global' or 'project'
   projectId: varchar("project_id").references(() => projects.id), // null for global channels
-  accountId: varchar("account_id").references(() => accounts.id), // for client channels
+  accountId: varchar("account_id").references(() => accounts.id, { onDelete: "cascade" }), // for client channels
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1209,6 +1219,159 @@ export const insertNotificationSchema = createInsertSchema(notifications).omit({
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type NotificationType = 'info' | 'success' | 'warning' | 'error';
+
+// Vendor Project Events (for calendar)
+export const vendorProjectEventTypeEnum = pgEnum('vendor_project_event_type', ['deadline', 'meeting', 'milestone', 'reminder', 'personal']);
+
+export const vendorProjectEvents = pgTable("vendor_project_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  createdById: varchar("created_by_id").references(() => users.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  start: timestamp("start").notNull(),
+  end: timestamp("end").notNull(),
+  allDay: boolean("all_day").notNull().default(false),
+  type: vendorProjectEventTypeEnum("type").notNull().default('personal'),
+  color: text("color"), // Custom color for the event
+  googleEventId: text("google_event_id"), // For Google Calendar sync
+  googleCalendarSynced: boolean("google_calendar_synced").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("vendor_project_events_org_idx").on(table.orgId),
+  index("vendor_project_events_project_idx").on(table.projectId),
+  index("vendor_project_events_start_idx").on(table.projectId, table.start),
+  index("vendor_project_events_google_idx").on(table.googleEventId),
+]);
+
+export const vendorProjectEventsRelations = relations(vendorProjectEvents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [vendorProjectEvents.orgId],
+    references: [organizations.id],
+  }),
+  project: one(projects, {
+    fields: [vendorProjectEvents.projectId],
+    references: [projects.id],
+  }),
+  createdBy: one(users, {
+    fields: [vendorProjectEvents.createdById],
+    references: [users.id],
+  }),
+}));
+
+export const insertVendorProjectEventSchema = createInsertSchema(vendorProjectEvents).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  start: z.coerce.date(),
+  end: z.coerce.date(),
+});
+export type VendorProjectEvent = typeof vendorProjectEvents.$inferSelect;
+export type InsertVendorProjectEvent = z.infer<typeof insertVendorProjectEventSchema>;
+export type VendorProjectEventType = 'deadline' | 'meeting' | 'milestone' | 'reminder' | 'personal';
+
+// Private Messaging System
+export const directMessageStatusEnum = pgEnum('direct_message_status', ['sent', 'delivered', 'read']);
+
+export const directConversations = pgTable("direct_conversations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  participant1Id: varchar("participant1_id").notNull().references(() => users.id),
+  participant2Id: varchar("participant2_id").notNull().references(() => users.id),
+  lastMessageAt: timestamp("last_message_at"),
+  lastMessagePreview: text("last_message_preview"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("direct_conversations_org_idx").on(table.orgId),
+  index("direct_conversations_participant1_idx").on(table.participant1Id),
+  index("direct_conversations_participant2_idx").on(table.participant2Id),
+  index("direct_conversations_last_message_idx").on(table.orgId, table.lastMessageAt),
+]);
+
+export const directMessages = pgTable("direct_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  conversationId: varchar("conversation_id").notNull().references(() => directConversations.id, { onDelete: "cascade" }),
+  senderId: varchar("sender_id").notNull().references(() => users.id),
+  recipientId: varchar("recipient_id").notNull().references(() => users.id),
+  content: text("content").notNull(),
+  status: directMessageStatusEnum("status").notNull().default('sent'),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("direct_messages_conversation_idx").on(table.conversationId),
+  index("direct_messages_sender_idx").on(table.senderId),
+  index("direct_messages_recipient_idx").on(table.recipientId),
+  index("direct_messages_created_idx").on(table.conversationId, table.createdAt),
+  index("direct_messages_unread_idx").on(table.recipientId, table.status),
+]);
+
+export const directConversationsRelations = relations(directConversations, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [directConversations.orgId],
+    references: [organizations.id],
+  }),
+  participant1: one(users, {
+    fields: [directConversations.participant1Id],
+    references: [users.id],
+    relationName: "participant1",
+  }),
+  participant2: one(users, {
+    fields: [directConversations.participant2Id],
+    references: [users.id],
+    relationName: "participant2",
+  }),
+  messages: many(directMessages),
+}));
+
+export const directMessagesRelations = relations(directMessages, ({ one }) => ({
+  conversation: one(directConversations, {
+    fields: [directMessages.conversationId],
+    references: [directConversations.id],
+  }),
+  sender: one(users, {
+    fields: [directMessages.senderId],
+    references: [users.id],
+    relationName: "sender",
+  }),
+  recipient: one(users, {
+    fields: [directMessages.recipientId],
+    references: [users.id],
+    relationName: "recipient",
+  }),
+}));
+
+export const insertDirectConversationSchema = createInsertSchema(directConversations).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertDirectMessageSchema = createInsertSchema(directMessages).omit({ id: true, createdAt: true });
+export type DirectConversation = typeof directConversations.$inferSelect;
+export type InsertDirectConversation = z.infer<typeof insertDirectConversationSchema>;
+export type DirectMessage = typeof directMessages.$inferSelect;
+export type InsertDirectMessage = z.infer<typeof insertDirectMessageSchema>;
+export type DirectMessageStatus = 'sent' | 'delivered' | 'read';
+
+// Email Templates for Pipeline Stages
+export const emailTemplates = pgTable("email_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").references(() => organizations.id),
+  stage: text("stage").notNull(),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("email_templates_org_idx").on(table.orgId),
+  index("email_templates_stage_idx").on(table.orgId, table.stage),
+]);
+
+export const emailTemplatesRelations = relations(emailTemplates, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [emailTemplates.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type EmailTemplate = typeof emailTemplates.$inferSelect;
+export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
 
 // Auth schema export
 export * from "./models/auth";

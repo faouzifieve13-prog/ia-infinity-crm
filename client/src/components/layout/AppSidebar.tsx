@@ -42,6 +42,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { GmailMessage } from '@/lib/types';
 import { NotificationBell } from '@/components/NotificationBell';
+import { MessagingDropdown } from '@/components/MessagingDropdown';
 import {
   Sidebar,
   SidebarContent,
@@ -179,8 +180,8 @@ const navCategories: NavCategory[] = [
     spaces: ['internal', 'client', 'vendor'],
     items: [
       { title: 'Vue Projets', url: '/projects', icon: FolderKanban, spaces: ['internal', 'client'] },
-      { title: 'Vue Projets', url: '/vendor/projects', icon: FolderKanban, spaces: ['vendor'] },
-      { title: 'Mes Missions', url: '/vendor/missions', icon: UserCog, spaces: ['vendor'] },
+      { title: 'Vue Projets', url: '/projects', icon: FolderKanban, spaces: ['vendor'] },
+      { title: 'Mes Missions', url: '/missions', icon: UserCog, spaces: ['vendor'] },
     ],
   },
   {
@@ -199,7 +200,7 @@ const navCategories: NavCategory[] = [
     spaces: ['internal', 'client', 'vendor'],
     items: [
       { title: 'Toutes les tâches', url: '/tasks', icon: ListTodo, spaces: ['internal', 'client'] },
-      { title: 'Toutes les tâches', url: '/vendor/tasks', icon: ListTodo, spaces: ['vendor'] },
+      { title: 'Toutes les tâches', url: '/tasks', icon: ListTodo, spaces: ['vendor'] },
     ],
   },
   {
@@ -216,11 +217,11 @@ const navCategories: NavCategory[] = [
     spaces: ['internal', 'client', 'vendor'],
     items: [
       { title: 'Tous les documents', url: '/documents', icon: FileText, spaces: ['internal', 'client'] },
-      { title: 'Tous les documents', url: '/vendor/documents', icon: FileText, spaces: ['vendor'] },
+      { title: 'Tous les documents', url: '/documents', icon: FileText, spaces: ['vendor'] },
       { title: 'Devis', url: '/quotes', icon: Receipt, spaces: ['internal', 'client'] },
       { title: 'Contrats', url: '/contracts', icon: FileSignature, spaces: ['internal', 'client'] },
-      { title: 'Contrats', url: '/vendor/contracts', icon: FileSignature, spaces: ['vendor'] },
-      { title: 'Mes Factures', url: '/vendor/invoices', icon: Receipt, spaces: ['vendor'] },
+      { title: 'Contrats', url: '/contracts', icon: FileSignature, spaces: ['vendor'] },
+      { title: 'Mes Factures', url: '/invoices', icon: Receipt, spaces: ['vendor'] },
     ],
   },
   {
@@ -317,7 +318,10 @@ export function AppSidebar() {
               </Badge>
             </div>
           </Link>
-          <NotificationBell />
+          <div className="flex items-center gap-1">
+            <MessagingDropdown />
+            <NotificationBell />
+          </div>
         </div>
       </SidebarHeader>
 

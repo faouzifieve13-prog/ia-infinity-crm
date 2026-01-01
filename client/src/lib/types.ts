@@ -79,6 +79,10 @@ export interface Deal {
   notes?: string | null;
   loomVideoUrl?: string | null;
   contactPhone?: string | null;
+  contactEmail?: string | null;
+  score?: string | null;
+  lostReason?: string | null;
+  lostReasonDetails?: string | null;
   notionPageId?: string | null;
   notionLastEditedAt?: string | null;
   prospectStatus?: ProspectStatus | null;
