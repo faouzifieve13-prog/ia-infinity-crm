@@ -1888,9 +1888,21 @@ ${cr.replace(/\n/g, '<br>')}
 
       const accounts = await storage.getAccounts(orgId);
       const account = accounts.find(a => a.id === deal.accountId);
-      if (!account?.contactEmail) {
-        return res.status(400).json({ error: "Le client n'a pas d'email de contact" });
+      
+      // Priority: 1) deal.contactEmail, 2) account.contactEmail
+      const clientEmail = deal.contactEmail || account?.contactEmail;
+      if (!clientEmail) {
+        return res.status(400).json({ error: "Le client n'a pas d'email de contact. Veuillez ajouter un email dans les informations du prospect." });
       }
+
+      // Get client name from deal notes or account
+      let clientName = account?.contactName || account?.name || 'Client';
+      try {
+        const prospectInfo = deal.notes ? JSON.parse(deal.notes) : {};
+        if (prospectInfo.contactName) {
+          clientName = prospectInfo.contactName;
+        }
+      } catch (e) { /* ignore parse errors */ }
 
       if (!quote.quoteUrl) {
         return res.status(400).json({ error: "Le devis n'a pas de lien Qonto valide" });
@@ -1901,7 +1913,7 @@ ${cr.replace(/\n/g, '<br>')}
       const subject = `Devis ${quote.number} - Capsule IA`;
       const htmlContent = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #333;">Bonjour ${account.contactName || account.name},</h2>
+          <h2 style="color: #333;">Bonjour ${clientName},</h2>
           <p>Nous avons le plaisir de vous transmettre notre devis <strong>${quote.number}</strong>.</p>
           <p><strong>${quote.title}</strong></p>
           <p>Montant: <strong>${parseFloat(quote.amount).toLocaleString('fr-FR')} € HT</strong></p>
@@ -1918,7 +1930,7 @@ ${cr.replace(/\n/g, '<br>')}
       `;
 
       await sendGenericEmail({
-        to: account.contactEmail,
+        to: clientEmail,
         subject,
         htmlBody: htmlContent,
       });
@@ -1929,33 +1941,35 @@ ${cr.replace(/\n/g, '<br>')}
         sentAt: new Date()
       });
 
-      // Create notification for client users linked to this account
-      try {
-        const memberships = await storage.getMembershipsByOrg(orgId);
-        const clientMemberships = memberships.filter(m =>
-          m.accountId === account.id &&
-          (m.role === 'client_admin' || m.role === 'client_member')
-        );
+      // Create notification for client users linked to this account (if account exists)
+      if (account) {
+        try {
+          const memberships = await storage.getMembershipsByOrg(orgId);
+          const clientMemberships = memberships.filter(m =>
+            m.accountId === account.id &&
+            (m.role === 'client_admin' || m.role === 'client_member')
+          );
 
-        for (const membership of clientMemberships) {
-          await storage.createNotification({
-            orgId,
-            userId: membership.userId,
-            title: 'Nouveau devis à signer',
-            description: `Le devis ${quote.number || quote.title} (${parseFloat(quote.amount || '0').toLocaleString('fr-FR')} € HT) est en attente de votre signature`,
-            type: 'warning',
-            link: `/client/quotes`,
-            relatedEntityType: 'quote',
-            relatedEntityId: quote.id,
-          });
+          for (const membership of clientMemberships) {
+            await storage.createNotification({
+              orgId,
+              userId: membership.userId,
+              title: 'Nouveau devis à signer',
+              description: `Le devis ${quote.number || quote.title} (${parseFloat(quote.amount || '0').toLocaleString('fr-FR')} € HT) est en attente de votre signature`,
+              type: 'warning',
+              link: `/client/quotes`,
+              relatedEntityType: 'quote',
+              relatedEntityId: quote.id,
+            });
+          }
+          console.log(`Created ${clientMemberships.length} notifications for quote ${quote.id}`);
+        } catch (notifError) {
+          console.error("Error creating client notifications:", notifError);
+          // Don't fail the request if notification fails
         }
-        console.log(`Created ${clientMemberships.length} notifications for quote ${quote.id}`);
-      } catch (notifError) {
-        console.error("Error creating client notifications:", notifError);
-        // Don't fail the request if notification fails
       }
 
-      res.json({ success: true, message: `Email envoyé à ${account.contactEmail}` });
+      res.json({ success: true, message: `Email envoyé à ${clientEmail}` });
     } catch (error: any) {
       console.error("Send quote error:", error);
       res.status(500).json({ error: error.message || "Failed to send quote" });
