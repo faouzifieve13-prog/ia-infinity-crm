@@ -42,11 +42,12 @@ interface PipelineBoardProps {
   deals: PipelineDeal[];
   onDealMove?: (dealId: string, newStage: DealStage) => void;
   onEmailClick?: (deal: PipelineDeal) => void;
+  onDelete?: (dealId: string) => void;
 }
 
 const stages: DealStage[] = ['prospect', 'meeting', 'proposal', 'audit', 'negotiation', 'won', 'lost'];
 
-export function PipelineBoard({ deals, onDealMove, onEmailClick }: PipelineBoardProps) {
+export function PipelineBoard({ deals, onDealMove, onEmailClick, onDelete }: PipelineBoardProps) {
   const [localDeals, setLocalDeals] = useState(deals);
   const [activeDeal, setActiveDeal] = useState<PipelineDeal | null>(null);
 
@@ -106,6 +107,7 @@ export function PipelineBoard({ deals, onDealMove, onEmailClick }: PipelineBoard
               deals={getDealsByStage(stage)}
               totalValue={getTotalValue(stage)}
               onEmailClick={onEmailClick}
+              onDelete={onDelete}
             />
           ))}
         </div>

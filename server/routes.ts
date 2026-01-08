@@ -984,13 +984,39 @@ ${cr.replace(/\n/g, '<br>')}
         return res.json(updatedDeal);
       }
 
-      // If stage changed to 'won' and wasn't 'won' before, create a project automatically
+      // If stage changed to 'won' and wasn't 'won' before, create account (if needed) and project
       if (stage === 'won' && previousStage !== 'won') {
         try {
+          let accountId = existingDeal.accountId;
+
+          // Si pas d'account, créer le compte client depuis les infos du prospect
+          if (!accountId && existingDeal.notes) {
+            try {
+              const prospectInfo = JSON.parse(existingDeal.notes);
+              if (prospectInfo.companyName) {
+                const newAccount = await storage.createAccount({
+                  orgId,
+                  name: prospectInfo.companyName,
+                  contactName: prospectInfo.contactName || 'Contact principal',
+                  contactEmail: prospectInfo.contactEmail || '',
+                  contactPhone: existingDeal.contactPhone || '',
+                  plan: 'audit',
+                  status: 'active',
+                });
+                accountId = newAccount.id;
+
+                // Mettre à jour le deal avec le nouvel accountId
+                await storage.updateDeal(req.params.id, orgId, { accountId });
+              }
+            } catch (parseError) {
+              console.error("Failed to parse prospect notes:", parseError);
+            }
+          }
+
           const project = await storage.createProject({
             orgId,
             name: existingDeal.name || 'Nouveau projet',
-            accountId: existingDeal.accountId,
+            accountId: accountId,
             dealId: existingDeal.id,
             status: 'active',
             startDate: new Date(),
@@ -998,8 +1024,11 @@ ${cr.replace(/\n/g, '<br>')}
 
           return res.json({
             ...deal,
+            accountId,
             projectId: project.id,
-            message: `Projet "${project.name}" créé automatiquement`,
+            message: accountId && !existingDeal.accountId
+              ? `Client et projet "${project.name}" créés automatiquement`
+              : `Projet "${project.name}" créé automatiquement`,
           });
         } catch (projectError) {
           console.error("Failed to create project for won deal:", projectError);
@@ -3137,14 +3166,39 @@ Génère un contrat complet et professionnel adapté à ce client.`;
       
       const account = deal.accountId ? await storage.getAccount(deal.accountId, orgId) : null;
       const contact = deal.contactId ? await storage.getContact(deal.contactId, orgId) : null;
-      
+
+      // Extraire les infos depuis les notes (pour les prospects créés avant la migration)
+      let prospectInfo: { companyName?: string; contactName?: string; contactEmail?: string } = {};
+      if (deal.notes) {
+        try {
+          prospectInfo = JSON.parse(deal.notes);
+        } catch (e) {
+          // Notes n'est pas un JSON valide, ignorer
+        }
+      }
+
+      // Priorité pour les informations client:
+      // 1. customData (si fourni par l'utilisateur)
+      // 2. contactEmail du deal directement
+      // 3. contactEmail depuis les notes (prospects anciens)
+      // 4. contact lié au deal
+      // 5. account lié au deal
+      const clientEmail = customData?.clientEmail || deal.contactEmail || prospectInfo.contactEmail || contact?.email || account?.contactEmail;
+      const clientName = customData?.clientName || contact?.name || prospectInfo.contactName || account?.contactName || account?.name;
+
+      if (!clientEmail) {
+        return res.status(400).json({
+          error: "Aucun email client n'est défini. Veuillez ajouter un email de contact dans l'opportunité ou le compte client."
+        });
+      }
+
       // Generate contract number
       const now = new Date();
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, '0');
       const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
       const contractNumber = `CTR-${year}${month}-${random}`;
-      
+
       // Create contract in draft status
       const contractData = {
         orgId,
@@ -3154,8 +3208,8 @@ Génère un contrat complet et professionnel adapté à ce client.`;
         title: `${type === 'audit' ? 'Audit Général' : 'Prestation d\'Automatisation'} - ${account?.name || deal.name}`,
         type: type as ContractType,
         status: 'draft' as ContractStatus,
-        clientName: customData?.clientName || contact?.name || account?.contactName || '',
-        clientEmail: customData?.clientEmail || contact?.email || account?.contactEmail || '',
+        clientName: clientName || '',
+        clientEmail: clientEmail,
         clientCompany: customData?.clientCompany || account?.name || '',
         clientAddress: customData?.clientAddress || '',
         amount: customData?.amount?.toString() || deal.amount || '0',

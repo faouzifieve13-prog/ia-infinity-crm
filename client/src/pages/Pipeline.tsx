@@ -3,7 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Filter, Download, Loader2, Building2, User, DollarSign, Phone, Video } from 'lucide-react';
+import { Plus, Filter, Download, Loader2, Building2, User, DollarSign, Phone, Video, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -25,6 +25,16 @@ import {
   DialogTrigger,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Form,
   FormControl,
@@ -80,6 +90,8 @@ export default function Pipeline() {
     amount: string;
     stage: string;
   } | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [dealToDelete, setDealToDelete] = useState<string | null>(null);
   const { toast } = useToast();
 
   const form = useForm<ProspectFormValues>({
@@ -115,35 +127,23 @@ export default function Pipeline() {
 
   const createProspectMutation = useMutation({
     mutationFn: async (data: ProspectFormValues) => {
-      let accountId = null;
-      
-      const existingAccount = accounts.find(
-        a => a.name.toLowerCase() === data.companyName.toLowerCase()
-      );
-      
-      if (existingAccount) {
-        accountId = existingAccount.id;
-      } else {
-        const newAccount = await apiRequest('POST', '/api/accounts', {
-          name: data.companyName,
-          contactName: data.contactName || 'Contact principal',
-          contactEmail: data.contactEmail || `contact@${data.companyName.toLowerCase().replace(/\s+/g, '')}.com`,
-          plan: 'audit',
-          status: 'active',
-        });
-        const accountData = await newAccount.json();
-        accountId = accountData.id;
-      }
-
+      // Ne pas créer de compte client pour un prospect
+      // Le compte sera créé uniquement lors de la conversion en client (stage = won)
       return apiRequest('POST', '/api/deals', {
         name: data.name,
-        accountId,
+        accountId: null, // Pas de compte pour un prospect
         amount: data.amount || '0',
         probability: data.probability ? parseInt(data.probability) : 10,
         stage: 'prospect',
         missionTypes: data.missionTypes || [],
         nextAction: data.nextAction || null,
         contactPhone: data.contactPhone || null,
+        contactEmail: data.contactEmail || null,
+        // Stocker les infos du prospect dans les notes pour la conversion future
+        notes: JSON.stringify({
+          companyName: data.companyName,
+          contactName: data.contactName || '',
+        }),
       });
     },
     onSuccess: () => {
@@ -216,28 +216,73 @@ export default function Pipeline() {
     },
   });
 
-  const dealsWithRelations = deals.map(deal => ({
-    id: deal.id,
-    accountName: deal.accountName || 'Unknown Account',
-    contactName: deal.contactName || 'Unknown Contact',
-    contactEmail: deal.contactEmail || null,
-    amount: deal.amount,
-    probability: deal.probability,
-    stage: deal.stage,
-    nextAction: deal.nextAction,
-    daysInStage: deal.daysInStage,
-    missionTypes: deal.missionTypes,
-    prospectStatus: deal.prospectStatus,
-    followUpDate: deal.followUpDate,
-    followUpNotes: deal.followUpNotes,
-    score: deal.score || 'C',
-    owner: {
-      id: deal.ownerId || '',
-      name: deal.ownerName || 'Unknown',
-      email: deal.ownerEmail || '',
-      avatar: null
+  const deleteDealMutation = useMutation({
+    mutationFn: async (dealId: string) => {
+      await apiRequest('DELETE', `/api/deals/${dealId}`);
     },
-  }));
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/deals'] });
+      toast({
+        title: 'Prospect supprimé',
+        description: 'Le prospect a été supprimé avec succès.',
+      });
+      setDeleteDialogOpen(false);
+      setDealToDelete(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible de supprimer le prospect.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const handleDeleteClick = (dealId: string) => {
+    setDealToDelete(dealId);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (dealToDelete) {
+      deleteDealMutation.mutate(dealToDelete);
+    }
+  };
+
+  const dealsWithRelations = deals.map(deal => {
+    // Extraire les infos du prospect depuis les notes si pas d'account
+    let prospectInfo = { companyName: '', contactName: '', contactEmail: '' };
+    if (!deal.accountId && deal.notes) {
+      try {
+        prospectInfo = JSON.parse(deal.notes);
+      } catch (e) {
+        // Notes n'est pas un JSON valide, ignorer
+      }
+    }
+
+    return {
+      id: deal.id,
+      accountName: deal.accountName || prospectInfo.companyName || deal.name || 'Prospect',
+      contactName: deal.contactName || prospectInfo.contactName || 'Contact inconnu',
+      contactEmail: deal.contactEmail || prospectInfo.contactEmail || null,
+      amount: deal.amount,
+      probability: deal.probability,
+      stage: deal.stage,
+      nextAction: deal.nextAction,
+      daysInStage: deal.daysInStage,
+      missionTypes: deal.missionTypes,
+      prospectStatus: deal.prospectStatus,
+      followUpDate: deal.followUpDate,
+      followUpNotes: deal.followUpNotes,
+      score: deal.score || 'C',
+      owner: {
+        id: deal.ownerId || '',
+        name: deal.ownerName || 'Unknown',
+        email: deal.ownerEmail || '',
+        avatar: null
+      },
+    };
+  });
 
   const filteredDeals = dealsWithRelations
     .filter((deal) => ownerFilter === 'all' || deal.owner.id === ownerFilter)
@@ -568,7 +613,7 @@ export default function Pipeline() {
 
       <PipelineMetrics />
 
-      <PipelineBoard deals={filteredDeals} onDealMove={handleDealMove} onEmailClick={handleEmailClick} />
+      <PipelineBoard deals={filteredDeals} onDealMove={handleDealMove} onEmailClick={handleEmailClick} onDelete={handleDeleteClick} />
 
       {/* Lost Reason Dialog */}
       <Dialog open={lostReasonDialogOpen} onOpenChange={(open) => {
@@ -668,6 +713,34 @@ export default function Pipeline() {
           deal={selectedDealForEmail}
         />
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer ce prospect ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Cette action est irréversible. Le prospect sera définitivement supprimé de votre pipeline.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDealToDelete(null)}>
+              Annuler
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteDealMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

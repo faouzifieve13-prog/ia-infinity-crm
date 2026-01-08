@@ -126,6 +126,7 @@ export const deals = pgTable("deals", {
   notes: text("notes"),
   loomVideoUrl: text("loom_video_url"),
   contactPhone: text("contact_phone"),
+  contactEmail: text("contact_email"),
   notionPageId: text("notion_page_id"),
   notionLastEditedAt: timestamp("notion_last_edited_at"),
   prospectStatus: prospectStatusEnum("prospect_status").default('active'),
@@ -168,7 +169,7 @@ export const quotes = pgTable("quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
   dealId: varchar("deal_id").notNull().references(() => deals.id, { onDelete: "cascade" }),
-  accountId: varchar("account_id").references(() => accounts.id),
+  accountId: varchar("account_id").references(() => accounts.id, { onDelete: "set null" }),
   qontoQuoteId: varchar("qonto_quote_id"),
   number: text("number").notNull(),
   title: text("title").notNull(),
@@ -237,8 +238,8 @@ export const activities = pgTable("activities", {
   userId: varchar("user_id").notNull().references(() => users.id),
   type: activityTypeEnum("type").notNull(),
   description: text("description").notNull(),
-  dealId: varchar("deal_id").references(() => deals.id),
-  projectId: varchar("project_id"),
+  dealId: varchar("deal_id").references(() => deals.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("activities_org_idx").on(table.orgId),
@@ -279,7 +280,7 @@ export const projects = pgTable("projects", {
 export const tasks = pgTable("tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  projectId: varchar("project_id").references(() => projects.id),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
   status: taskStatusEnum("status").notNull().default('pending'),
@@ -304,9 +305,9 @@ export const tasks = pgTable("tasks", {
 export const invoices = pgTable("invoices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  accountId: varchar("account_id").references(() => accounts.id),
-  projectId: varchar("project_id").references(() => projects.id),
-  vendorId: varchar("vendor_id").references(() => vendors.id),
+  accountId: varchar("account_id").references(() => accounts.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  vendorId: varchar("vendor_id").references(() => vendors.id, { onDelete: "set null" }),
   invoiceNumber: text("invoice_number").notNull(),
   description: text("description"),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull().default("0"),
@@ -334,7 +335,7 @@ export const invoices = pgTable("invoices", {
 
 export const invoiceLineItems = pgTable("invoice_line_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  invoiceId: varchar("invoice_id").notNull().references(() => invoices.id),
+  invoiceId: varchar("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
   description: text("description").notNull(),
   quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull().default("1"),
   unitPrice: decimal("unit_price", { precision: 12, scale: 2 }).notNull(),
@@ -365,8 +366,8 @@ export const vendors = pgTable("vendors", {
 export const missions = pgTable("missions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  projectId: varchar("project_id").references(() => projects.id),
-  vendorId: varchar("vendor_id").references(() => vendors.id),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  vendorId: varchar("vendor_id").references(() => vendors.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   description: text("description"),
   startDate: timestamp("start_date"),
@@ -387,9 +388,9 @@ export const missions = pgTable("missions", {
 export const documents = pgTable("documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  accountId: varchar("account_id").references(() => accounts.id),
-  projectId: varchar("project_id").references(() => projects.id),
-  dealId: varchar("deal_id").references(() => deals.id),
+  accountId: varchar("account_id").references(() => accounts.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  dealId: varchar("deal_id").references(() => deals.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   url: text("url"),
   mimeType: text("mime_type"),
@@ -516,10 +517,10 @@ export const importJobs = pgTable("import_jobs", {
 export const contracts = pgTable("contracts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  accountId: varchar("account_id").references(() => accounts.id),
-  vendorId: varchar("vendor_id").references(() => vendors.id),
-  dealId: varchar("deal_id").references(() => deals.id),
-  projectId: varchar("project_id").references(() => projects.id),
+  accountId: varchar("account_id").references(() => accounts.id, { onDelete: "set null" }),
+  vendorId: varchar("vendor_id").references(() => vendors.id, { onDelete: "set null" }),
+  dealId: varchar("deal_id").references(() => deals.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
   contractNumber: text("contract_number").notNull(),
   title: text("title").notNull(),
   type: contractTypeEnum("type").notNull().default('audit'),
@@ -571,9 +572,9 @@ export const contracts = pgTable("contracts", {
 export const expenses = pgTable("expenses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  accountId: varchar("account_id").references(() => accounts.id),
-  vendorId: varchar("vendor_id").references(() => vendors.id),
-  projectId: varchar("project_id").references(() => projects.id),
+  accountId: varchar("account_id").references(() => accounts.id, { onDelete: "set null" }),
+  vendorId: varchar("vendor_id").references(() => vendors.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   description: text("description"),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
@@ -630,9 +631,9 @@ export const sessions = pgTable("sessions", {
 export const emails = pgTable("emails", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  accountId: varchar("account_id").references(() => accounts.id),
-  dealId: varchar("deal_id").references(() => deals.id),
-  contactId: varchar("contact_id").references(() => contacts.id),
+  accountId: varchar("account_id").references(() => accounts.id, { onDelete: "set null" }),
+  dealId: varchar("deal_id").references(() => deals.id, { onDelete: "set null" }),
+  contactId: varchar("contact_id").references(() => contacts.id, { onDelete: "set null" }),
   gmailMessageId: text("gmail_message_id").notNull().unique(),
   gmailThreadId: text("gmail_thread_id"),
   subject: text("subject"),
@@ -856,7 +857,7 @@ export const emailsRelations = relations(emails, ({ one }) => ({
 export const projectComments = pgTable("project_comments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
-  projectId: varchar("project_id").notNull().references(() => projects.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   userId: varchar("user_id").notNull().references(() => users.id),
   content: text("content").notNull(),
   isFromClient: boolean("is_from_client").notNull().default(false),
@@ -1002,7 +1003,7 @@ export type VendorAvailability = 'available' | 'busy' | 'unavailable';
 export type MissionStatus = 'pending' | 'in_progress' | 'review' | 'completed';
 export type ActivityType = 'call' | 'email' | 'meeting' | 'note';
 export type WorkflowStatus = 'active' | 'paused' | 'error' | 'success' | 'failed';
-export type ContractType = 'audit' | 'prestation' | 'formation' | 'suivi';
+export type ContractType = 'audit' | 'prestation' | 'formation' | 'suivi' | 'sous_traitance';
 export type ContractStatus = 'draft' | 'sent' | 'signed' | 'active' | 'completed' | 'cancelled';
 export type ExpenseStatus = 'pending' | 'paid' | 'cancelled';
 export type ExpenseCategory = 'tools' | 'software' | 'services' | 'travel' | 'marketing' | 'office' | 'salaries' | 'taxes' | 'other';
@@ -1026,9 +1027,9 @@ export const calendarEvents = pgTable("calendar_events", {
   meetLink: text("meet_link"),
   status: calendarEventStatusEnum("status").notNull().default('confirmed'),
   attendees: text("attendees").array().default(sql`ARRAY[]::text[]`),
-  accountId: varchar("account_id").references(() => accounts.id),
-  contactId: varchar("contact_id").references(() => contacts.id),
-  dealId: varchar("deal_id").references(() => deals.id),
+  accountId: varchar("account_id").references(() => accounts.id, { onDelete: "set null" }),
+  contactId: varchar("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+  dealId: varchar("deal_id").references(() => deals.id, { onDelete: "set null" }),
   preConfirmationStatus: meetingMessageStatusEnum("pre_confirmation_status").default('pending'),
   preConfirmationSentAt: timestamp("pre_confirmation_sent_at"),
   reminderStatus: meetingMessageStatusEnum("reminder_status").default('pending'),
@@ -1096,7 +1097,7 @@ export const channels = pgTable("channels", {
   description: text("description"),
   type: channelTypeEnum("type").notNull(), // 'client' or 'vendor'
   scope: channelScopeEnum("scope").notNull(), // 'global' or 'project'
-  projectId: varchar("project_id").references(() => projects.id), // null for global channels
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }), // null for global channels
   accountId: varchar("account_id").references(() => accounts.id, { onDelete: "cascade" }), // for client channels
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),

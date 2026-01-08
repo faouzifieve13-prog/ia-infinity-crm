@@ -34,6 +34,7 @@ interface PipelineColumnProps {
   deals: ColumnDeal[];
   totalValue: number;
   onEmailClick?: (deal: ColumnDeal) => void;
+  onDelete?: (dealId: string) => void;
 }
 
 const stageConfig: Record<DealStage, { label: string; color: string }> = {
@@ -46,7 +47,7 @@ const stageConfig: Record<DealStage, { label: string; color: string }> = {
   lost: { label: 'Lost', color: 'bg-pipeline-lost' },
 };
 
-export function PipelineColumn({ stage, deals, totalValue, onEmailClick }: PipelineColumnProps) {
+export function PipelineColumn({ stage, deals, totalValue, onEmailClick, onDelete }: PipelineColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: stage });
   const config = stageConfig[stage];
 
@@ -76,7 +77,7 @@ export function PipelineColumn({ stage, deals, totalValue, onEmailClick }: Pipel
       >
         <SortableContext items={deals.map(d => d.id)} strategy={verticalListSortingStrategy}>
           {deals.map((deal) => (
-            <DealCard key={deal.id} deal={deal} onEmailClick={onEmailClick} />
+            <DealCard key={deal.id} deal={deal} onEmailClick={onEmailClick} onDelete={onDelete} />
           ))}
         </SortableContext>
       </div>

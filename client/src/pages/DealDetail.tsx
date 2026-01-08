@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useRoute, Link, useLocation } from 'wouter';
 import { useForm } from 'react-hook-form';
@@ -122,6 +122,7 @@ const dealFormSchema = z.object({
   probability: z.string().optional(),
   amount: z.string().optional(),
   contactPhone: z.string().optional(),
+  contactEmail: z.string().email('Email invalide').optional().or(z.literal('')),
 });
 
 type DealFormValues = z.infer<typeof dealFormSchema>;
@@ -182,6 +183,18 @@ export default function DealDetail() {
     queryKey: ['/api/accounts'],
   });
 
+  // Helper pour extraire les infos prospect depuis les notes (compatibilité avec anciens prospects)
+  const getProspectInfo = (deal: Deal | undefined): { companyName?: string; contactName?: string; contactEmail?: string } => {
+    if (!deal?.notes) return {};
+    try {
+      return JSON.parse(deal.notes);
+    } catch (e) {
+      return {};
+    }
+  };
+
+  const prospectInfo = getProspectInfo(deal);
+
   const { data: allDocuments = [] } = useQuery<Document[]>({
     queryKey: ['/api/documents'],
   });
@@ -226,28 +239,33 @@ export default function DealDetail() {
       probability: '10',
       amount: '0',
       contactPhone: '',
+      contactEmail: '',
     },
   });
 
-  // Update form when deal loads
-  if (deal && !form.formState.isDirty) {
-    const currentValues = form.getValues();
-    if (currentValues.notes !== (deal.notes || '') || 
-        currentValues.loomVideoUrl !== (deal.loomVideoUrl || '') ||
-        currentValues.nextAction !== (deal.nextAction || '') ||
-        currentValues.probability !== String(deal.probability) ||
-        currentValues.amount !== (deal.amount || '0') ||
-        currentValues.contactPhone !== (deal.contactPhone || '')) {
-      form.reset({
-        notes: deal.notes || '',
-        loomVideoUrl: deal.loomVideoUrl || '',
-        nextAction: deal.nextAction || '',
-        probability: String(deal.probability),
-        amount: deal.amount || '0',
-        contactPhone: deal.contactPhone || '',
-      });
+  // Update form when deal loads - must be in useEffect to avoid setState during render
+  useEffect(() => {
+    if (deal && !form.formState.isDirty) {
+      const currentValues = form.getValues();
+      if (currentValues.notes !== (deal.notes || '') ||
+          currentValues.loomVideoUrl !== (deal.loomVideoUrl || '') ||
+          currentValues.nextAction !== (deal.nextAction || '') ||
+          currentValues.probability !== String(deal.probability) ||
+          currentValues.amount !== (deal.amount || '0') ||
+          currentValues.contactPhone !== (deal.contactPhone || '') ||
+          currentValues.contactEmail !== (deal.contactEmail || '')) {
+        form.reset({
+          notes: deal.notes || '',
+          loomVideoUrl: deal.loomVideoUrl || '',
+          nextAction: deal.nextAction || '',
+          probability: String(deal.probability),
+          amount: deal.amount || '0',
+          contactPhone: deal.contactPhone || '',
+          contactEmail: deal.contactEmail || '',
+        });
+      }
     }
-  }
+  }, [deal, form]);
 
   const updateDealMutation = useMutation({
     mutationFn: async (data: DealFormValues) => {
@@ -256,6 +274,7 @@ export default function DealDetail() {
         loomVideoUrl: data.loomVideoUrl || null,
         nextAction: data.nextAction || null,
         contactPhone: data.contactPhone || null,
+        contactEmail: data.contactEmail || null,
         // Always include numeric fields with safe defaults
         probability: data.probability ? parseInt(data.probability, 10) : deal?.probability ?? 10,
         amount: data.amount || deal?.amount || '0',
@@ -316,21 +335,30 @@ export default function DealDetail() {
   const generateAndSendContractMutation = useMutation({
     mutationFn: async (contractType: 'audit' | 'prestation') => {
       const account = accounts.find(a => a.id === deal?.accountId);
-      
+
+      // Priorité: 1) contactEmail du deal, 2) contactEmail depuis notes, 3) contactEmail de l'account
+      const clientEmail = deal?.contactEmail || prospectInfo.contactEmail || account?.contactEmail;
+      const clientName = prospectInfo.contactName || account?.contactName || account?.name;
+      const clientCompany = prospectInfo.companyName || account?.name;
+
+      if (!clientEmail) {
+        throw new Error('Aucun email client n\'est défini. Veuillez ajouter un email de contact dans l\'opportunité ou le compte client.');
+      }
+
       const contractResponse = await apiRequest('POST', '/api/contracts/generate', {
         type: contractType,
         dealId: dealId,
         accountId: deal?.accountId,
-        clientName: account?.contactName || 'Client',
-        clientEmail: account?.contactEmail || '',
-        clientCompany: account?.name || '',
+        clientName: clientName || 'Client',
+        clientEmail: clientEmail,
+        clientCompany: clientCompany || '',
         amount: deal?.amount || '0',
       });
-      
+
       const contract = await contractResponse.json();
-      
+
       await apiRequest('POST', `/api/contracts/${contract.id}/send`);
-      
+
       return contract;
     },
     onSuccess: () => {
@@ -436,13 +464,21 @@ export default function DealDetail() {
         }
       ];
       
+      // Priorité: 1) contactEmail du deal, 2) contactEmail depuis notes, 3) contactEmail de l'account
+      const clientEmail = deal?.contactEmail || prospectInfo.contactEmail || account?.contactEmail;
+      const clientName = prospectInfo.companyName || account?.name;
+
+      if (!clientEmail) {
+        throw new Error('Aucun email client n\'est défini. Veuillez ajouter un email de contact dans l\'opportunité ou le compte client.');
+      }
+
       const response = await apiRequest('POST', '/api/qonto/quotes', {
-        clientName: account?.name || 'Client',
-        clientEmail: account?.contactEmail || undefined,
+        clientName: clientName || 'Client',
+        clientEmail: clientEmail,
         issueDate: today.toISOString().split('T')[0],
         expiryDate: expiryDate.toISOString().split('T')[0],
         items: quoteItems,
-        header: `Devis pour ${account?.name || 'Client'}`,
+        header: `Devis pour ${clientName || 'Client'}`,
         footer: "Merci pour votre confiance. Ce devis est valable 30 jours."
       });
       
@@ -956,12 +992,35 @@ export default function DealDetail() {
                         <FormControl>
                           <div className="relative">
                             <Phone className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                            <Input 
-                              className="pl-9" 
-                              type="tel" 
-                              placeholder="+33 6 12 34 56 78" 
-                              {...field} 
-                              data-testid="input-deal-phone" 
+                            <Input
+                              className="pl-9"
+                              type="tel"
+                              placeholder="+33 6 12 34 56 78"
+                              {...field}
+                              data-testid="input-deal-phone"
+                            />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="contactEmail"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email du contact</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              className="pl-9"
+                              type="email"
+                              placeholder="contact@exemple.com"
+                              {...field}
+                              data-testid="input-deal-email"
                             />
                           </div>
                         </FormControl>
@@ -1095,7 +1154,10 @@ export default function DealDetail() {
                     </div>
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Mail className="h-4 w-4" />
-                      <span>{account.contactEmail}</span>
+                      <span>{deal.contactEmail || prospectInfo.contactEmail || account.contactEmail || 'Non défini'}</span>
+                      {(deal.contactEmail || prospectInfo.contactEmail) && (deal.contactEmail || prospectInfo.contactEmail) !== account.contactEmail && (
+                        <Badge variant="secondary" className="text-xs">Email du prospect</Badge>
+                      )}
                     </div>
                     {deal.contactPhone && (
                       <div className="flex items-center gap-2 text-muted-foreground">
@@ -1111,7 +1173,33 @@ export default function DealDetail() {
                   </Link>
                 </div>
               ) : (
-                <p className="text-muted-foreground text-sm">Aucun compte associé</p>
+                <div className="space-y-3">
+                  <p className="text-muted-foreground text-sm">Aucun compte associé (prospect)</p>
+                  <Separator />
+                  <div className="space-y-2 text-sm">
+                    {prospectInfo.contactName && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <User className="h-4 w-4" />
+                        <span>{prospectInfo.contactName}</span>
+                      </div>
+                    )}
+                    {(deal.contactEmail || prospectInfo.contactEmail) && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Mail className="h-4 w-4" />
+                        <span>{deal.contactEmail || prospectInfo.contactEmail}</span>
+                      </div>
+                    )}
+                    {deal.contactPhone && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Phone className="h-4 w-4" />
+                        <span>{deal.contactPhone}</span>
+                      </div>
+                    )}
+                    {!(deal.contactEmail || prospectInfo.contactEmail) && !deal.contactPhone && (
+                      <p className="text-muted-foreground text-xs">Aucune information de contact</p>
+                    )}
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -1601,8 +1689,8 @@ export default function DealDetail() {
             <div className="rounded-lg border p-4 bg-muted/50">
               <h4 className="font-medium mb-2">Informations du contrat</h4>
               <div className="space-y-1 text-sm text-muted-foreground">
-                <p>Client: {account?.contactName || 'Non défini'}</p>
-                <p>Email: {account?.contactEmail || 'Non défini'}</p>
+                <p>Client: {prospectInfo.contactName || account?.contactName || account?.name || 'Non défini'}</p>
+                <p>Email: {deal?.contactEmail || prospectInfo.contactEmail || account?.contactEmail || 'Non défini'}</p>
                 <p>Montant: {parseFloat(deal?.amount || '0').toLocaleString('fr-FR')}€</p>
               </div>
             </div>
@@ -1641,9 +1729,9 @@ export default function DealDetail() {
               <FileText className="mr-2 h-4 w-4" />
               Créer et personnaliser
             </Button>
-            <Button 
+            <Button
               onClick={() => generateAndSendContractMutation.mutate(selectedContractType)}
-              disabled={generateAndSendContractMutation.isPending || !account?.contactEmail}
+              disabled={generateAndSendContractMutation.isPending || !(deal?.contactEmail || prospectInfo.contactEmail || account?.contactEmail)}
               data-testid="button-confirm-generate-send"
             >
               {generateAndSendContractMutation.isPending ? (

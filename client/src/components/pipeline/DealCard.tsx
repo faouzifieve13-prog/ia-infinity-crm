@@ -2,7 +2,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
-import { GripVertical, Calendar, TrendingUp, Clock, AlertCircle, FileEdit, PhoneCall, XCircle, Mail } from 'lucide-react';
+import { GripVertical, Calendar, TrendingUp, Clock, AlertCircle, FileEdit, PhoneCall, XCircle, Mail, Trash2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -51,6 +51,7 @@ const prospectStatusConfig: Record<ProspectStatus, { label: string; color: strin
 interface DealCardProps {
   deal: DealCardDeal;
   onEmailClick?: (deal: DealCardDeal) => void;
+  onDelete?: (dealId: string) => void;
 }
 
 const getProbabilityColor = (probability: number) => {
@@ -65,7 +66,7 @@ const getDaysColor = (days: number) => {
   return 'text-red-500';
 };
 
-export function DealCard({ deal, onEmailClick }: DealCardProps) {
+export function DealCard({ deal, onEmailClick, onDelete }: DealCardProps) {
   const [, navigate] = useLocation();
   const {
     attributes,
@@ -249,6 +250,25 @@ export function DealCard({ deal, onEmailClick }: DealCardProps) {
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Envoyer un email</TooltipContent>
+                    </Tooltip>
+                  )}
+                  {onDelete && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDelete(deal.id);
+                          }}
+                          data-testid={`deal-delete-btn-${deal.id}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Supprimer le prospect</TooltipContent>
                     </Tooltip>
                   )}
                   <Tooltip>
