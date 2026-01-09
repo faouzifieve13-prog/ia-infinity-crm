@@ -186,36 +186,37 @@ function InternalDashboard() {
   );
 }
 
+interface ClientDashboardData {
+  projects: { total: number; active: number; completed: number };
+  tasks: { total: number; completed: number; progress: number };
+  averageProgress: number;
+}
+
 function ClientDashboard() {
-  const { data: stats } = useQuery<DashboardStats>({
-    queryKey: ['/api/dashboard/stats'],
+  const { data: dashboardData } = useQuery<ClientDashboardData>({
+    queryKey: ['/api/client/dashboard'],
   });
 
   const { data: projects = [] } = useQuery<Project[]>({
-    queryKey: ['/api/projects'],
+    queryKey: ['/api/client/projects'],
   });
 
   const { data: invoices = [] } = useQuery<Invoice[]>({
-    queryKey: ['/api/invoices'],
+    queryKey: ['/api/client/invoices'],
   });
 
-  const { data: accounts = [] } = useQuery<Account[]>({
-    queryKey: ['/api/accounts'],
+  const { data: account } = useQuery<Account>({
+    queryKey: ['/api/client/account'],
   });
-
-  const getAccountName = (accountId: string) => {
-    const account = accounts.find(a => a.id === accountId);
-    return account?.name || 'Unknown';
-  };
 
   const projectsWithAccount = projects.map(p => ({
     ...p,
-    accountName: getAccountName(p.accountId),
+    accountName: account?.name || '',
   }));
 
   const invoicesWithAccount = invoices.map(i => ({
     ...i,
-    accountName: getAccountName(i.accountId),
+    accountName: account?.name || '',
   }));
 
   return (
@@ -225,22 +226,28 @@ function ClientDashboard() {
         <p className="text-muted-foreground">Welcome back! Here's your project overview</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <MetricCard
-          title="Active Projects"
-          value={stats?.activeProjects || 0}
+          title="Projets actifs"
+          value={dashboardData?.projects.active || 0}
           icon={CheckCircle2}
         />
         <MetricCard
-          title="Pending Invoices"
-          value={stats?.pendingInvoices || 0}
-          icon={DollarSign}
-          format="number"
+          title="Projets terminés"
+          value={dashboardData?.projects.completed || 0}
+          icon={Target}
         />
         <MetricCard
-          title="Pending Tasks"
-          value={stats?.pendingTasks || 0}
+          title="Progression tâches"
+          value={dashboardData?.tasks.progress || 0}
           icon={Zap}
+          format="percent"
+        />
+        <MetricCard
+          title="Progression moyenne"
+          value={dashboardData?.averageProgress || 0}
+          icon={TrendingUp}
+          format="percent"
         />
       </div>
 
@@ -272,22 +279,28 @@ function ClientDashboard() {
   );
 }
 
+interface VendorDashboardData {
+  projects: { total: number; active: number; completed: number };
+  missions: { total: number; active: number; pending: number };
+  tasks: { total: number; completed: number; progress: number };
+}
+
 function VendorDashboard() {
+  const { data: dashboardData } = useQuery<VendorDashboardData>({
+    queryKey: ['/api/vendor/dashboard'],
+  });
+
   const { data: missions = [] } = useQuery<Mission[]>({
-    queryKey: ['/api/missions'],
+    queryKey: ['/api/vendor/missions'],
   });
 
   const { data: projects = [] } = useQuery<Project[]>({
-    queryKey: ['/api/projects'],
-  });
-
-  const { data: vendors = [] } = useQuery<any[]>({
-    queryKey: ['/api/vendors'],
+    queryKey: ['/api/vendor/projects'],
   });
 
   const getProjectName = (projectId: string) => {
     const project = projects.find(p => p.id === projectId);
-    return project?.name || 'Unknown';
+    return project?.name || 'Projet';
   };
 
   const missionsWithProject = missions.map(m => ({
@@ -304,21 +317,27 @@ function VendorDashboard() {
         <p className="text-muted-foreground">Vos missions et suivi du temps</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <MetricCard
-          title="Missions actives"
-          value={activeMissions.length}
+          title="Projets actifs"
+          value={dashboardData?.projects.active || 0}
           icon={CheckCircle2}
         />
         <MetricCard
-          title="Total missions"
-          value={missions.length}
+          title="Missions actives"
+          value={dashboardData?.missions.active || 0}
+          icon={Zap}
+        />
+        <MetricCard
+          title="Missions en attente"
+          value={dashboardData?.missions.pending || 0}
           icon={Users}
         />
         <MetricCard
-          title="Sous-traitants"
-          value={vendors.length}
-          icon={DollarSign}
+          title="Progression tâches"
+          value={dashboardData?.tasks.progress || 0}
+          icon={TrendingUp}
+          format="percent"
         />
       </div>
 

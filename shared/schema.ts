@@ -1009,6 +1009,7 @@ export type ExpenseStatus = 'pending' | 'paid' | 'cancelled';
 export type ExpenseCategory = 'tools' | 'software' | 'services' | 'travel' | 'marketing' | 'office' | 'salaries' | 'taxes' | 'other';
 export type InvitationStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
 export type FollowUpType = 'email' | 'whatsapp' | 'call' | 'meeting' | 'visio' | 'sms';
+export type ProspectPhase = 'nouveau' | 'prospect_audit' | 'en_phase_audit' | 'attente_rdv' | 'attente_devis' | 'devis_envoye' | 'negociation';
 
 // Calendar events synchronization
 export const calendarEventStatusEnum = pgEnum('calendar_event_status', ['confirmed', 'tentative', 'cancelled']);

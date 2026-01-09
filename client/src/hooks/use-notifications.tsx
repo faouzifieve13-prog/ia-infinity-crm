@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Notification } from '@shared/schema';
+import { useAuth } from './use-auth';
 
 interface UnreadNotificationsResponse {
   notifications: Notification[];
@@ -8,12 +9,14 @@ interface UnreadNotificationsResponse {
 
 /**
  * Hook to manage notifications with real-time polling
- * Polls every 10 seconds for new unread notifications
+ * Polls every 10 seconds for new unread notifications (only when authenticated)
  */
 export function useNotifications() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isAuthenticated = !!user;
 
-  // Fetch unread notifications with polling every 10 seconds
+  // Fetch unread notifications with polling every 10 seconds (only when authenticated)
   const { data: unreadData, isLoading } = useQuery<UnreadNotificationsResponse>({
     queryKey: ['notifications', 'unread'],
     queryFn: async () => {
@@ -25,7 +28,8 @@ export function useNotifications() {
       }
       return res.json();
     },
-    refetchInterval: 10000, // Poll every 10 seconds
+    enabled: isAuthenticated, // Only poll when user is authenticated
+    refetchInterval: isAuthenticated ? 10000 : false, // Poll every 10 seconds only when authenticated
     staleTime: 5000, // Consider data stale after 5 seconds
   });
 
