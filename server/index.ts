@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { setupPasswordAuth, registerPasswordAuthRoutes, registerAdminInitRoute } from "./auth";
+import { startDeadlineAlertsScheduler } from "./deadlineAlertsJob";
 
 const app = express();
 const httpServer = createServer(app);
@@ -98,6 +99,12 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+
+      // Start deadline alerts scheduler (every hour = 3600000ms)
+      // In development, run every 5 minutes for testing
+      const alertInterval = process.env.NODE_ENV === "production" ? 3600000 : 300000;
+      startDeadlineAlertsScheduler(alertInterval);
+      log(`Deadline alerts scheduler started (interval: ${alertInterval}ms)`);
     },
   );
 })();

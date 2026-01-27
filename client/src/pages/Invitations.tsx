@@ -302,7 +302,14 @@ export default function Invitations() {
           <h1 className="text-3xl font-semibold" data-testid="text-page-title">Invitations</h1>
           <p className="text-muted-foreground">Send magic link invitations to clients, vendors, and team members</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <Dialog open={isDialogOpen} onOpenChange={(open) => {
+          if (!open) {
+            // Reset form when dialog closes
+            handleCloseDialog();
+          } else {
+            setIsDialogOpen(true);
+          }
+        }}>
           <DialogTrigger asChild>
             <Button data-testid="button-create-invitation">
               <UserPlus className="mr-2 h-4 w-4" />

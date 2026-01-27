@@ -43,17 +43,17 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { ProjectCard } from '@/components/projects/ProjectCard';
+import { VendorMultiSelect, type VendorAssignment } from '@/components/vendors/VendorMultiSelect';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { queryClient, apiRequest } from '@/lib/queryClient';
-import type { Project, Account, ProjectStatus, Contact } from '@/lib/types';
+import type { Project, Account, ProjectStatus, Vendor, ProjectVendor, ProjectVendorRole } from '@/lib/types';
 
 const projectFormSchema = z.object({
   name: z.string().min(1, 'Le nom est requis'),
   description: z.string().optional(),
   status: z.enum(['active', 'on_hold', 'completed', 'cancelled', 'archived']).default('active'),
   accountId: z.string().optional(),
-  vendorContactId: z.string().optional(),
   pricingTier: z.enum(['simple', 'intermediate', 'expert']).optional(),
   startDate: z.string().min(1, 'La date de début est requise'),
   endDate: z.string().min(1, 'La date de fin est requise'),
@@ -97,6 +97,10 @@ export default function Projects() {
     return `/projects/${projectId}`;
   };
 
+  // State for vendor assignments (outside of form since it requires separate API calls)
+  const [vendorAssignments, setVendorAssignments] = useState<VendorAssignment[]>([]);
+  const [editVendorAssignments, setEditVendorAssignments] = useState<VendorAssignment[]>([]);
+
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(projectFormSchema),
     defaultValues: {
@@ -104,7 +108,6 @@ export default function Projects() {
       description: '',
       status: 'active',
       accountId: '',
-      vendorContactId: '',
       pricingTier: undefined,
       startDate: '',
       endDate: '',
@@ -118,7 +121,6 @@ export default function Projects() {
       description: '',
       status: 'active',
       accountId: '',
-      vendorContactId: '',
       pricingTier: undefined,
       startDate: '',
       endDate: '',
@@ -129,18 +131,16 @@ export default function Projects() {
     queryKey: [projectsApiEndpoint],
   });
 
-  // Only fetch accounts and contacts when user can create/edit (not read-only)
+  // Only fetch accounts and vendors when user can create/edit (not read-only)
   const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: ['/api/accounts'],
     enabled: !isReadOnly,
   });
 
-  const { data: contacts = [] } = useQuery<Contact[]>({
-    queryKey: ['/api/contacts'],
+  const { data: vendors = [] } = useQuery<Vendor[]>({
+    queryKey: ['/api/vendors'],
     enabled: !isReadOnly,
   });
-
-  const vendorContacts = contacts.filter(c => c.contactType === 'vendor');
 
   const createMutation = useMutation({
     mutationFn: async (data: ProjectFormValues) => {
@@ -150,21 +150,32 @@ export default function Projects() {
         const date = new Date(year, month - 1, day, 12, 0, 0);
         return date.toISOString();
       };
-      
+
       const payload = {
         ...data,
         accountId: data.accountId || null,
-        vendorContactId: data.vendorContactId || null,
         pricingTier: data.pricingTier || null,
         startDate: parseDate(data.startDate),
         endDate: parseDate(data.endDate),
       };
-      return apiRequest('POST', '/api/projects', payload);
+      const response = await apiRequest('POST', '/api/projects', payload);
+      const project = await response.json();
+
+      // Assign vendors to the project
+      for (const assignment of vendorAssignments) {
+        await apiRequest('POST', `/api/projects/${project.id}/vendors`, {
+          vendorId: assignment.vendorId,
+          role: assignment.role,
+        });
+      }
+
+      return project;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
       setDialogOpen(false);
       form.reset();
+      setVendorAssignments([]);
       toast({
         title: 'Projet créé',
         description: 'Le projet a été créé avec succès.',
@@ -180,29 +191,61 @@ export default function Projects() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<ProjectFormValues> }) => {
+    mutationFn: async ({ id, data, existingVendors }: { id: string; data: Partial<ProjectFormValues>; existingVendors: ProjectVendor[] }) => {
       const parseDate = (dateStr: string | undefined) => {
         if (!dateStr) return null;
         const [year, month, day] = dateStr.split('-').map(Number);
         const date = new Date(year, month - 1, day, 12, 0, 0);
         return date.toISOString();
       };
-      
+
       const payload = {
         ...data,
         accountId: data.accountId || null,
-        vendorContactId: data.vendorContactId || null,
         pricingTier: data.pricingTier || null,
         startDate: data.startDate ? parseDate(data.startDate) : undefined,
         endDate: data.endDate ? parseDate(data.endDate) : undefined,
       };
-      return apiRequest('PATCH', `/api/projects/${id}`, payload);
+      const project = await apiRequest('PATCH', `/api/projects/${id}`, payload);
+
+      // Handle vendor assignments
+      const existingVendorIds = new Set(existingVendors.map(v => v.vendorId));
+      const newVendorIds = new Set(editVendorAssignments.map(v => v.vendorId));
+
+      // Remove vendors that are no longer assigned
+      for (const existing of existingVendors) {
+        if (!newVendorIds.has(existing.vendorId)) {
+          await apiRequest('DELETE', `/api/projects/${id}/vendors/${existing.vendorId}`);
+        }
+      }
+
+      // Add or update vendors
+      for (const assignment of editVendorAssignments) {
+        const existing = existingVendors.find(v => v.vendorId === assignment.vendorId);
+        if (existing) {
+          // Update role if changed
+          if (existing.role !== assignment.role) {
+            await apiRequest('PATCH', `/api/project-vendors/${existing.id}`, {
+              role: assignment.role,
+            });
+          }
+        } else {
+          // Add new vendor
+          await apiRequest('POST', `/api/projects/${id}/vendors`, {
+            vendorId: assignment.vendorId,
+            role: assignment.role,
+          });
+        }
+      }
+
+      return project;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/projects'] });
       setEditDialogOpen(false);
       setSelectedProject(null);
       editForm.reset();
+      setEditVendorAssignments([]);
       toast({
         title: 'Projet modifié',
         description: 'Le projet a été modifié avec succès.',
@@ -265,13 +308,20 @@ export default function Projects() {
     createMutation.mutate(data);
   };
 
+  // State for existing project vendors when editing
+  const [existingProjectVendors, setExistingProjectVendors] = useState<ProjectVendor[]>([]);
+
   const onEditSubmit = (data: ProjectFormValues) => {
     if (selectedProject) {
-      updateMutation.mutate({ id: selectedProject.id, data });
+      updateMutation.mutate({
+        id: selectedProject.id,
+        data,
+        existingVendors: existingProjectVendors,
+      });
     }
   };
 
-  const handleEdit = (project: Project) => {
+  const handleEdit = async (project: Project) => {
     setSelectedProject(project);
     const formatDate = (dateStr: string | null | undefined) => {
       if (!dateStr) return '';
@@ -283,11 +333,28 @@ export default function Projects() {
       description: project.description || '',
       status: project.status,
       accountId: project.accountId || '',
-      vendorContactId: project.vendorContactId || '',
       pricingTier: project.pricingTier || undefined,
       startDate: formatDate(project.startDate),
       endDate: formatDate(project.endDate),
     });
+
+    // Fetch existing project vendors
+    try {
+      const response = await apiRequest('GET', `/api/projects/${project.id}/vendors`);
+      const projectVendorsData: ProjectVendor[] = await response.json();
+      setExistingProjectVendors(projectVendorsData);
+      setEditVendorAssignments(
+        projectVendorsData.map((pv) => ({
+          vendorId: pv.vendorId,
+          role: pv.role as ProjectVendorRole,
+        }))
+      );
+    } catch (error) {
+      console.error('Failed to fetch project vendors:', error);
+      setExistingProjectVendors([]);
+      setEditVendorAssignments([]);
+    }
+
     setEditDialogOpen(true);
   };
 
@@ -423,30 +490,15 @@ export default function Projects() {
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="vendorContactId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Sous-traitant assigné</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-project-vendor">
-                            <SelectValue placeholder="Sélectionner un sous-traitant" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {vendorContacts.map((contact) => (
-                            <SelectItem key={contact.id} value={contact.id}>
-                              {contact.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <FormItem>
+                  <FormLabel>Sous-traitants assignés</FormLabel>
+                  <VendorMultiSelect
+                    vendors={vendors}
+                    value={vendorAssignments}
+                    onChange={setVendorAssignments}
+                    placeholder="Sélectionner des sous-traitants..."
+                  />
+                </FormItem>
 
                 <FormField
                   control={form.control}
@@ -707,30 +759,15 @@ export default function Projects() {
                 )}
               />
 
-              <FormField
-                control={editForm.control}
-                name="vendorContactId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Sous-traitant assigné</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-edit-project-vendor">
-                          <SelectValue placeholder="Sélectionner un sous-traitant" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {vendorContacts.map((contact) => (
-                          <SelectItem key={contact.id} value={contact.id}>
-                            {contact.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <FormItem>
+                <FormLabel>Sous-traitants assignés</FormLabel>
+                <VendorMultiSelect
+                  vendors={vendors}
+                  value={editVendorAssignments}
+                  onChange={setEditVendorAssignments}
+                  placeholder="Sélectionner des sous-traitants..."
+                />
+              </FormItem>
 
               <FormField
                 control={editForm.control}

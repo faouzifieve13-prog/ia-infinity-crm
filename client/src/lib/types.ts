@@ -15,6 +15,7 @@ export type ContractStatus = 'draft' | 'sent' | 'signed' | 'active' | 'completed
 export type ContactType = 'client' | 'vendor' | 'partner' | 'prospect';
 export type ProspectStatus = 'active' | 'draft' | 'follow_up' | 'abandoned';
 export type PricingTier = 'simple' | 'intermediate' | 'expert';
+export type ProjectVendorRole = 'lead' | 'contributor' | 'reviewer' | 'specialist';
 
 export interface User {
   id: string;
@@ -203,6 +204,19 @@ export interface Vendor {
   createdAt?: string;
 }
 
+export interface ProjectVendor {
+  id: string;
+  projectId: string;
+  vendorId: string;
+  role: ProjectVendorRole;
+  assignedAt: string;
+  assignedById?: string | null;
+  notes?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  vendor?: Vendor;
+}
+
 export interface Mission {
   id: string;
   orgId: string;
@@ -371,5 +385,64 @@ export interface Notification {
   link?: string | null;
   relatedEntityType?: string | null;
   relatedEntityId?: string | null;
+  createdAt: string;
+}
+
+// Compliance Workflow Types
+export type ComplianceStepType = 'form_text' | 'form_textarea' | 'checklist' | 'dynamic_list' | 'file_upload' | 'approval' | 'correction_list';
+export type ComplianceStepStatus = 'locked' | 'pending' | 'draft' | 'submitted' | 'approved' | 'rejected' | 'completed';
+
+export interface ChecklistItem {
+  id: string;
+  label: string;
+  checked: boolean;
+}
+
+export interface DynamicListItem {
+  id: string;
+  value: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ComplianceStep {
+  id: string;
+  deliverableId: string;
+  orgId: string;
+  stepNumber: number;
+  name: string;
+  description?: string | null;
+  stepType: ComplianceStepType;
+  status: ComplianceStepStatus;
+  formSchema?: Record<string, unknown> | null;
+  formData?: Record<string, unknown> | null;
+  checklistItems?: ChecklistItem[] | null;
+  dynamicListData?: DynamicListItem[] | null;
+  fileUrl?: string | null;
+  adminFeedback?: string | null;
+  reviewedById?: string | null;
+  reviewedAt?: string | null;
+  submittedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectDeliverable {
+  id: string;
+  orgId: string;
+  projectId: string;
+  deliverableNumber: number;
+  version: 'v1' | 'v2' | 'v3';
+  title: string;
+  description?: string | null;
+  type: string;
+  url?: string | null;
+  status: 'pending' | 'submitted' | 'approved' | 'rejected';
+  feedback?: string | null;
+  reviewedAt?: string | null;
+  reviewedBy?: string | null;
+  complianceProgress: number;
+  isUploadUnlocked: boolean;
+  workflowTemplateId?: string | null;
+  createdById?: string | null;
   createdAt: string;
 }

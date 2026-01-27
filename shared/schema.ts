@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, boolean, timestamp, pgEnum, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, boolean, timestamp, pgEnum, index, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -29,6 +29,7 @@ export const quoteStatusEnum = pgEnum('quote_status', ['draft', 'sent', 'signed'
 export const prospectStatusEnum = pgEnum('prospect_status', ['active', 'draft', 'follow_up', 'abandoned']);
 export const followUpTypeEnum = pgEnum('follow_up_type', ['email', 'whatsapp', 'call', 'meeting', 'visio', 'sms']);
 export const pricingTierEnum = pgEnum('pricing_tier', ['simple', 'intermediate', 'expert']);
+export const projectVendorRoleEnum = pgEnum('project_vendor_role', ['lead', 'contributor', 'reviewer', 'specialist']);
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -277,6 +278,22 @@ export const projects = pgTable("projects", {
   index("projects_notion_idx").on(table.notionPageId),
 ]);
 
+// Project-Vendor many-to-many relationship table
+export const projectVendors = pgTable("project_vendors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  vendorId: varchar("vendor_id").notNull().references(() => vendors.id, { onDelete: "cascade" }),
+  role: projectVendorRoleEnum("role").notNull().default('contributor'),
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+  assignedById: varchar("assigned_by_id").references(() => users.id),
+  notes: text("notes"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("project_vendors_project_idx").on(table.projectId),
+  index("project_vendors_vendor_idx").on(table.vendorId),
+]);
+
 export const tasks = pgTable("tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   orgId: varchar("org_id").notNull().references(() => organizations.id),
@@ -476,11 +493,109 @@ export const projectDeliverables = pgTable("project_deliverables", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   createdById: varchar("created_by_id").references(() => users.id),
+  // Champs pour le workflow de conformité
+  complianceProgress: integer("compliance_progress").notNull().default(0), // 0-100 calculé depuis les étapes
+  isUploadUnlocked: boolean("is_upload_unlocked").notNull().default(false), // Débloque le bouton upload quand 100%
+  workflowTemplateId: varchar("workflow_template_id"), // Template utilisé
 }, (table) => [
   index("project_deliverables_project_idx").on(table.projectId),
   index("project_deliverables_org_idx").on(table.orgId),
   index("project_deliverables_type_idx").on(table.projectId, table.type),
   index("project_deliverables_version_idx").on(table.projectId, table.deliverableNumber, table.version),
+]);
+
+// Enum pour les types d'étapes de conformité
+export const complianceStepTypeEnum = pgEnum('compliance_step_type', [
+  'form_text',       // Formulaire texte simple (ex: validation architecture)
+  'form_textarea',   // Formulaire texte long
+  'checklist',       // Liste de cases à cocher
+  'dynamic_list',    // Liste dynamique (ex: rapport de tests avec testeurs)
+  'file_upload',     // Upload de fichier
+  'approval',        // Étape d'approbation admin
+  'correction_list', // Liste des corrections (basée sur retours client)
+]);
+
+// Enum pour les statuts des étapes
+export const complianceStepStatusEnum = pgEnum('compliance_step_status', [
+  'locked',          // Verrouillé (étape précédente non complétée)
+  'pending',         // En attente de complétion
+  'draft',           // Brouillon (auto-save en cours)
+  'submitted',       // Soumis, en attente de validation
+  'approved',        // Approuvé par l'admin
+  'rejected',        // Rejeté avec commentaire
+  'completed',       // Complété (pour les étapes auto-validées)
+]);
+
+// Compliance Steps - Étapes de conformité technique par livrable
+export const deliverableComplianceSteps = pgTable("deliverable_compliance_steps", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deliverableId: varchar("deliverable_id").notNull().references(() => projectDeliverables.id, { onDelete: "cascade" }),
+
+  // Identification de l'étape
+  stepNumber: integer("step_number").notNull(), // Ordre d'affichage (1, 2, 3...)
+  type: complianceStepTypeEnum("type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+
+  // Configuration de l'étape
+  isRequired: boolean("is_required").notNull().default(true),
+  requiresAdminApproval: boolean("requires_admin_approval").notNull().default(false),
+  autoUnlockNext: boolean("auto_unlock_next").notNull().default(true), // Déverrouille auto l'étape suivante
+
+  // Contenu et données
+  formData: jsonb("form_data"), // Données du formulaire (flexible selon le type)
+  checklistItems: jsonb("checklist_items"), // Pour type checklist: [{id, label, checked}]
+  dynamicListData: jsonb("dynamic_list_data"), // Pour type dynamic_list: [{id, fields...}]
+
+  // Configuration spécifique (schéma du formulaire)
+  formSchema: jsonb("form_schema"), // Définition des champs attendus
+
+  // Statut et validation
+  status: complianceStepStatusEnum("status").notNull().default('locked'),
+  progress: integer("progress").notNull().default(0), // 0-100
+
+  // Feedback admin
+  adminComment: text("admin_comment"),
+  rejectionReason: text("rejection_reason"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+
+  // Timestamps
+  startedAt: timestamp("started_at"), // Quand le vendor a commencé
+  submittedAt: timestamp("submitted_at"),
+  lastSavedAt: timestamp("last_saved_at"), // Pour auto-save
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("compliance_steps_deliverable_idx").on(table.deliverableId),
+  index("compliance_steps_status_idx").on(table.deliverableId, table.status),
+  index("compliance_steps_order_idx").on(table.deliverableId, table.stepNumber),
+]);
+
+// Templates de workflow de conformité (modèles réutilisables)
+export const complianceWorkflowTemplates = pgTable("compliance_workflow_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+
+  name: text("name").notNull(), // Ex: "Workflow V1 Standard", "Workflow Retouches"
+  description: text("description"),
+
+  // Pour quel type de livrable ce template s'applique
+  deliverableType: text("deliverable_type"), // 'v1', 'v2', 'final', ou null pour tous
+
+  // Définition des étapes (template JSON)
+  stepsDefinition: jsonb("steps_definition").notNull(), // Array d'objets définissant les étapes
+
+  isDefault: boolean("is_default").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  createdById: varchar("created_by_id").references(() => users.id),
+}, (table) => [
+  index("compliance_templates_org_idx").on(table.orgId),
+  index("compliance_templates_type_idx").on(table.orgId, table.deliverableType),
 ]);
 
 export const workflowRuns = pgTable("workflow_runs", {
@@ -725,6 +840,22 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   }),
   tasks: many(tasks),
   missions: many(missions),
+  projectVendors: many(projectVendors),
+}));
+
+export const projectVendorsRelations = relations(projectVendors, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectVendors.projectId],
+    references: [projects.id],
+  }),
+  vendor: one(vendors, {
+    fields: [projectVendors.vendorId],
+    references: [vendors.id],
+  }),
+  assignedBy: one(users, {
+    fields: [projectVendors.assignedById],
+    references: [users.id],
+  }),
 }));
 
 export const tasksRelations = relations(tasks, ({ one }) => ({
@@ -772,6 +903,7 @@ export const vendorsRelations = relations(vendors, ({ one, many }) => ({
   }),
   missions: many(missions),
   tasks: many(tasks),
+  projectVendors: many(projectVendors),
 }));
 
 export const missionsRelations = relations(missions, ({ one }) => ({
@@ -882,6 +1014,45 @@ export const projectCommentsRelations = relations(projectComments, ({ one }) => 
   }),
 }));
 
+// Relations pour les livrables et étapes de conformité
+export const projectDeliverablesRelations = relations(projectDeliverables, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [projectDeliverables.orgId],
+    references: [organizations.id],
+  }),
+  project: one(projects, {
+    fields: [projectDeliverables.projectId],
+    references: [projects.id],
+  }),
+  createdBy: one(users, {
+    fields: [projectDeliverables.createdById],
+    references: [users.id],
+  }),
+  complianceSteps: many(deliverableComplianceSteps),
+}));
+
+export const deliverableComplianceStepsRelations = relations(deliverableComplianceSteps, ({ one }) => ({
+  deliverable: one(projectDeliverables, {
+    fields: [deliverableComplianceSteps.deliverableId],
+    references: [projectDeliverables.id],
+  }),
+  approvedBy: one(users, {
+    fields: [deliverableComplianceSteps.approvedById],
+    references: [users.id],
+  }),
+}));
+
+export const complianceWorkflowTemplatesRelations = relations(complianceWorkflowTemplates, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [complianceWorkflowTemplates.orgId],
+    references: [organizations.id],
+  }),
+  createdBy: one(users, {
+    fields: [complianceWorkflowTemplates.createdById],
+    references: [users.id],
+  }),
+}));
+
 export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertMembershipSchema = createInsertSchema(memberships).omit({ id: true, createdAt: true });
@@ -894,6 +1065,7 @@ export const insertProjectSchema = createInsertSchema(projects).omit({ id: true,
   startDate: z.coerce.date().optional().nullable(),
   endDate: z.coerce.date().optional().nullable(),
 });
+export const insertProjectVendorSchema = createInsertSchema(projectVendors).omit({ id: true, createdAt: true, assignedAt: true });
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertInvoiceLineItemSchema = createInsertSchema(invoiceLineItems).omit({ id: true });
@@ -931,6 +1103,8 @@ export const insertProjectUpdateSchema = createInsertSchema(projectUpdates).omit
   updateDate: z.coerce.date(),
 });
 export const insertProjectDeliverableSchema = createInsertSchema(projectDeliverables).omit({ id: true, createdAt: true });
+export const insertComplianceStepSchema = createInsertSchema(deliverableComplianceSteps).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertComplianceTemplateSchema = createInsertSchema(complianceWorkflowTemplates).omit({ id: true, createdAt: true, updatedAt: true });
 
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -958,6 +1132,8 @@ export type InsertAccountLoomVideo = z.infer<typeof insertAccountLoomVideoSchema
 export type InsertAccountUpdate = z.infer<typeof insertAccountUpdateSchema>;
 export type InsertProjectUpdate = z.infer<typeof insertProjectUpdateSchema>;
 export type InsertProjectDeliverable = z.infer<typeof insertProjectDeliverableSchema>;
+export type InsertComplianceStep = z.infer<typeof insertComplianceStepSchema>;
+export type InsertComplianceTemplate = z.infer<typeof insertComplianceTemplateSchema>;
 
 export type Organization = typeof organizations.$inferSelect;
 export type User = typeof users.$inferSelect;
@@ -968,6 +1144,9 @@ export type Deal = typeof deals.$inferSelect;
 export type Quote = typeof quotes.$inferSelect;
 export type Activity = typeof activities.$inferSelect;
 export type Project = typeof projects.$inferSelect;
+export type ProjectVendor = typeof projectVendors.$inferSelect;
+export type InsertProjectVendor = z.infer<typeof insertProjectVendorSchema>;
+export type ProjectVendorRole = 'lead' | 'contributor' | 'reviewer' | 'specialist';
 export type Task = typeof tasks.$inferSelect;
 export type Invoice = typeof invoices.$inferSelect;
 export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;
@@ -987,6 +1166,10 @@ export type AccountLoomVideo = typeof accountLoomVideos.$inferSelect;
 export type AccountUpdate = typeof accountUpdates.$inferSelect;
 export type ProjectUpdate = typeof projectUpdates.$inferSelect;
 export type ProjectDeliverable = typeof projectDeliverables.$inferSelect;
+export type ComplianceStep = typeof deliverableComplianceSteps.$inferSelect;
+export type ComplianceTemplate = typeof complianceWorkflowTemplates.$inferSelect;
+export type ComplianceStepType = 'form_text' | 'form_textarea' | 'checklist' | 'dynamic_list' | 'file_upload' | 'approval' | 'correction_list';
+export type ComplianceStepStatus = 'locked' | 'pending' | 'draft' | 'submitted' | 'approved' | 'rejected' | 'completed';
 
 export type UserRole = 'admin' | 'sales' | 'delivery' | 'finance' | 'client_admin' | 'client_member' | 'vendor';
 export type MissionType = 'audit' | 'automatisation';
@@ -1374,6 +1557,300 @@ export const emailTemplatesRelations = relations(emailTemplates, ({ one }) => ({
 export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit({ id: true, createdAt: true, updatedAt: true });
 export type EmailTemplate = typeof emailTemplates.$inferSelect;
 export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
+
+// ============================================================
+// DELIVERY WORKFLOW & PROJECT CALENDAR MODULE
+// ============================================================
+
+// Enums for delivery milestones
+export const milestoneStageEnum = pgEnum('milestone_stage', [
+  'production_v1',        // Étape 1: Production V1 (Sous-traitant)
+  'delivery_v1_client',   // Étape 2: Livraison V1 au Client
+  'client_meeting',       // Étape 3: RDV Client (Jalon critique)
+  'retouches_v2',         // Étape 4: Retouches V2 (Sous-traitant)
+  'final_delivery'        // Étape 5: Livraison Finale
+]);
+
+export const milestoneStatusEnum = pgEnum('milestone_status', [
+  'pending',      // En attente
+  'in_progress',  // En cours
+  'completed',    // Terminé
+  'overdue',      // En retard
+  'cancelled'     // Annulé
+]);
+
+// Enums for project calendar events
+export const projectEventTypeEnum = pgEnum('project_event_type', [
+  'deadline_internal',    // Deadline interne (Jaune)
+  'deadline_client',      // Deadline client (Rouge)
+  'meeting',              // RDV/Meeting (Bleu)
+  'milestone',            // Jalon
+  'reminder',             // Rappel
+  'delivery'              // Livraison (Vert quand complétée)
+]);
+
+export const projectEventColorEnum = pgEnum('project_event_color', [
+  'blue',     // Meetings
+  'red',      // Deadlines critiques (Client)
+  'yellow',   // Deadlines internes (Sous-traitant)
+  'green',    // Complété/Livré
+  'gray'      // Annulé
+]);
+
+// Enums for deadline alerts
+export const alertTypeEnum = pgEnum('alert_type', [
+  'reminder_j2',       // Rappel J-2
+  'reminder_j1',       // Rappel J-1
+  'overdue',           // Retard
+  'confirmation',      // Confirmation livraison
+  'validation'         // Validation client
+]);
+
+export const alertChannelEnum = pgEnum('alert_channel', ['email', 'in_app', 'both']);
+
+// Delivery Milestones - Jalons du workflow de livraison
+export const deliveryMilestones = pgTable("delivery_milestones", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+
+  // Identité du jalon
+  stage: milestoneStageEnum("stage").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+
+  // Planification
+  plannedDate: timestamp("planned_date").notNull(),
+  actualDate: timestamp("actual_date"),
+
+  // Responsabilité
+  assignedToVendorId: varchar("assigned_to_vendor_id").references(() => vendors.id),
+  assignedToUserId: varchar("assigned_to_user_id").references(() => users.id),
+
+  // État
+  status: milestoneStatusEnum("status").notNull().default('pending'),
+
+  // Lien avec le livrable
+  deliverableId: varchar("deliverable_id").references(() => projectDeliverables.id),
+
+  // Workflow automatique - self-reference pour chaînage
+  triggersNextMilestoneId: varchar("triggers_next_milestone_id"),
+  daysAfterTrigger: integer("days_after_trigger").default(0),
+
+  // Visibilité ACL
+  visibleToClient: boolean("visible_to_client").notNull().default(false),
+  visibleToVendor: boolean("visible_to_vendor").notNull().default(true),
+
+  // Métadonnées
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("delivery_milestones_project_idx").on(table.projectId),
+  index("delivery_milestones_stage_idx").on(table.projectId, table.stage),
+  index("delivery_milestones_status_idx").on(table.status),
+  index("delivery_milestones_planned_idx").on(table.plannedDate),
+  index("delivery_milestones_vendor_idx").on(table.assignedToVendorId),
+]);
+
+// Project Calendar Events - Événements calendrier avec ACL
+export const projectCalendarEvents = pgTable("project_calendar_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  milestoneId: varchar("milestone_id").references(() => deliveryMilestones.id, { onDelete: "cascade" }),
+
+  // Contenu
+  title: text("title").notNull(),
+  description: text("description"),
+
+  // Planification
+  start: timestamp("start").notNull(),
+  end: timestamp("end").notNull(),
+  allDay: boolean("all_day").notNull().default(true),
+
+  // Type et couleur
+  eventType: projectEventTypeEnum("event_type").notNull(),
+  color: projectEventColorEnum("color").notNull().default('blue'),
+
+  // Statut
+  isCompleted: boolean("is_completed").notNull().default(false),
+  completedAt: timestamp("completed_at"),
+
+  // Assignation
+  assignedToVendorId: varchar("assigned_to_vendor_id").references(() => vendors.id),
+  assignedToUserId: varchar("assigned_to_user_id").references(() => users.id),
+
+  // Visibilité ACL - Rôles autorisés à voir cet événement
+  visibleToRoles: text("visible_to_roles").array().notNull().default(sql`ARRAY['admin']::text[]`),
+
+  // Sync Google Calendar
+  googleEventId: text("google_event_id"),
+  googleCalendarSynced: boolean("google_calendar_synced").default(false),
+
+  // Métadonnées
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("project_calendar_events_project_idx").on(table.projectId),
+  index("project_calendar_events_milestone_idx").on(table.milestoneId),
+  index("project_calendar_events_start_idx").on(table.start),
+  index("project_calendar_events_type_idx").on(table.eventType),
+  index("project_calendar_events_vendor_idx").on(table.assignedToVendorId),
+]);
+
+// Deadline Alerts - Système d'alertes et notifications
+export const deadlineAlerts = pgTable("deadline_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+
+  // Cible
+  eventId: varchar("event_id").references(() => projectCalendarEvents.id, { onDelete: "cascade" }),
+  milestoneId: varchar("milestone_id").references(() => deliveryMilestones.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+
+  // Destinataire
+  recipientUserId: varchar("recipient_user_id").notNull().references(() => users.id),
+  recipientEmail: text("recipient_email"),
+
+  // Configuration
+  alertType: alertTypeEnum("alert_type").notNull(),
+  channel: alertChannelEnum("channel").notNull().default('both'),
+
+  // Planification
+  scheduledFor: timestamp("scheduled_for").notNull(),
+
+  // État
+  sentAt: timestamp("sent_at"),
+  failedAt: timestamp("failed_at"),
+  failureReason: text("failure_reason"),
+
+  // Contenu
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("deadline_alerts_scheduled_idx").on(table.scheduledFor),
+  index("deadline_alerts_recipient_idx").on(table.recipientUserId),
+  index("deadline_alerts_event_idx").on(table.eventId),
+  index("deadline_alerts_project_idx").on(table.projectId),
+  index("deadline_alerts_sent_idx").on(table.sentAt),
+]);
+
+// Relations
+export const deliveryMilestonesRelations = relations(deliveryMilestones, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [deliveryMilestones.orgId],
+    references: [organizations.id],
+  }),
+  project: one(projects, {
+    fields: [deliveryMilestones.projectId],
+    references: [projects.id],
+  }),
+  assignedVendor: one(vendors, {
+    fields: [deliveryMilestones.assignedToVendorId],
+    references: [vendors.id],
+  }),
+  assignedUser: one(users, {
+    fields: [deliveryMilestones.assignedToUserId],
+    references: [users.id],
+  }),
+  deliverable: one(projectDeliverables, {
+    fields: [deliveryMilestones.deliverableId],
+    references: [projectDeliverables.id],
+  }),
+}));
+
+export const projectCalendarEventsRelations = relations(projectCalendarEvents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [projectCalendarEvents.orgId],
+    references: [organizations.id],
+  }),
+  project: one(projects, {
+    fields: [projectCalendarEvents.projectId],
+    references: [projects.id],
+  }),
+  milestone: one(deliveryMilestones, {
+    fields: [projectCalendarEvents.milestoneId],
+    references: [deliveryMilestones.id],
+  }),
+  assignedVendor: one(vendors, {
+    fields: [projectCalendarEvents.assignedToVendorId],
+    references: [vendors.id],
+  }),
+  assignedUser: one(users, {
+    fields: [projectCalendarEvents.assignedToUserId],
+    references: [users.id],
+  }),
+  createdBy: one(users, {
+    fields: [projectCalendarEvents.createdById],
+    references: [users.id],
+  }),
+}));
+
+export const deadlineAlertsRelations = relations(deadlineAlerts, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [deadlineAlerts.orgId],
+    references: [organizations.id],
+  }),
+  project: one(projects, {
+    fields: [deadlineAlerts.projectId],
+    references: [projects.id],
+  }),
+  event: one(projectCalendarEvents, {
+    fields: [deadlineAlerts.eventId],
+    references: [projectCalendarEvents.id],
+  }),
+  milestone: one(deliveryMilestones, {
+    fields: [deadlineAlerts.milestoneId],
+    references: [deliveryMilestones.id],
+  }),
+  recipient: one(users, {
+    fields: [deadlineAlerts.recipientUserId],
+    references: [users.id],
+  }),
+}));
+
+// Insert schemas
+export const insertDeliveryMilestoneSchema = createInsertSchema(deliveryMilestones).omit({
+  id: true, createdAt: true, updatedAt: true
+}).extend({
+  plannedDate: z.coerce.date(),
+  actualDate: z.coerce.date().optional().nullable(),
+});
+
+export const insertProjectCalendarEventSchema = createInsertSchema(projectCalendarEvents).omit({
+  id: true, createdAt: true, updatedAt: true
+}).extend({
+  start: z.coerce.date(),
+  end: z.coerce.date(),
+  completedAt: z.coerce.date().optional().nullable(),
+});
+
+export const insertDeadlineAlertSchema = createInsertSchema(deadlineAlerts).omit({
+  id: true, createdAt: true
+}).extend({
+  scheduledFor: z.coerce.date(),
+  sentAt: z.coerce.date().optional().nullable(),
+  failedAt: z.coerce.date().optional().nullable(),
+});
+
+// Types
+export type DeliveryMilestone = typeof deliveryMilestones.$inferSelect;
+export type InsertDeliveryMilestone = z.infer<typeof insertDeliveryMilestoneSchema>;
+export type ProjectCalendarEvent = typeof projectCalendarEvents.$inferSelect;
+export type InsertProjectCalendarEvent = z.infer<typeof insertProjectCalendarEventSchema>;
+export type DeadlineAlert = typeof deadlineAlerts.$inferSelect;
+export type InsertDeadlineAlert = z.infer<typeof insertDeadlineAlertSchema>;
+
+export type MilestoneStage = 'production_v1' | 'delivery_v1_client' | 'client_meeting' | 'retouches_v2' | 'final_delivery';
+export type MilestoneStatus = 'pending' | 'in_progress' | 'completed' | 'overdue' | 'cancelled';
+export type ProjectEventType = 'deadline_internal' | 'deadline_client' | 'meeting' | 'milestone' | 'reminder' | 'delivery';
+export type ProjectEventColor = 'blue' | 'red' | 'yellow' | 'green' | 'gray';
+export type AlertType = 'reminder_j2' | 'reminder_j1' | 'overdue' | 'confirmation' | 'validation';
+export type AlertChannel = 'email' | 'in_app' | 'both';
 
 // Auth schema export
 export * from "./models/auth";

@@ -1,4 +1,4 @@
-import { Calendar, CheckCircle2, FolderKanban, ArrowRight, MoreHorizontal, Edit2, Archive, Trash2, ArchiveRestore } from 'lucide-react';
+import { Calendar, CheckCircle2, FolderKanban, ArrowRight, MoreHorizontal, Edit2, Archive, Trash2, ArchiveRestore, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +10,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { ProjectStatus, PricingTier } from '@/lib/types';
+import { VendorBadges } from '@/components/vendors/VendorMultiSelect';
+import type { ProjectStatus, PricingTier, Vendor, ProjectVendorRole } from '@/lib/types';
+
+interface ProjectVendorInfo {
+  vendor: Vendor;
+  role: ProjectVendorRole;
+}
 
 interface ProjectCardProject {
   id: string;
@@ -23,6 +29,7 @@ interface ProjectCardProject {
   startDate?: string | null;
   endDate?: string | null;
   pricingTier?: PricingTier | null;
+  vendors?: ProjectVendorInfo[];
 }
 
 const PRICING_TIERS: Record<string, { label: string; price: number }> = {
@@ -164,13 +171,20 @@ export function ProjectCard({ project, onClick, onEdit, onArchive, onDelete, ind
               <div className="flex items-center gap-1.5 text-muted-foreground">
                 <Calendar className="h-4 w-4" />
                 <span>
-                  {project.endDate 
+                  {project.endDate
                     ? new Date(project.endDate).toLocaleDateString('fr-FR')
                     : 'Non définie'
                   }
                 </span>
               </div>
             </div>
+
+            {project.vendors && project.vendors.length > 0 && (
+              <div className="flex items-center gap-1.5 pt-1">
+                <Users className="h-4 w-4 text-muted-foreground shrink-0" />
+                <VendorBadges vendors={project.vendors} maxVisible={2} />
+              </div>
+            )}
             
             <div className="flex items-center justify-end pt-2 opacity-0 group-hover:opacity-100 transition-opacity">
               <span className="text-xs text-primary font-medium flex items-center gap-1">

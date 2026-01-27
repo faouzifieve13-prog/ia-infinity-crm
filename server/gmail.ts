@@ -49,8 +49,39 @@ async function getUncachableGmailClient() {
   return google.gmail({ version: 'v1', auth: oauth2Client });
 }
 
-function createEmailMessage(to: string, subject: string, htmlBody: string): string {
+// Cache pour l'email de l'expéditeur Gmail
+let cachedSenderEmail: string | null = null;
+
+async function getSenderEmail(): Promise<string | null> {
+  if (cachedSenderEmail) return cachedSenderEmail;
+
+  try {
+    const gmail = await getUncachableGmailClient();
+    // Essayer getProfile d'abord
+    try {
+      const profile = await gmail.users.getProfile({ userId: 'me' });
+      cachedSenderEmail = profile.data.emailAddress || null;
+      console.log("[Gmail] Sender email from profile:", cachedSenderEmail);
+      return cachedSenderEmail;
+    } catch (profileError) {
+      // Si getProfile échoue (scope manquant), utiliser l'email depuis les secrets
+      console.log("[Gmail] getProfile failed, using GMAIL_USER_EMAIL from env");
+      cachedSenderEmail = process.env.GMAIL_USER_EMAIL || null;
+      return cachedSenderEmail;
+    }
+  } catch (error) {
+    console.error("[Gmail] Failed to get sender email:", error);
+    return null;
+  }
+}
+
+function createEmailMessage(to: string, subject: string, htmlBody: string, fromEmail?: string, fromName?: string): string {
+  const fromHeader = fromEmail
+    ? (fromName ? `From: "${fromName}" <${fromEmail}>` : `From: ${fromEmail}`)
+    : null;
+
   const messageParts = [
+    ...(fromHeader ? [fromHeader] : []),
     `To: ${to}`,
     'Content-Type: text/html; charset=utf-8',
     'MIME-Version: 1.0',
@@ -104,15 +135,29 @@ function formatExpirationDate(date: Date): string {
 }
 
 export async function sendInvitationEmail(params: InvitationEmailParams): Promise<boolean> {
+  console.log("[sendInvitationEmail] ========== DÉBUT ENVOI EMAIL INVITATION ==========");
+  console.log("[sendInvitationEmail] Params:", JSON.stringify({
+    to: params.to,
+    role: params.role,
+    space: params.space,
+    inviteLink: params.inviteLink,
+    expiresAt: params.expiresAt,
+    organizationName: params.organizationName,
+  }, null, 2));
+
   try {
+    console.log("[sendInvitationEmail] Obtention du client Gmail...");
     const gmail = await getUncachableGmailClient();
-    
+    console.log("[sendInvitationEmail] Client Gmail obtenu avec succès");
+
     const orgName = params.organizationName || 'IA Infinity';
     const roleName = formatRole(params.role);
     const spaceName = formatSpace(params.space);
     const expirationDate = formatExpirationDate(params.expiresAt);
-    
+
     const subject = `Invitation à rejoindre ${orgName}`;
+    console.log("[sendInvitationEmail] Subject:", subject);
+    console.log("[sendInvitationEmail] Destinataire:", params.to);
     
     const htmlBody = `
 <!DOCTYPE html>
@@ -206,20 +251,57 @@ export async function sendInvitationEmail(params: InvitationEmailParams): Promis
 </body>
 </html>
     `.trim();
-    
-    const encodedMessage = createEmailMessage(params.to, subject, htmlBody);
-    
-    await gmail.users.messages.send({
+
+    console.log("[sendInvitationEmail] HTML body créé, longueur:", htmlBody.length);
+
+    // Récupérer l'email de l'expéditeur pour le header From
+    const senderEmail = await getSenderEmail();
+    console.log("[sendInvitationEmail] Sender email:", senderEmail);
+
+    const encodedMessage = createEmailMessage(params.to, subject, htmlBody, senderEmail || undefined, orgName);
+    console.log("[sendInvitationEmail] Message encodé créé avec From:", senderEmail, "(" + orgName + ")");
+
+    console.log("[sendInvitationEmail] Envoi via Gmail API...");
+    console.log("[sendInvitationEmail] Message encodé (premiers 200 chars):", encodedMessage.substring(0, 200));
+
+    const sendResult = await gmail.users.messages.send({
       userId: 'me',
       requestBody: {
         raw: encodedMessage
       }
     });
-    
-    console.log(`Invitation email sent successfully to ${params.to}`);
+
+    console.log("[sendInvitationEmail] ========== RÉPONSE GMAIL API ==========");
+    console.log("[sendInvitationEmail] Message ID:", sendResult.data.id);
+    console.log("[sendInvitationEmail] Thread ID:", sendResult.data.threadId);
+    console.log("[sendInvitationEmail] Labels:", sendResult.data.labelIds);
+    console.log("[sendInvitationEmail] Réponse complète:", JSON.stringify(sendResult.data, null, 2));
+
+    // Vérification: récupérer le message envoyé pour confirmer
+    if (sendResult.data.id) {
+      try {
+        const sentMessage = await gmail.users.messages.get({
+          userId: 'me',
+          id: sendResult.data.id,
+          format: 'metadata',
+          metadataHeaders: ['To', 'Subject', 'From']
+        });
+        console.log("[sendInvitationEmail] ✅ VÉRIFICATION - Message trouvé dans Gmail:");
+        console.log("[sendInvitationEmail] Headers:", JSON.stringify(sentMessage.data.payload?.headers, null, 2));
+      } catch (verifyError) {
+        console.error("[sendInvitationEmail] ⚠️ Impossible de vérifier le message envoyé:", verifyError);
+      }
+    }
+
+    console.log(`[sendInvitationEmail] ✅ EMAIL INVITATION ENVOYÉ AVEC SUCCÈS à ${params.to}`);
+    console.log("[sendInvitationEmail] ========== FIN ENVOI EMAIL INVITATION ==========");
     return true;
-  } catch (error) {
-    console.error('Failed to send invitation email:', error);
+  } catch (error: any) {
+    console.error('[sendInvitationEmail] ❌ ERREUR ENVOI EMAIL:');
+    console.error('[sendInvitationEmail] Message:', error?.message);
+    console.error('[sendInvitationEmail] Code:', error?.code);
+    console.error('[sendInvitationEmail] Erreur complète:', error);
+    console.error("[sendInvitationEmail] ========== FIN ENVOI EMAIL (ÉCHEC) ==========");
     return false;
   }
 }
@@ -1022,11 +1104,11 @@ export interface VendorWelcomeEmailParams {
 export async function sendVendorWelcomeEmail(params: VendorWelcomeEmailParams): Promise<boolean> {
   try {
     const gmail = await getUncachableGmailClient();
-    
+
     const orgName = params.organizationName || 'IA Infinity';
-    
+
     const subject = `Bienvenue chez ${orgName} - Accès à votre espace sous-traitant`;
-    
+
     const htmlBody = `
 <!DOCTYPE html>
 <html lang="fr">
@@ -1050,18 +1132,18 @@ export async function sendVendorWelcomeEmail(params: VendorWelcomeEmailParams): 
               </p>
             </td>
           </tr>
-          
+
           <!-- Content -->
           <tr>
             <td style="padding: 40px;">
               <h2 style="margin: 0 0 16px 0; color: #18181b; font-size: 22px; font-weight: 600;">
                 Bienvenue ${params.vendorName} !
               </h2>
-              
+
               <p style="margin: 0 0 24px 0; color: #52525b; font-size: 16px; line-height: 1.6;">
                 Nous sommes ravis de vous compter parmi nos sous-traitants. Votre accès au portail a été créé avec succès.
               </p>
-              
+
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px; background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); border-radius: 8px; border: 1px solid #fed7aa;">
                 <tr>
                   <td style="padding: 24px;">
@@ -1074,36 +1156,36 @@ export async function sendVendorWelcomeEmail(params: VendorWelcomeEmailParams): 
                   </td>
                 </tr>
               </table>
-              
+
               <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
                 <tr>
                   <td align="center">
                     <a href="${params.portalLink}" style="display: inline-block; background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 12px rgba(249, 115, 22, 0.4);">
-                      Accéder à mon espace
+                      Créer mon mot de passe
                     </a>
                   </td>
                 </tr>
               </table>
-              
+
               <p style="margin: 0 0 16px 0; color: #71717a; font-size: 14px; line-height: 1.6;">
                 Si le bouton ne fonctionne pas, copiez et collez ce lien dans votre navigateur :
               </p>
-              
+
               <p style="margin: 0 0 24px 0; color: #f97316; font-size: 12px; word-break: break-all; background-color: #f4f4f5; padding: 12px; border-radius: 4px;">
                 ${params.portalLink}
               </p>
-              
+
               <p style="margin: 0; color: #a1a1aa; font-size: 12px; line-height: 1.6;">
                 Pour toute question, n'hésitez pas à nous contacter. Nous sommes impatients de collaborer avec vous !
               </p>
             </td>
           </tr>
-          
+
           <!-- Footer -->
           <tr>
             <td style="background-color: #fafafa; padding: 24px 40px; text-align: center; border-top: 1px solid #e4e4e7;">
               <p style="margin: 0; color: #a1a1aa; font-size: 12px;">
-                &copy; ${new Date().getFullYear()} ${orgName}. Tous droits réservés.
+                © ${new Date().getFullYear()} ${orgName}. Tous droits réservés.
               </p>
             </td>
           </tr>
@@ -1114,17 +1196,19 @@ export async function sendVendorWelcomeEmail(params: VendorWelcomeEmailParams): 
 </body>
 </html>
     `.trim();
-    
-    const encodedMessage = createEmailMessage(params.to, subject, htmlBody);
-    
+
+    // Récupérer l'email de l'expéditeur pour le header From
+    const senderEmail = await getSenderEmail();
+    const encodedMessage = createEmailMessage(params.to, subject, htmlBody, senderEmail || undefined, orgName);
+
     await gmail.users.messages.send({
       userId: 'me',
       requestBody: {
         raw: encodedMessage
       }
     });
-    
-    console.log(`Vendor welcome email sent to ${params.to}`);
+
+    console.log(`Vendor welcome email sent successfully to ${params.to}`);
     return true;
   } catch (error) {
     console.error('Failed to send vendor welcome email:', error);
@@ -1238,16 +1322,18 @@ export async function sendVendorProjectAssignmentEmail(params: VendorProjectAssi
 </body>
 </html>
     `.trim();
-    
-    const encodedMessage = createEmailMessage(params.to, subject, htmlBody);
-    
+
+    // Récupérer l'email de l'expéditeur pour le header From
+    const senderEmail = await getSenderEmail();
+    const encodedMessage = createEmailMessage(params.to, subject, htmlBody, senderEmail || undefined, orgName);
+
     await gmail.users.messages.send({
       userId: 'me',
       requestBody: {
         raw: encodedMessage
       }
     });
-    
+
     console.log(`Vendor project assignment email sent to ${params.to} for project ${params.projectName}`);
     return true;
   } catch (error) {

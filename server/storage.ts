@@ -4,9 +4,10 @@ export { db };
 import { eq, and, desc, asc, sql, isNotNull, isNull } from "drizzle-orm";
 import {
   organizations, users, memberships, accounts, contacts, deals, quotes, quoteLineItems, activities,
-  projects, tasks, invoices, invoiceLineItems, vendors, missions, documents,
+  projects, projectVendors, tasks, invoices, invoiceLineItems, vendors, missions, documents,
   workflowRuns, importJobs, contracts, expenses, invitations, emails, calendarEvents, followUpHistory, projectComments,
   channels, channelMessages, channelAttachments, accountLoomVideos, accountUpdates, projectUpdates, projectDeliverables,
+  deliverableComplianceSteps, complianceWorkflowTemplates,
   notifications, vendorProjectEvents, directConversations, directMessages, emailTemplates,
   type Organization, type InsertOrganization,
   type User, type InsertUser,
@@ -40,11 +41,14 @@ import {
   type AccountUpdate, type InsertAccountUpdate,
   type ProjectUpdate, type InsertProjectUpdate,
   type ProjectDeliverable, type InsertProjectDeliverable,
+  type ComplianceStep, type InsertComplianceStep, type ComplianceStepStatus, type ComplianceStepType,
+  type ComplianceTemplate, type InsertComplianceTemplate,
   type Notification, type InsertNotification,
   type VendorProjectEvent, type InsertVendorProjectEvent,
   type DirectConversation, type InsertDirectConversation,
   type DirectMessage, type InsertDirectMessage,
   type EmailTemplate, type InsertEmailTemplate,
+  type ProjectVendor, type InsertProjectVendor, type ProjectVendorRole,
   type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
   type ExpenseStatus, type ExpenseCategory, type InvitationStatus, type FollowUpType,
   type ChannelType, type ChannelScope, type VendorProjectEventType, type DirectMessageStatus
@@ -1623,6 +1627,290 @@ export class DatabaseStorage implements IStorage {
     return deliverable || null;
   }
 
+  // ============== COMPLIANCE STEPS ==============
+
+  async getComplianceSteps(deliverableId: string): Promise<ComplianceStep[]> {
+    return db.select().from(deliverableComplianceSteps)
+      .where(eq(deliverableComplianceSteps.deliverableId, deliverableId))
+      .orderBy(asc(deliverableComplianceSteps.stepNumber));
+  }
+
+  async getComplianceStep(id: string): Promise<ComplianceStep | null> {
+    const [step] = await db.select().from(deliverableComplianceSteps)
+      .where(eq(deliverableComplianceSteps.id, id));
+    return step || null;
+  }
+
+  async createComplianceStep(step: InsertComplianceStep): Promise<ComplianceStep> {
+    const [created] = await db.insert(deliverableComplianceSteps).values(step).returning();
+    return created;
+  }
+
+  async updateComplianceStep(
+    id: string,
+    updates: Partial<Omit<ComplianceStep, 'id' | 'deliverableId' | 'createdAt'>>
+  ): Promise<ComplianceStep | null> {
+    const [updated] = await db.update(deliverableComplianceSteps)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(deliverableComplianceSteps.id, id))
+      .returning();
+    return updated || null;
+  }
+
+  async deleteComplianceStep(id: string): Promise<boolean> {
+    await db.delete(deliverableComplianceSteps)
+      .where(eq(deliverableComplianceSteps.id, id));
+    return true;
+  }
+
+  // Save step progress (auto-save / draft mode)
+  async saveComplianceStepDraft(
+    id: string,
+    formData: unknown,
+    checklistItems?: unknown,
+    dynamicListData?: unknown
+  ): Promise<ComplianceStep | null> {
+    const [updated] = await db.update(deliverableComplianceSteps)
+      .set({
+        formData: formData as any,
+        checklistItems: checklistItems as any,
+        dynamicListData: dynamicListData as any,
+        status: 'draft',
+        lastSavedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(deliverableComplianceSteps.id, id))
+      .returning();
+    return updated || null;
+  }
+
+  // Submit step for review/completion
+  async submitComplianceStep(id: string): Promise<ComplianceStep | null> {
+    const step = await this.getComplianceStep(id);
+    if (!step) return null;
+
+    const newStatus: ComplianceStepStatus = step.requiresAdminApproval ? 'submitted' : 'completed';
+
+    const [updated] = await db.update(deliverableComplianceSteps)
+      .set({
+        status: newStatus,
+        progress: 100,
+        submittedAt: new Date(),
+        completedAt: newStatus === 'completed' ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(deliverableComplianceSteps.id, id))
+      .returning();
+
+    // If auto-unlock is enabled and step is completed, unlock next step
+    if (updated && updated.autoUnlockNext && newStatus === 'completed') {
+      await this.unlockNextComplianceStep(updated.deliverableId, updated.stepNumber);
+    }
+
+    return updated || null;
+  }
+
+  // Admin approves a step
+  async approveComplianceStep(id: string, adminId: string, comment?: string): Promise<ComplianceStep | null> {
+    const step = await this.getComplianceStep(id);
+    if (!step) return null;
+
+    const [updated] = await db.update(deliverableComplianceSteps)
+      .set({
+        status: 'approved',
+        progress: 100,
+        adminComment: comment || null,
+        approvedById: adminId,
+        approvedAt: new Date(),
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(deliverableComplianceSteps.id, id))
+      .returning();
+
+    // If auto-unlock is enabled, unlock next step
+    if (updated && updated.autoUnlockNext) {
+      await this.unlockNextComplianceStep(updated.deliverableId, updated.stepNumber);
+    }
+
+    return updated || null;
+  }
+
+  // Admin rejects a step
+  async rejectComplianceStep(id: string, adminId: string, reason: string): Promise<ComplianceStep | null> {
+    const [updated] = await db.update(deliverableComplianceSteps)
+      .set({
+        status: 'rejected',
+        rejectionReason: reason,
+        approvedById: adminId,
+        updatedAt: new Date(),
+      })
+      .where(eq(deliverableComplianceSteps.id, id))
+      .returning();
+    return updated || null;
+  }
+
+  // Unlock the next step in sequence
+  async unlockNextComplianceStep(deliverableId: string, currentStepNumber: number): Promise<ComplianceStep | null> {
+    const [nextStep] = await db.select().from(deliverableComplianceSteps)
+      .where(and(
+        eq(deliverableComplianceSteps.deliverableId, deliverableId),
+        eq(deliverableComplianceSteps.stepNumber, currentStepNumber + 1)
+      ));
+
+    if (!nextStep || nextStep.status !== 'locked') return null;
+
+    const [updated] = await db.update(deliverableComplianceSteps)
+      .set({
+        status: 'pending',
+        updatedAt: new Date(),
+      })
+      .where(eq(deliverableComplianceSteps.id, nextStep.id))
+      .returning();
+
+    return updated || null;
+  }
+
+  // Calculate and update deliverable progress based on steps
+  async updateDeliverableProgress(deliverableId: string, orgId: string): Promise<ProjectDeliverable | null> {
+    const steps = await this.getComplianceSteps(deliverableId);
+    if (steps.length === 0) return null;
+
+    const requiredSteps = steps.filter(s => s.isRequired);
+    const completedSteps = requiredSteps.filter(s =>
+      s.status === 'completed' || s.status === 'approved'
+    );
+
+    const progress = Math.round((completedSteps.length / requiredSteps.length) * 100);
+    const isUploadUnlocked = progress === 100;
+
+    const [updated] = await db.update(projectDeliverables)
+      .set({
+        complianceProgress: progress,
+        isUploadUnlocked,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(projectDeliverables.id, deliverableId), eq(projectDeliverables.orgId, orgId)))
+      .returning();
+
+    return updated || null;
+  }
+
+  // Initialize compliance steps for a deliverable from a template
+  async initializeComplianceStepsFromTemplate(
+    deliverableId: string,
+    templateId: string
+  ): Promise<ComplianceStep[]> {
+    const template = await this.getComplianceTemplate(templateId);
+    if (!template || !template.stepsDefinition) return [];
+
+    const stepsDefinition = template.stepsDefinition as Array<{
+      stepNumber: number;
+      type: ComplianceStepType;
+      title: string;
+      description?: string;
+      isRequired?: boolean;
+      requiresAdminApproval?: boolean;
+      autoUnlockNext?: boolean;
+      formSchema?: unknown;
+      checklistItems?: unknown;
+    }>;
+
+    const createdSteps: ComplianceStep[] = [];
+
+    for (const stepDef of stepsDefinition) {
+      const step = await this.createComplianceStep({
+        deliverableId,
+        stepNumber: stepDef.stepNumber,
+        type: stepDef.type,
+        title: stepDef.title,
+        description: stepDef.description || null,
+        isRequired: stepDef.isRequired ?? true,
+        requiresAdminApproval: stepDef.requiresAdminApproval ?? false,
+        autoUnlockNext: stepDef.autoUnlockNext ?? true,
+        formSchema: stepDef.formSchema as any || null,
+        checklistItems: stepDef.checklistItems as any || null,
+        status: stepDef.stepNumber === 1 ? 'pending' : 'locked',
+        progress: 0,
+      });
+      createdSteps.push(step);
+    }
+
+    return createdSteps;
+  }
+
+  // ============== COMPLIANCE TEMPLATES ==============
+
+  async getComplianceTemplates(orgId: string): Promise<ComplianceTemplate[]> {
+    return db.select().from(complianceWorkflowTemplates)
+      .where(and(
+        eq(complianceWorkflowTemplates.orgId, orgId),
+        eq(complianceWorkflowTemplates.isActive, true)
+      ))
+      .orderBy(desc(complianceWorkflowTemplates.createdAt));
+  }
+
+  async getComplianceTemplate(id: string): Promise<ComplianceTemplate | null> {
+    const [template] = await db.select().from(complianceWorkflowTemplates)
+      .where(eq(complianceWorkflowTemplates.id, id));
+    return template || null;
+  }
+
+  async getDefaultComplianceTemplate(orgId: string, deliverableType?: string): Promise<ComplianceTemplate | null> {
+    // First try to find a template for the specific deliverable type
+    if (deliverableType) {
+      const [typeTemplate] = await db.select().from(complianceWorkflowTemplates)
+        .where(and(
+          eq(complianceWorkflowTemplates.orgId, orgId),
+          eq(complianceWorkflowTemplates.deliverableType, deliverableType),
+          eq(complianceWorkflowTemplates.isDefault, true),
+          eq(complianceWorkflowTemplates.isActive, true)
+        ));
+      if (typeTemplate) return typeTemplate;
+    }
+
+    // Fall back to generic default template
+    const [defaultTemplate] = await db.select().from(complianceWorkflowTemplates)
+      .where(and(
+        eq(complianceWorkflowTemplates.orgId, orgId),
+        eq(complianceWorkflowTemplates.isDefault, true),
+        eq(complianceWorkflowTemplates.isActive, true),
+        isNull(complianceWorkflowTemplates.deliverableType)
+      ));
+    return defaultTemplate || null;
+  }
+
+  async createComplianceTemplate(template: InsertComplianceTemplate): Promise<ComplianceTemplate> {
+    const [created] = await db.insert(complianceWorkflowTemplates).values(template).returning();
+    return created;
+  }
+
+  async updateComplianceTemplate(
+    id: string,
+    orgId: string,
+    updates: Partial<Omit<ComplianceTemplate, 'id' | 'orgId' | 'createdAt'>>
+  ): Promise<ComplianceTemplate | null> {
+    const [updated] = await db.update(complianceWorkflowTemplates)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(
+        eq(complianceWorkflowTemplates.id, id),
+        eq(complianceWorkflowTemplates.orgId, orgId)
+      ))
+      .returning();
+    return updated || null;
+  }
+
+  async deleteComplianceTemplate(id: string, orgId: string): Promise<boolean> {
+    // Soft delete by setting isActive to false
+    await db.update(complianceWorkflowTemplates)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(and(
+        eq(complianceWorkflowTemplates.id, id),
+        eq(complianceWorkflowTemplates.orgId, orgId)
+      ));
+    return true;
+  }
+
   // Notifications
   async getNotifications(userId: string, orgId: string, limit: number = 20): Promise<Notification[]> {
     return db.select().from(notifications)
@@ -1928,6 +2216,131 @@ export class DatabaseStorage implements IStorage {
         isNull(emailTemplates.orgId)
       ));
     return globalTemplate;
+  }
+
+  // Project Vendors (many-to-many relationship)
+  async getProjectVendors(projectId: string, orgId: string): Promise<(ProjectVendor & { vendor: Vendor })[]> {
+    // First verify the project belongs to this org
+    const project = await this.getProject(projectId, orgId);
+    if (!project) return [];
+
+    const results = await db.select({
+      projectVendor: projectVendors,
+      vendor: vendors,
+    })
+      .from(projectVendors)
+      .innerJoin(vendors, eq(projectVendors.vendorId, vendors.id))
+      .where(and(
+        eq(projectVendors.projectId, projectId),
+        eq(projectVendors.isActive, true)
+      ))
+      .orderBy(desc(projectVendors.assignedAt));
+
+    return results.map(r => ({
+      ...r.projectVendor,
+      vendor: r.vendor,
+    }));
+  }
+
+  async addVendorToProject(
+    projectId: string,
+    vendorId: string,
+    orgId: string,
+    data: { role?: ProjectVendorRole; notes?: string; assignedById?: string }
+  ): Promise<ProjectVendor> {
+    // Verify project exists and belongs to org
+    const project = await this.getProject(projectId, orgId);
+    if (!project) throw new Error('Project not found');
+
+    // Verify vendor exists and belongs to org
+    const vendor = await this.getVendor(vendorId, orgId);
+    if (!vendor) throw new Error('Vendor not found');
+
+    // Check if vendor is already assigned (and active)
+    const [existing] = await db.select().from(projectVendors)
+      .where(and(
+        eq(projectVendors.projectId, projectId),
+        eq(projectVendors.vendorId, vendorId),
+        eq(projectVendors.isActive, true)
+      ));
+
+    if (existing) {
+      // Update existing assignment
+      const [updated] = await db.update(projectVendors)
+        .set({
+          role: data.role || existing.role,
+          notes: data.notes ?? existing.notes,
+          assignedById: data.assignedById || existing.assignedById,
+          assignedAt: new Date(),
+        })
+        .where(eq(projectVendors.id, existing.id))
+        .returning();
+      return updated;
+    }
+
+    // Create new assignment
+    const [created] = await db.insert(projectVendors).values({
+      projectId,
+      vendorId,
+      role: data.role || 'contributor',
+      notes: data.notes,
+      assignedById: data.assignedById,
+      isActive: true,
+    }).returning();
+
+    return created;
+  }
+
+  async removeVendorFromProject(projectId: string, vendorId: string, orgId: string): Promise<boolean> {
+    // Verify project exists and belongs to org
+    const project = await this.getProject(projectId, orgId);
+    if (!project) return false;
+
+    // Soft delete by setting isActive to false
+    await db.update(projectVendors)
+      .set({ isActive: false })
+      .where(and(
+        eq(projectVendors.projectId, projectId),
+        eq(projectVendors.vendorId, vendorId)
+      ));
+
+    return true;
+  }
+
+  async updateProjectVendor(
+    id: string,
+    orgId: string,
+    data: { role?: ProjectVendorRole; notes?: string }
+  ): Promise<ProjectVendor | undefined> {
+    // Get the assignment and verify via project
+    const [assignment] = await db.select().from(projectVendors)
+      .where(eq(projectVendors.id, id));
+
+    if (!assignment) return undefined;
+
+    // Verify project belongs to org
+    const project = await this.getProject(assignment.projectId, orgId);
+    if (!project) return undefined;
+
+    const [updated] = await db.update(projectVendors)
+      .set(data)
+      .where(eq(projectVendors.id, id))
+      .returning();
+
+    return updated;
+  }
+
+  async getProjectVendor(id: string, orgId: string): Promise<ProjectVendor | undefined> {
+    const [assignment] = await db.select().from(projectVendors)
+      .where(eq(projectVendors.id, id));
+
+    if (!assignment) return undefined;
+
+    // Verify project belongs to org
+    const project = await this.getProject(assignment.projectId, orgId);
+    if (!project) return undefined;
+
+    return assignment;
   }
 }
 

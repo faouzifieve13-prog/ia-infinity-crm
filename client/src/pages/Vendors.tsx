@@ -3,7 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Search, Loader2, Users, Briefcase, Mail, Building2, Star } from 'lucide-react';
+import { Plus, Search, Loader2, Users, Briefcase, Mail, Building2, Star, TestTube, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -54,13 +54,52 @@ const missionFormSchema = z.object({
 
 type MissionFormValues = z.infer<typeof missionFormSchema>;
 
+type GmailStatus = { connected: boolean; email?: string; error?: string };
+type TestResult = { success: boolean; step: string; message?: string; error?: string };
+
 export default function Vendors() {
   const [searchQuery, setSearchQuery] = useState('');
   const [availabilityFilter, setAvailabilityFilter] = useState<'all' | VendorAvailability>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [testDialogOpen, setTestDialogOpen] = useState(false);
+  const [testEmail, setTestEmail] = useState('');
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
   const { toast } = useToast();
+
+  // Gmail status
+  const { data: gmailStatus } = useQuery<GmailStatus>({
+    queryKey: ['/api/gmail/status'],
+  });
+
+  // Test email mutation
+  const testEmailMutation = useMutation({
+    mutationFn: async (email: string) => {
+      const response = await apiRequest('POST', '/api/gmail/test-send', { email });
+      return response.json() as Promise<TestResult>;
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        toast({
+          title: 'Test réussi',
+          description: data.message || 'Email envoyé avec succès',
+        });
+      } else {
+        toast({
+          title: 'Test échoué',
+          description: data.error || data.message || 'Erreur lors du test',
+          variant: 'destructive',
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
 
   const form = useForm<VendorFormValues>({
     resolver: zodResolver(vendorFormSchema),
@@ -103,16 +142,31 @@ export default function Vendors() {
         dailyRate: data.dailyRate ? parseFloat(data.dailyRate) : 0,
         skills: data.skills ? data.skills.split(',').map(s => s.trim()).filter(Boolean) : [],
       };
-      return apiRequest('POST', '/api/vendors', payload);
+      const response = await apiRequest('POST', '/api/vendors', payload);
+      return response.json() as Promise<Vendor & { emailSent?: boolean; inviteLink?: string | null }>;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/vendors'] });
       setDialogOpen(false);
       form.reset();
-      toast({
-        title: 'Sous-traitant créé',
-        description: 'Le sous-traitant a été ajouté avec succès.',
-      });
+
+      if (data.emailSent) {
+        toast({
+          title: 'Sous-traitant créé',
+          description: `Le sous-traitant a été ajouté et un email d'invitation a été envoyé à ${data.email}.`,
+        });
+      } else if (data.inviteLink) {
+        toast({
+          title: 'Sous-traitant créé',
+          description: `Le sous-traitant a été ajouté mais l'email n'a pas pu être envoyé. Copiez le lien d'invitation: ${data.inviteLink}`,
+          duration: 15000,
+        });
+      } else {
+        toast({
+          title: 'Sous-traitant créé',
+          description: 'Le sous-traitant a été ajouté avec succès.',
+        });
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -206,13 +260,94 @@ export default function Vendors() {
           <p className="text-muted-foreground">Gérez vos sous-traitants et leurs affectations</p>
         </div>
 
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-add-vendor">
-              <Plus className="mr-2 h-4 w-4" />
-              Nouveau sous-traitant
-            </Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-2">
+          {/* Gmail Status Indicator */}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border bg-muted/50">
+            {gmailStatus?.connected ? (
+              <>
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                <span className="text-sm text-muted-foreground">Gmail connecté</span>
+              </>
+            ) : (
+              <>
+                <XCircle className="h-4 w-4 text-red-500" />
+                <span className="text-sm text-muted-foreground">Gmail non connecté</span>
+              </>
+            )}
+          </div>
+
+          {/* Test Email Button */}
+          <Dialog open={testDialogOpen} onOpenChange={setTestDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <TestTube className="mr-2 h-4 w-4" />
+                Tester Email
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[400px]">
+              <DialogHeader>
+                <DialogTitle>Tester l'envoi d'email</DialogTitle>
+                <DialogDescription>
+                  Envoyez un email de test pour vérifier que Gmail fonctionne correctement.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                {/* Gmail Status */}
+                <div className={`flex items-center gap-2 p-3 rounded-md ${gmailStatus?.connected ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                  {gmailStatus?.connected ? (
+                    <>
+                      <CheckCircle className="h-4 w-4" />
+                      <span className="text-sm">Gmail connecté{gmailStatus.email ? ` (${gmailStatus.email})` : ''}</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="h-4 w-4" />
+                      <span className="text-sm">{gmailStatus?.error || 'Gmail non connecté - Configurez le connecteur Gmail dans Replit'}</span>
+                    </>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="test-email" className="text-sm font-medium">
+                    Email de test
+                  </label>
+                  <Input
+                    id="test-email"
+                    type="email"
+                    placeholder="votre@email.com"
+                    value={testEmail}
+                    onChange={(e) => setTestEmail(e.target.value)}
+                  />
+                </div>
+
+                <Button
+                  onClick={() => testEmailMutation.mutate(testEmail)}
+                  disabled={!testEmail || !gmailStatus?.connected || testEmailMutation.isPending}
+                  className="w-full"
+                >
+                  {testEmailMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Envoi en cours...
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="mr-2 h-4 w-4" />
+                      Envoyer l'email de test
+                    </>
+                  )}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-add-vendor">
+                <Plus className="mr-2 h-4 w-4" />
+                Nouveau sous-traitant
+              </Button>
+            </DialogTrigger>
           <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
               <DialogTitle>Ajouter un sous-traitant</DialogTitle>
@@ -324,6 +459,7 @@ export default function Vendors() {
             </Form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">

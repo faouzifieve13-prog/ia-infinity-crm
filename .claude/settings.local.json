@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(npm run build:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npm run db:push:*)",
+      "Bash(timeout 15 npm run dev:*)",
+      "Bash(npm run check:*)"
     ]
   }
 }

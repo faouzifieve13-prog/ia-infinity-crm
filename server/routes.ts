@@ -1,6 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage, db } from "./storage";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { createHash, randomBytes } from "crypto";
 import {
@@ -10,10 +11,11 @@ import {
   insertOrganizationSchema, insertUserSchema, insertMembershipSchema, insertContractSchema,
   insertInvitationSchema,
   users,
+  deadlineAlerts,
   type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
   type UserRole, type Space, type InvitationStatus
 } from "@shared/schema";
-import { sendInvitationEmail, sendClientWelcomeEmail, testGmailConnection, getInboxEmails } from "./gmail";
+import { sendInvitationEmail, sendClientWelcomeEmail, sendVendorWelcomeEmail, testGmailConnection, getInboxEmails } from "./gmail";
 import { uploadFileToDrive } from "./drive";
 import { requireAuth, requireAdmin, requireClient, requireVendor, requireClientAdmin, requireWriteAccess, requireChannelAccess, requireVendorProjectAccess, getSessionData } from "./auth";
 import {
@@ -33,6 +35,18 @@ import {
   notifyProjectStatusChange,
 } from "./notifications";
 import { calculateDealScore } from "./utils/scoring";
+import {
+  getFilteredCalendarEvents,
+  getAllProjectsCalendarEvents,
+  generateProjectMilestones,
+  completeMilestone,
+  createProjectCalendarEvent,
+  updateProjectCalendarEvent,
+  deleteProjectCalendarEvent,
+  getProjectMilestones,
+  getMilestoneStats,
+} from "./projectCalendarService";
+import { runDeadlineAlertsJob } from "./deadlineAlertsJob";
 
 function generateToken(): string {
   return randomBytes(32).toString("hex");
@@ -655,6 +669,491 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
+  // ============================================================
+  // DELIVERABLE COMPLIANCE WORKFLOW ROUTES
+  // ============================================================
+
+  // Get compliance steps for a deliverable
+  app.get("/api/deliverables/:deliverableId/compliance-steps", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { deliverableId } = req.params;
+      const steps = await storage.getComplianceSteps(deliverableId);
+      res.json(steps);
+    } catch (error) {
+      console.error("Get compliance steps error:", error);
+      res.status(500).json({ error: "Failed to get compliance steps" });
+    }
+  });
+
+  // Get single compliance step
+  app.get("/api/compliance-steps/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const step = await storage.getComplianceStep(req.params.id);
+      if (!step) {
+        return res.status(404).json({ error: "Compliance step not found" });
+      }
+      res.json(step);
+    } catch (error) {
+      console.error("Get compliance step error:", error);
+      res.status(500).json({ error: "Failed to get compliance step" });
+    }
+  });
+
+  // Create compliance step (Admin only)
+  app.post("/api/deliverables/:deliverableId/compliance-steps", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { deliverableId } = req.params;
+      const step = await storage.createComplianceStep({
+        ...req.body,
+        deliverableId,
+      });
+      res.status(201).json(step);
+    } catch (error) {
+      console.error("Create compliance step error:", error);
+      res.status(500).json({ error: "Failed to create compliance step" });
+    }
+  });
+
+  // Update compliance step (Admin only)
+  app.patch("/api/compliance-steps/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const step = await storage.updateComplianceStep(req.params.id, req.body);
+      if (!step) {
+        return res.status(404).json({ error: "Compliance step not found" });
+      }
+      res.json(step);
+    } catch (error) {
+      console.error("Update compliance step error:", error);
+      res.status(500).json({ error: "Failed to update compliance step" });
+    }
+  });
+
+  // Delete compliance step (Admin only)
+  app.delete("/api/compliance-steps/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteComplianceStep(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete compliance step error:", error);
+      res.status(500).json({ error: "Failed to delete compliance step" });
+    }
+  });
+
+  // Save draft (auto-save) - Vendor can use
+  app.post("/api/compliance-steps/:id/save-draft", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { formData, checklistItems, dynamicListData } = req.body;
+      const step = await storage.saveComplianceStepDraft(
+        req.params.id,
+        formData,
+        checklistItems,
+        dynamicListData
+      );
+      if (!step) {
+        return res.status(404).json({ error: "Compliance step not found" });
+      }
+      res.json(step);
+    } catch (error) {
+      console.error("Save draft error:", error);
+      res.status(500).json({ error: "Failed to save draft" });
+    }
+  });
+
+  // Submit step for completion/review
+  app.post("/api/compliance-steps/:id/submit", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const step = await storage.submitComplianceStep(req.params.id);
+      if (!step) {
+        return res.status(404).json({ error: "Compliance step not found" });
+      }
+
+      // Update deliverable progress
+      const deliverable = await storage.getProjectDeliverableById(step.deliverableId, orgId);
+      if (deliverable) {
+        await storage.updateDeliverableProgress(step.deliverableId, orgId);
+      }
+
+      res.json(step);
+    } catch (error) {
+      console.error("Submit compliance step error:", error);
+      res.status(500).json({ error: "Failed to submit compliance step" });
+    }
+  });
+
+  // Admin approves a step
+  app.post("/api/compliance-steps/:id/approve", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = req.session.userId!;
+      const { comment } = req.body;
+
+      const step = await storage.approveComplianceStep(req.params.id, userId, comment);
+      if (!step) {
+        return res.status(404).json({ error: "Compliance step not found" });
+      }
+
+      // Update deliverable progress
+      const deliverable = await storage.getProjectDeliverableById(step.deliverableId, orgId);
+      if (deliverable) {
+        await storage.updateDeliverableProgress(step.deliverableId, orgId);
+      }
+
+      res.json(step);
+    } catch (error) {
+      console.error("Approve compliance step error:", error);
+      res.status(500).json({ error: "Failed to approve compliance step" });
+    }
+  });
+
+  // Admin rejects a step
+  app.post("/api/compliance-steps/:id/reject", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = req.session.userId!;
+      const { reason } = req.body;
+
+      if (!reason) {
+        return res.status(400).json({ error: "Rejection reason is required" });
+      }
+
+      const step = await storage.rejectComplianceStep(req.params.id, userId, reason);
+      if (!step) {
+        return res.status(404).json({ error: "Compliance step not found" });
+      }
+
+      // Update deliverable progress (might decrease)
+      const deliverable = await storage.getProjectDeliverableById(step.deliverableId, orgId);
+      if (deliverable) {
+        await storage.updateDeliverableProgress(step.deliverableId, orgId);
+      }
+
+      res.json(step);
+    } catch (error) {
+      console.error("Reject compliance step error:", error);
+      res.status(500).json({ error: "Failed to reject compliance step" });
+    }
+  });
+
+  // Initialize compliance steps from template
+  app.post("/api/deliverables/:deliverableId/initialize-compliance", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const { deliverableId } = req.params;
+      const { templateId } = req.body;
+
+      // Get the deliverable to check version
+      const deliverable = await storage.getProjectDeliverableById(deliverableId, orgId);
+      if (!deliverable) {
+        return res.status(404).json({ error: "Deliverable not found" });
+      }
+
+      let template;
+      if (templateId) {
+        template = await storage.getComplianceTemplate(templateId);
+      } else {
+        // Use default template based on version
+        template = await storage.getDefaultComplianceTemplate(orgId, deliverable.version);
+      }
+
+      if (!template) {
+        return res.status(404).json({ error: "No compliance template found" });
+      }
+
+      const steps = await storage.initializeComplianceStepsFromTemplate(deliverableId, template.id);
+
+      // Update deliverable with template reference
+      await storage.updateProjectDeliverable(deliverableId, orgId, {
+        status: 'pending',
+      });
+
+      res.status(201).json({ steps, template });
+    } catch (error) {
+      console.error("Initialize compliance error:", error);
+      res.status(500).json({ error: "Failed to initialize compliance steps" });
+    }
+  });
+
+  // ============================================================
+  // COMPLIANCE TEMPLATES ROUTES
+  // ============================================================
+
+  // Get all templates for org
+  app.get("/api/compliance-templates", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const templates = await storage.getComplianceTemplates(orgId);
+      res.json(templates);
+    } catch (error) {
+      console.error("Get compliance templates error:", error);
+      res.status(500).json({ error: "Failed to get compliance templates" });
+    }
+  });
+
+  // Get single template
+  app.get("/api/compliance-templates/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const template = await storage.getComplianceTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.json(template);
+    } catch (error) {
+      console.error("Get compliance template error:", error);
+      res.status(500).json({ error: "Failed to get compliance template" });
+    }
+  });
+
+  // Create template (Admin only)
+  app.post("/api/compliance-templates", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = req.session.userId!;
+      const template = await storage.createComplianceTemplate({
+        ...req.body,
+        orgId,
+        createdById: userId,
+      });
+      res.status(201).json(template);
+    } catch (error) {
+      console.error("Create compliance template error:", error);
+      res.status(500).json({ error: "Failed to create compliance template" });
+    }
+  });
+
+  // Update template (Admin only)
+  app.patch("/api/compliance-templates/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const template = await storage.updateComplianceTemplate(req.params.id, orgId, req.body);
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      res.json(template);
+    } catch (error) {
+      console.error("Update compliance template error:", error);
+      res.status(500).json({ error: "Failed to update compliance template" });
+    }
+  });
+
+  // Delete template (Admin only)
+  app.delete("/api/compliance-templates/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      await storage.deleteComplianceTemplate(req.params.id, orgId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete compliance template error:", error);
+      res.status(500).json({ error: "Failed to delete compliance template" });
+    }
+  });
+
+  // ============================================================
+  // PROJECT CALENDAR & MILESTONES ROUTES
+  // ============================================================
+
+  // Get calendar events for a specific project (filtered by user role)
+  app.get("/api/projects/:projectId/calendar", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const { start, end } = req.query;
+      const context = getAccessContext(req);
+
+      if (!start || !end) {
+        return res.status(400).json({ error: "start and end query parameters are required" });
+      }
+
+      const events = await getFilteredCalendarEvents({
+        projectId,
+        startDate: new Date(start as string),
+        endDate: new Date(end as string),
+        userRole: context.role as UserRole,
+        vendorId: context.vendorId || undefined,
+        accountId: context.accountId || undefined,
+        userId: context.userId,
+      });
+
+      res.json(events);
+    } catch (error) {
+      console.error("Get project calendar error:", error);
+      res.status(500).json({ error: "Failed to get project calendar events" });
+    }
+  });
+
+  // Get calendar events for all projects (dashboard view)
+  app.get("/api/calendar/projects", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const { start, end } = req.query;
+      const context = getAccessContext(req);
+
+      if (!start || !end) {
+        return res.status(400).json({ error: "start and end query parameters are required" });
+      }
+
+      const events = await getAllProjectsCalendarEvents(
+        orgId,
+        context.role as UserRole,
+        new Date(start as string),
+        new Date(end as string),
+        {
+          vendorId: context.vendorId || undefined,
+          accountId: context.accountId || undefined,
+          userId: context.userId,
+        }
+      );
+
+      res.json(events);
+    } catch (error) {
+      console.error("Get all projects calendar error:", error);
+      res.status(500).json({ error: "Failed to get calendar events" });
+    }
+  });
+
+  // Get milestones for a project
+  app.get("/api/projects/:projectId/milestones", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const milestones = await getProjectMilestones(projectId);
+      res.json(milestones);
+    } catch (error) {
+      console.error("Get project milestones error:", error);
+      res.status(500).json({ error: "Failed to get project milestones" });
+    }
+  });
+
+  // Get milestone statistics for a project
+  app.get("/api/projects/:projectId/milestones/stats", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const stats = await getMilestoneStats(projectId);
+      res.json(stats);
+    } catch (error) {
+      console.error("Get milestone stats error:", error);
+      res.status(500).json({ error: "Failed to get milestone statistics" });
+    }
+  });
+
+  // Generate milestones for a project (Admin only)
+  app.post("/api/projects/:projectId/milestones/generate", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const { projectId } = req.params;
+      const { startDate, vendorId, config } = req.body;
+
+      // Check if project exists
+      const project = await storage.getProject(projectId, orgId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      await generateProjectMilestones(
+        orgId,
+        projectId,
+        new Date(startDate || project.startDate || new Date()),
+        vendorId || project.vendorId,
+        config
+      );
+
+      res.status(201).json({ success: true, message: "Milestones generated successfully" });
+    } catch (error) {
+      console.error("Generate milestones error:", error);
+      res.status(500).json({ error: "Failed to generate milestones" });
+    }
+  });
+
+  // Complete a milestone (triggers workflow)
+  app.post("/api/milestones/:milestoneId/complete", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { milestoneId } = req.params;
+      const { completionDate } = req.body;
+
+      const result = await completeMilestone(
+        milestoneId,
+        completionDate ? new Date(completionDate) : new Date()
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error("Complete milestone error:", error);
+      res.status(500).json({ error: "Failed to complete milestone" });
+    }
+  });
+
+  // Create a custom calendar event for a project
+  app.post("/api/projects/:projectId/calendar", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const { projectId } = req.params;
+      const userId = (req as any).user?.id;
+
+      const eventId = await createProjectCalendarEvent(orgId, projectId, {
+        ...req.body,
+        createdById: userId,
+      });
+
+      res.status(201).json({ id: eventId });
+    } catch (error) {
+      console.error("Create calendar event error:", error);
+      res.status(500).json({ error: "Failed to create calendar event" });
+    }
+  });
+
+  // Update a calendar event
+  app.patch("/api/calendar/events/:eventId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { eventId } = req.params;
+      await updateProjectCalendarEvent(eventId, req.body);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Update calendar event error:", error);
+      res.status(500).json({ error: "Failed to update calendar event" });
+    }
+  });
+
+  // Delete a calendar event
+  app.delete("/api/calendar/events/:eventId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { eventId } = req.params;
+      await deleteProjectCalendarEvent(eventId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete calendar event error:", error);
+      res.status(500).json({ error: "Failed to delete calendar event" });
+    }
+  });
+
+  // ============================================================
+  // DEADLINE ALERTS ROUTES
+  // ============================================================
+
+  // Manually trigger deadline alerts job (Admin only)
+  app.post("/api/alerts/process", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const result = await runDeadlineAlertsJob();
+      res.json(result);
+    } catch (error) {
+      console.error("Process alerts error:", error);
+      res.status(500).json({ error: "Failed to process alerts" });
+    }
+  });
+
+  // Get pending alerts for a project
+  app.get("/api/projects/:projectId/alerts", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.params;
+      const alerts = await db
+        .select()
+        .from(deadlineAlerts)
+        .where(eq(deadlineAlerts.projectId, projectId))
+        .orderBy(deadlineAlerts.scheduledFor);
+      res.json(alerts);
+    } catch (error) {
+      console.error("Get project alerts error:", error);
+      res.status(500).json({ error: "Failed to get project alerts" });
+    }
+  });
+
   app.get("/api/contacts", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
@@ -690,18 +1189,26 @@ ${cr.replace(/\n/g, '<br>')}
       // Send welcome email with invitation if creating a vendor contact
       if (data.contactType === 'vendor' && contact.email) {
         try {
-          const { sendVendorWelcomeEmail } = await import("./gmail");
-          const baseUrl = process.env.REPLIT_DEV_DOMAIN 
-            ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-            : process.env.REPL_SLUG 
-              ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
-              : 'https://ia-infinity.replit.app';
-          
+          // First create a vendor record for this contact
+          const newVendor = await storage.createVendor({
+            orgId,
+            name: contact.name,
+            email: contact.email,
+            company: contact.company || null,
+            dailyRate: '0',
+            skills: [],
+            availability: 'available',
+            performance: 100,
+          });
+
+          // Link the contact to the vendor
+          await storage.updateContact(contact.id, orgId, { vendorId: newVendor.id });
+
           // Create invitation for vendor portal access
           const token = generateToken();
           const tokenHash = hashToken(token);
           const expiresAt = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000); // 6 months
-          
+
           await storage.createInvitation({
             orgId,
             email: contact.email,
@@ -711,18 +1218,21 @@ ${cr.replace(/\n/g, '<br>')}
             expiresAt,
             status: 'pending',
             accountId: null,
-            vendorId: contact.id,
+            vendorId: newVendor.id,
           });
-          
-          const portalLink = `${baseUrl}/auth/vendor-invite?token=${token}`;
-          
+
+          const baseUrl = process.env.REPLIT_DEV_DOMAIN
+            ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+            : 'http://localhost:5000';
+          const portalLink = `${baseUrl}/setup-password?token=${token}`;
+
           await sendVendorWelcomeEmail({
             to: contact.email,
             vendorName: contact.name,
             portalLink,
             organizationName: 'IA Infinity'
           });
-          console.log(`Welcome email with invitation sent to new vendor: ${contact.email}`);
+          console.log(`Vendor welcome email sent to ${contact.email}`);
         } catch (emailError) {
           console.error("Failed to send vendor welcome email:", emailError);
           // Continue even if email fails - contact was created successfully
@@ -1237,6 +1747,119 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
+  // Project Vendors endpoints (many-to-many relationship)
+  app.get("/api/projects/:id/vendors", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const projectVendors = await storage.getProjectVendors(req.params.id, orgId);
+      res.json(projectVendors);
+    } catch (error) {
+      console.error("Get project vendors error:", error);
+      res.status(500).json({ error: "Failed to get project vendors" });
+    }
+  });
+
+  app.post("/api/projects/:id/vendors", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const userId = req.session.userId!;
+      const { vendorId, role, notes } = req.body;
+
+      if (!vendorId) {
+        return res.status(400).json({ error: "vendorId is required" });
+      }
+
+      const projectVendor = await storage.addVendorToProject(
+        req.params.id,
+        vendorId,
+        orgId,
+        { role, notes, assignedById: userId }
+      );
+
+      // Send email to vendor when assigned to project
+      try {
+        const vendor = await storage.getVendor(vendorId, orgId);
+        const project = await storage.getProject(req.params.id, orgId);
+        const account = project?.accountId ? await storage.getAccount(project.accountId, orgId) : null;
+
+        if (vendor?.email && project) {
+          const { sendVendorProjectAssignmentEmail } = await import("./gmail");
+          await sendVendorProjectAssignmentEmail({
+            to: vendor.email,
+            vendorName: vendor.name,
+            projectName: project.name,
+            projectDescription: project.description,
+            clientName: account?.name,
+            startDate: project.startDate ? new Date(project.startDate).toLocaleDateString('fr-FR') : undefined,
+            endDate: project.endDate ? new Date(project.endDate).toLocaleDateString('fr-FR') : undefined,
+          });
+          console.log(`Vendor assignment email sent to ${vendor.email} for project ${project.name}`);
+        }
+      } catch (emailError) {
+        console.error("Failed to send vendor assignment email:", emailError);
+      }
+
+      // Create vendor project channel if needed
+      try {
+        const existingChannels = await storage.getChannelsByProject(req.params.id, orgId);
+        const vendorChannel = existingChannels.find(c => c.type === 'vendor' && c.scope === 'project');
+
+        if (!vendorChannel) {
+          const project = await storage.getProject(req.params.id, orgId);
+          if (project) {
+            await storage.createChannel({
+              orgId,
+              name: `Projet: ${project.name}`,
+              description: `Canal de communication pour le projet ${project.name}`,
+              type: 'vendor',
+              scope: 'project',
+              projectId: req.params.id,
+              isActive: true,
+            });
+            console.log(`Created vendor channel for project ${req.params.id}`);
+          }
+        }
+      } catch (channelError) {
+        console.error("Failed to create vendor channel:", channelError);
+      }
+
+      res.status(201).json(projectVendor);
+    } catch (error) {
+      console.error("Add vendor to project error:", error);
+      res.status(500).json({ error: "Failed to add vendor to project" });
+    }
+  });
+
+  app.delete("/api/projects/:projectId/vendors/:vendorId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const { projectId, vendorId } = req.params;
+
+      await storage.removeVendorFromProject(projectId, vendorId, orgId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Remove vendor from project error:", error);
+      res.status(500).json({ error: "Failed to remove vendor from project" });
+    }
+  });
+
+  app.patch("/api/project-vendors/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const { role, notes } = req.body;
+
+      const updated = await storage.updateProjectVendor(req.params.id, orgId, { role, notes });
+      if (!updated) {
+        return res.status(404).json({ error: "Project vendor assignment not found" });
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Update project vendor error:", error);
+      res.status(500).json({ error: "Failed to update project vendor" });
+    }
+  });
+
   app.get("/api/tasks", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
@@ -1454,7 +2077,10 @@ ${cr.replace(/\n/g, '<br>')}
       const orgId = getOrgId(req);
       const data = insertVendorSchema.parse({ ...req.body, orgId });
       const vendor = await storage.createVendor(data);
-      
+
+      let emailSent = false;
+      let inviteLink: string | null = null;
+
       // Send welcome email with portal access if email is provided
       if (data.email) {
         try {
@@ -1462,7 +2088,7 @@ ${cr.replace(/\n/g, '<br>')}
           const token = generateToken();
           const tokenHash = hashToken(token);
           const expiresAt = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000); // 6 months
-          
+
           await storage.createInvitation({
             orgId,
             email: data.email,
@@ -1474,27 +2100,35 @@ ${cr.replace(/\n/g, '<br>')}
             accountId: null,
             vendorId: vendor.id,
           });
-          
-          const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+
+          const baseUrl = process.env.REPLIT_DEV_DOMAIN
             ? `https://${process.env.REPLIT_DEV_DOMAIN}`
             : 'http://localhost:5000';
-          const portalLink = `${baseUrl}/auth/accept-invite?token=${token}`;
-          
-          const { sendVendorWelcomeEmail } = await import("./gmail");
-          await sendVendorWelcomeEmail({
+          const portalLink = `${baseUrl}/setup-password?token=${token}`;
+          inviteLink = portalLink;
+
+          // Send welcome email
+          emailSent = await sendVendorWelcomeEmail({
             to: data.email,
             vendorName: data.name,
             portalLink,
+            organizationName: 'IA Infinity',
           });
-          
-          console.log(`Vendor welcome email sent to ${data.email}`);
+
+          if (emailSent) {
+            console.log(`Vendor welcome email sent to ${data.email}`);
+          }
         } catch (emailError) {
           console.error("Failed to send vendor welcome email:", emailError);
           // Don't fail the vendor creation if email fails
         }
       }
-      
-      res.status(201).json(vendor);
+
+      res.status(201).json({
+        ...vendor,
+        emailSent,
+        inviteLink: emailSent ? null : inviteLink,
+      });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
@@ -4521,24 +5155,67 @@ Génère un contrat complet et professionnel adapté à ce client.`;
         vendorId: finalVendorId || null,
       });
       
-      const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+      const baseUrl = process.env.REPLIT_DEV_DOMAIN
         ? `https://${process.env.REPLIT_DEV_DOMAIN}`
         : 'http://localhost:5000';
       const inviteLink = `${baseUrl}/setup-password?token=${token}`;
-      
+
+      console.log("[POST /api/invitations] ========== ENVOI EMAIL ==========");
+      console.log("[POST /api/invitations] parsed.sendEmail:", parsed.sendEmail);
+      console.log("[POST /api/invitations] req.body.sendEmail:", req.body.sendEmail);
+      console.log("[POST /api/invitations] typeof req.body.sendEmail:", typeof req.body.sendEmail);
+
       let emailSent = false;
       if (parsed.sendEmail) {
-        const org = await storage.getOrganization(orgId);
-        emailSent = await sendInvitationEmail({
-          to: parsed.email,
-          inviteLink,
-          role: parsed.role,
-          space: parsed.space,
-          expiresAt,
-          organizationName: org?.name || 'IA Infinity',
-        });
+        console.log("[POST /api/invitations] ✅ Condition sendEmail = TRUE, envoi de l'email...");
+        try {
+          const org = await storage.getOrganization(orgId);
+          console.log("[POST /api/invitations] Organisation:", org?.name);
+          console.log("[POST /api/invitations] Destinataire:", parsed.email);
+          console.log("[POST /api/invitations] Lien invitation:", inviteLink);
+          console.log("[POST /api/invitations] Role:", parsed.role);
+
+          // Use different email template for vendors
+          if (parsed.role === 'vendor') {
+            console.log("[POST /api/invitations] Envoi email spécifique VENDOR...");
+
+            // Get vendor name from the vendor record or use the email prefix
+            let vendorName = parsed.email.split('@')[0];
+            if (finalVendorId) {
+              const vendor = await storage.getVendor(finalVendorId, orgId);
+              if (vendor?.name) {
+                vendorName = vendor.name;
+              }
+            }
+
+            emailSent = await sendVendorWelcomeEmail({
+              to: parsed.email,
+              vendorName,
+              portalLink: inviteLink,
+              organizationName: org?.name || 'IA Infinity',
+            });
+          } else {
+            console.log("[POST /api/invitations] Envoi email invitation standard...");
+            emailSent = await sendInvitationEmail({
+              to: parsed.email,
+              inviteLink,
+              role: parsed.role,
+              space: parsed.space,
+              expiresAt,
+              organizationName: org?.name || 'IA Infinity',
+            });
+          }
+
+          console.log("[POST /api/invitations] Résultat envoi email:", emailSent ? "✅ SUCCÈS" : "❌ ÉCHEC");
+        } catch (emailError) {
+          console.error("[POST /api/invitations] ❌ ERREUR envoi email:", emailError);
+        }
+      } else {
+        console.log("[POST /api/invitations] ⚠️ sendEmail = FALSE, AUCUN EMAIL ENVOYÉ!");
+        console.log("[POST /api/invitations] Pour envoyer l'email, le frontend doit envoyer sendEmail: true");
       }
-      
+      console.log("[POST /api/invitations] ========== FIN SECTION EMAIL ==========");
+
       const { tokenHash: _, ...safeInvitation } = invitation;
       res.status(201).json({
         ...safeInvitation,
@@ -4546,7 +5223,13 @@ Génère un contrat complet et professionnel adapté à ce client.`;
         emailSent,
       });
     } catch (error) {
+      console.error("[POST /api/invitations] ❌ ERREUR COMPLÈTE:");
+      console.error("[POST /api/invitations] Type:", typeof error);
       console.error("[POST /api/invitations] Error:", error);
+      if (error instanceof Error) {
+        console.error("[POST /api/invitations] Message:", error.message);
+        console.error("[POST /api/invitations] Stack:", error.stack);
+      }
       if (error instanceof z.ZodError) {
         console.error("[POST /api/invitations] Zod validation errors:", JSON.stringify(error.errors, null, 2));
         return res.status(400).json({ error: "Validation Error", details: error.errors });
@@ -4694,6 +5377,62 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     } catch (error) {
       console.error("Gmail status error:", error);
       res.status(500).json({ connected: false, error: "Failed to check Gmail status" });
+    }
+  });
+
+  // Gmail test send - send a test email to verify Gmail is working
+  app.post("/api/gmail/test-send", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ success: false, error: "Email requis" });
+      }
+
+      console.log("[GMAIL TEST] ========== TEST ENVOI EMAIL ==========");
+      console.log("[GMAIL TEST] Destinataire:", email);
+
+      // First check if Gmail is connected
+      const status = await testGmailConnection();
+      console.log("[GMAIL TEST] Status connexion Gmail:", status);
+
+      if (!status.connected) {
+        return res.json({
+          success: false,
+          step: 'connection',
+          error: status.error || 'Gmail non connecté. Veuillez configurer le connecteur Gmail dans Replit.',
+        });
+      }
+
+      // Try to send a test email
+      const baseUrl = process.env.REPLIT_DEV_DOMAIN
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+        : 'http://localhost:5000';
+
+      console.log("[GMAIL TEST] Tentative d'envoi...");
+      const result = await sendVendorWelcomeEmail({
+        to: email,
+        vendorName: 'Test Utilisateur',
+        portalLink: `${baseUrl}/test-link`,
+        organizationName: 'IA Infinity (Test)',
+      });
+
+      console.log("[GMAIL TEST] Résultat:", result);
+      console.log("[GMAIL TEST] ========== FIN TEST ==========");
+
+      res.json({
+        success: result,
+        step: result ? 'sent' : 'send_failed',
+        message: result
+          ? `Email de test envoyé avec succès à ${email}`
+          : `Échec de l'envoi. Vérifiez les logs du serveur pour plus de détails.`,
+      });
+    } catch (error: any) {
+      console.error("[GMAIL TEST] Erreur:", error);
+      res.json({
+        success: false,
+        step: 'error',
+        error: error.message || 'Erreur inconnue',
+      });
     }
   });
 
@@ -6545,10 +7284,11 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       try {
         await sendInvitationEmail({
           to: normalizedEmail,
-          inviterName: req.session.email || 'Administrateur',
           inviteLink,
-          organizationName: 'IA Infinity',
           role: 'client_member',
+          space: 'client',
+          expiresAt,
+          organizationName: 'IA Infinity',
         });
       } catch (emailError) {
         console.error("Failed to send invitation email:", emailError);
@@ -8373,6 +9113,92 @@ Adapte le ton et le contenu aux instructions fournies par le sous-traitant.`;
     } catch (error) {
       console.error("Delete vendor deliverable error:", error);
       res.status(500).json({ error: "Échec de suppression du livrable" });
+    }
+  });
+
+  // =====================
+  // Vendor Compliance Steps Routes
+  // =====================
+
+  // Get compliance steps for a deliverable (vendor view)
+  app.get("/api/vendor/projects/:projectId/deliverables/:deliverableId/compliance-steps", requireVendor, requireVendorProjectAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const deliverableId = req.params.deliverableId;
+
+      const steps = await storage.getComplianceSteps(deliverableId, orgId);
+      res.json(steps);
+    } catch (error) {
+      console.error("Get vendor compliance steps error:", error);
+      res.status(500).json({ error: "Échec de récupération des étapes de conformité" });
+    }
+  });
+
+  // Save draft for a compliance step (auto-save)
+  app.post("/api/vendor/compliance-steps/:stepId/save-draft", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const stepId = req.params.stepId;
+      const { formData, checklistItems, dynamicListData, fileUrl } = req.body;
+
+      const updated = await storage.saveComplianceStepDraft(stepId, orgId, {
+        formData,
+        checklistItems,
+        dynamicListData,
+        fileUrl,
+      });
+
+      if (!updated) {
+        return res.status(404).json({ error: "Étape non trouvée" });
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Save compliance step draft error:", error);
+      res.status(500).json({ error: "Échec de sauvegarde du brouillon" });
+    }
+  });
+
+  // Submit a compliance step (marks as submitted and unlocks next)
+  app.post("/api/vendor/compliance-steps/:stepId/submit", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const stepId = req.params.stepId;
+      const { formData, checklistItems, dynamicListData, fileUrl } = req.body;
+
+      const updated = await storage.submitComplianceStep(stepId, orgId, {
+        formData,
+        checklistItems,
+        dynamicListData,
+        fileUrl,
+      });
+
+      if (!updated) {
+        return res.status(404).json({ error: "Étape non trouvée ou verrouillée" });
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Submit compliance step error:", error);
+      res.status(500).json({ error: "Échec de soumission de l'étape" });
+    }
+  });
+
+  // Get single compliance step details
+  app.get("/api/vendor/compliance-steps/:stepId", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const stepId = req.params.stepId;
+
+      const step = await storage.getComplianceStep(stepId, orgId);
+      if (!step) {
+        return res.status(404).json({ error: "Étape non trouvée" });
+      }
+
+      res.json(step);
+    } catch (error) {
+      console.error("Get vendor compliance step error:", error);
+      res.status(500).json({ error: "Échec de récupération de l'étape" });
     }
   });
 
