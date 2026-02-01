@@ -46,9 +46,10 @@ import {
 import { PipelineBoard } from '@/components/pipeline/PipelineBoard';
 import { PipelineMetrics } from '@/components/PipelineMetrics';
 import { EmailTemplateDialog } from '@/components/pipeline/EmailTemplateDialog';
+import { ProspectContactSheet } from '@/components/pipeline/ProspectContactSheet';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
-import type { Deal, DealStage, Account } from '@/lib/types';
+import type { Deal, DealStage, Account, ProspectStatus } from '@/lib/types';
 
 const prospectFormSchema = z.object({
   name: z.string().min(1, 'Le nom est requis'),
@@ -92,6 +93,20 @@ export default function Pipeline() {
   } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [dealToDelete, setDealToDelete] = useState<string | null>(null);
+  const [contactSheetOpen, setContactSheetOpen] = useState(false);
+  const [selectedProspectForContact, setSelectedProspectForContact] = useState<{
+    id: string;
+    accountName: string;
+    contactName: string;
+    contactEmail?: string | null;
+    contactPhone?: string | null;
+    amount: string;
+    probability: number;
+    stage: DealStage;
+    score?: string | null;
+    prospectStatus?: ProspectStatus | null;
+    daysInStage: number;
+  } | null>(null);
   const { toast } = useToast();
 
   const form = useForm<ProspectFormValues>({
@@ -265,6 +280,7 @@ export default function Pipeline() {
       accountName: deal.accountName || prospectInfo.companyName || deal.name || 'Prospect',
       contactName: deal.contactName || prospectInfo.contactName || 'Contact inconnu',
       contactEmail: deal.contactEmail || prospectInfo.contactEmail || null,
+      contactPhone: deal.contactPhone || null,
       amount: deal.amount,
       probability: deal.probability,
       stage: deal.stage,
@@ -329,6 +345,23 @@ export default function Pipeline() {
       stage: deal.stage,
     });
     setEmailDialogOpen(true);
+  };
+
+  const handleEditContactClick = (deal: {
+    id: string;
+    accountName: string;
+    contactName: string;
+    contactEmail?: string | null;
+    contactPhone?: string | null;
+    amount: string;
+    probability: number;
+    stage: DealStage;
+    score?: string | null;
+    prospectStatus?: ProspectStatus | null;
+    daysInStage: number;
+  }) => {
+    setSelectedProspectForContact(deal);
+    setContactSheetOpen(true);
   };
 
   if (dealsLoading) {
@@ -613,7 +646,7 @@ export default function Pipeline() {
 
       <PipelineMetrics />
 
-      <PipelineBoard deals={filteredDeals} onDealMove={handleDealMove} onEmailClick={handleEmailClick} onDelete={handleDeleteClick} />
+      <PipelineBoard deals={filteredDeals} onDealMove={handleDealMove} onEmailClick={handleEmailClick} onDelete={handleDeleteClick} onEditContact={handleEditContactClick} />
 
       {/* Lost Reason Dialog */}
       <Dialog open={lostReasonDialogOpen} onOpenChange={(open) => {
@@ -741,6 +774,13 @@ export default function Pipeline() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Prospect Contact Sheet */}
+      <ProspectContactSheet
+        open={contactSheetOpen}
+        onOpenChange={setContactSheetOpen}
+        prospect={selectedProspectForContact}
+      />
     </div>
   );
 }

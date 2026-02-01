@@ -2,7 +2,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
-import { GripVertical, Calendar, TrendingUp, Clock, AlertCircle, FileEdit, PhoneCall, XCircle, Mail, Trash2 } from 'lucide-react';
+import { GripVertical, Calendar, TrendingUp, Clock, AlertCircle, FileEdit, PhoneCall, XCircle, Mail, Trash2, UserPen } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +22,7 @@ interface DealCardDeal {
   accountName: string;
   contactName: string;
   contactEmail?: string | null;
+  contactPhone?: string | null;
   amount: string;
   probability: number;
   nextAction?: string | null;
@@ -52,6 +53,7 @@ interface DealCardProps {
   deal: DealCardDeal;
   onEmailClick?: (deal: DealCardDeal) => void;
   onDelete?: (dealId: string) => void;
+  onEditContact?: (deal: DealCardDeal) => void;
 }
 
 const getProbabilityColor = (probability: number) => {
@@ -66,7 +68,7 @@ const getDaysColor = (days: number) => {
   return 'text-red-500';
 };
 
-export function DealCard({ deal, onEmailClick, onDelete }: DealCardProps) {
+export function DealCard({ deal, onEmailClick, onDelete, onEditContact }: DealCardProps) {
   const [, navigate] = useLocation();
   const {
     attributes,
@@ -233,6 +235,25 @@ export function DealCard({ deal, onEmailClick, onDelete }: DealCardProps) {
                     </TooltipTrigger>
                     <TooltipContent>Jours dans cette étape</TooltipContent>
                   </Tooltip>
+                  {onEditContact && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-primary hover:text-primary hover:bg-primary/10"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEditContact(deal);
+                          }}
+                          data-testid={`deal-edit-contact-btn-${deal.id}`}
+                        >
+                          <UserPen className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Fiche contact</TooltipContent>
+                    </Tooltip>
+                  )}
                   {onEmailClick && (
                     <Tooltip>
                       <TooltipTrigger asChild>

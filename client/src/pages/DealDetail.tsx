@@ -708,12 +708,12 @@ export default function DealDetail() {
         <div className="flex-1">
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-semibold" data-testid="text-deal-title">
-              {deal.name || account?.name || 'Opportunité'}
+              {account?.name || prospectInfo.companyName || 'Prospect'}
             </h1>
             <Badge className={`${stage.color} text-white`}>{stage.label}</Badge>
           </div>
           <p className="text-muted-foreground mt-1">
-            {account?.name || 'Aucun compte associé'}
+            {deal.name}
           </p>
         </div>
         <div className="flex gap-2">

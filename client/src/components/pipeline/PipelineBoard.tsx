@@ -25,6 +25,7 @@ interface PipelineDeal {
   accountName: string;
   contactName: string;
   contactEmail?: string | null;
+  contactPhone?: string | null;
   amount: string;
   probability: number;
   stage: DealStage;
@@ -43,11 +44,12 @@ interface PipelineBoardProps {
   onDealMove?: (dealId: string, newStage: DealStage) => void;
   onEmailClick?: (deal: PipelineDeal) => void;
   onDelete?: (dealId: string) => void;
+  onEditContact?: (deal: PipelineDeal) => void;
 }
 
 const stages: DealStage[] = ['prospect', 'meeting', 'proposal', 'audit', 'negotiation', 'won', 'lost'];
 
-export function PipelineBoard({ deals, onDealMove, onEmailClick, onDelete }: PipelineBoardProps) {
+export function PipelineBoard({ deals, onDealMove, onEmailClick, onDelete, onEditContact }: PipelineBoardProps) {
   const [localDeals, setLocalDeals] = useState(deals);
   const [activeDeal, setActiveDeal] = useState<PipelineDeal | null>(null);
 
@@ -108,6 +110,7 @@ export function PipelineBoard({ deals, onDealMove, onEmailClick, onDelete }: Pip
               totalValue={getTotalValue(stage)}
               onEmailClick={onEmailClick}
               onDelete={onDelete}
+              onEditContact={onEditContact}
             />
           ))}
         </div>
