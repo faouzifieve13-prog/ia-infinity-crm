@@ -184,16 +184,23 @@ export default function DealDetail() {
   });
 
   // Helper pour extraire les infos prospect depuis les notes (compatibilité avec anciens prospects)
-  const getProspectInfo = (deal: Deal | undefined): { companyName?: string; contactName?: string; contactEmail?: string } => {
+  const getProspectInfo = (deal: Deal | undefined): { companyName?: string; contactName?: string; contactEmail?: string; meetingNotes?: string } => {
     if (!deal?.notes) return {};
     try {
       return JSON.parse(deal.notes);
     } catch (e) {
-      return {};
+      // Si ce n'est pas du JSON, c'est probablement d'anciennes notes textuelles
+      return { meetingNotes: deal.notes };
     }
   };
 
   const prospectInfo = getProspectInfo(deal);
+
+  // Extraire les notes de compte rendu depuis le JSON
+  const getMeetingNotes = (deal: Deal | undefined): string => {
+    const info = getProspectInfo(deal);
+    return info.meetingNotes || '';
+  };
 
   const { data: allDocuments = [] } = useQuery<Document[]>({
     queryKey: ['/api/documents'],
@@ -246,8 +253,9 @@ export default function DealDetail() {
   // Update form when deal loads - must be in useEffect to avoid setState during render
   useEffect(() => {
     if (deal && !form.formState.isDirty) {
+      const meetingNotes = getMeetingNotes(deal);
       const currentValues = form.getValues();
-      if (currentValues.notes !== (deal.notes || '') ||
+      if (currentValues.notes !== meetingNotes ||
           currentValues.loomVideoUrl !== (deal.loomVideoUrl || '') ||
           currentValues.nextAction !== (deal.nextAction || '') ||
           currentValues.probability !== String(deal.probability) ||
@@ -255,7 +263,7 @@ export default function DealDetail() {
           currentValues.contactPhone !== (deal.contactPhone || '') ||
           currentValues.contactEmail !== (deal.contactEmail || '')) {
         form.reset({
-          notes: deal.notes || '',
+          notes: meetingNotes,
           loomVideoUrl: deal.loomVideoUrl || '',
           nextAction: deal.nextAction || '',
           probability: String(deal.probability),
@@ -269,8 +277,17 @@ export default function DealDetail() {
 
   const updateDealMutation = useMutation({
     mutationFn: async (data: DealFormValues) => {
+      // Préserver les infos du prospect et ajouter les notes de compte rendu
+      const existingProspectInfo = getProspectInfo(deal);
+      const updatedNotes = JSON.stringify({
+        companyName: existingProspectInfo.companyName || '',
+        contactName: existingProspectInfo.contactName || '',
+        contactEmail: existingProspectInfo.contactEmail || '',
+        meetingNotes: data.notes || '',
+      });
+
       const payload: Record<string, unknown> = {
-        notes: data.notes || null,
+        notes: updatedNotes,
         loomVideoUrl: data.loomVideoUrl || null,
         nextAction: data.nextAction || null,
         contactPhone: data.contactPhone || null,

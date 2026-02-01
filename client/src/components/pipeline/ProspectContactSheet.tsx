@@ -99,12 +99,29 @@ export function ProspectContactSheet({ open, onOpenChange, prospect }: ProspectC
     mutationFn: async (data: ContactFormValues) => {
       if (!prospect) throw new Error('Pas de prospect sélectionné');
 
+      // Récupérer le deal complet pour préserver les notes de compte rendu
+      const dealResponse = await apiRequest('GET', `/api/deals/${prospect.id}`);
+      const existingDeal = await dealResponse.json();
+
+      // Parser les notes existantes pour préserver meetingNotes
+      let existingMeetingNotes = '';
+      if (existingDeal.notes) {
+        try {
+          const parsed = JSON.parse(existingDeal.notes);
+          existingMeetingNotes = parsed.meetingNotes || '';
+        } catch (e) {
+          // Si ce n'est pas du JSON, c'est peut-être d'anciennes notes
+          existingMeetingNotes = existingDeal.notes;
+        }
+      }
+
       const response = await apiRequest('PATCH', `/api/deals/${prospect.id}`, {
         contactEmail: data.contactEmail || null,
         contactPhone: data.contactPhone || null,
         notes: JSON.stringify({
           companyName: data.companyName,
           contactName: data.contactName || '',
+          meetingNotes: existingMeetingNotes,
         }),
       });
       return response.json();
