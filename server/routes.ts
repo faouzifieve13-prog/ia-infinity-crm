@@ -1466,6 +1466,36 @@ ${cr.replace(/\n/g, '<br>')}
     }
   });
 
+  // AI-powered notes enhancement for deals
+  app.post("/api/deals/:id/enhance-notes", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const { notes, action, context } = req.body;
+
+      if (!notes || typeof notes !== 'string') {
+        return res.status(400).json({ error: "Notes are required" });
+      }
+
+      const validActions = ['structure', 'summarize', 'actions', 'improve'];
+      if (!action || !validActions.includes(action)) {
+        return res.status(400).json({ error: "Invalid action. Must be one of: structure, summarize, actions, improve" });
+      }
+
+      const deal = await storage.getDeal(req.params.id, orgId);
+      if (!deal) {
+        return res.status(404).json({ error: "Deal not found" });
+      }
+
+      const { enhanceNotes } = await import("./ai-scope-generator");
+      const result = await enhanceNotes(notes, action, context);
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("Enhance notes error:", error);
+      res.status(500).json({ error: error.message || "Failed to enhance notes" });
+    }
+  });
+
   app.patch("/api/deals/:id/stage", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);

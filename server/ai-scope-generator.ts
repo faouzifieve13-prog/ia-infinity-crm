@@ -160,3 +160,66 @@ export async function summarizeMeetingNotes(notes: string): Promise<string> {
     throw new Error(`Erreur lors du résumé: ${error.message}`);
   }
 }
+
+export type NotesAIAction = 'structure' | 'summarize' | 'actions' | 'improve';
+
+export interface NotesAIResult {
+  content: string;
+  action: NotesAIAction;
+}
+
+export async function enhanceNotes(
+  notes: string,
+  action: NotesAIAction,
+  context?: { companyName?: string; contactName?: string; dealName?: string }
+): Promise<NotesAIResult> {
+  const contextInfo = context
+    ? `\nContexte: Client "${context.companyName || 'Non spécifié'}", Contact: "${context.contactName || 'Non spécifié'}", Opportunité: "${context.dealName || 'Non spécifié'}"`
+    : '';
+
+  const prompts: Record<NotesAIAction, { system: string; user: string }> = {
+    structure: {
+      system: 'Tu es un assistant commercial expert en prise de notes. Tu structures et organises les notes de réunion de manière claire et professionnelle en français. Utilise du Markdown pour la mise en forme (titres ##, listes -, gras **).',
+      user: `Structure et organise ces notes de réunion de manière claire et professionnelle.${contextInfo}\n\nNotes brutes:\n${notes}\n\nRéponds uniquement avec les notes structurées en Markdown.`,
+    },
+    summarize: {
+      system: 'Tu es un assistant commercial. Tu résumes les notes de réunion de manière concise et percutante en français.',
+      user: `Résume ces notes de réunion en un paragraphe concis (3-5 phrases) qui capture l'essentiel.${contextInfo}\n\nNotes:\n${notes}\n\nRéponds uniquement avec le résumé.`,
+    },
+    actions: {
+      system: 'Tu es un assistant commercial expert en suivi client. Tu extrais les actions à faire et les prochaines étapes des notes de réunion.',
+      user: `Extrais les actions à faire et prochaines étapes de ces notes. Formate en liste Markdown avec des cases à cocher.${contextInfo}\n\nNotes:\n${notes}\n\nRéponds avec une liste formatée:\n## Actions à faire\n- [ ] Action 1\n- [ ] Action 2\n\n## Prochaines étapes\n- Étape 1\n- Étape 2`,
+    },
+    improve: {
+      system: 'Tu es un assistant commercial expert en rédaction. Tu améliores la rédaction des notes tout en conservant toutes les informations importantes. Utilise un style professionnel et clair.',
+      user: `Améliore la rédaction de ces notes tout en conservant toutes les informations. Corrige les fautes, améliore le style et la clarté.${contextInfo}\n\nNotes originales:\n${notes}\n\nRéponds uniquement avec les notes améliorées.`,
+    },
+  };
+
+  const prompt = prompts[action];
+  if (!prompt) {
+    throw new Error(`Action non supportée: ${action}`);
+  }
+
+  try {
+    const openai = getOpenAIClient();
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4.1',
+      messages: [
+        { role: 'system', content: prompt.system },
+        { role: 'user', content: prompt.user },
+      ],
+      max_completion_tokens: 1024,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error('Pas de réponse de l\'IA');
+    }
+
+    return { content, action };
+  } catch (error: any) {
+    console.error('Notes enhancement error:', error);
+    throw new Error(`Erreur lors de l'amélioration des notes: ${error.message}`);
+  }
+}

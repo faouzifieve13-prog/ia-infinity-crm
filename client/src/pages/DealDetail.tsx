@@ -37,7 +37,10 @@ import {
   Sparkles,
   RefreshCw,
   History,
-  Briefcase
+  Briefcase,
+  ListChecks,
+  Wand2,
+  AlignLeft
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -173,6 +176,7 @@ export default function DealDetail() {
     unitPrice: 0,
     vatRate: 20,
   });
+  const [aiNotesLoading, setAiNotesLoading] = useState(false);
 
   const { data: deal, isLoading: dealLoading } = useQuery<Deal>({
     queryKey: ['/api/deals', dealId],
@@ -581,6 +585,45 @@ export default function DealDetail() {
       toast({
         title: 'Erreur',
         description: error.message || 'Impossible de mettre à jour le statut.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const enhanceNotesMutation = useMutation({
+    mutationFn: async ({ action }: { action: 'structure' | 'summarize' | 'actions' | 'improve' }) => {
+      const currentNotes = form.getValues('notes');
+      if (!currentNotes?.trim()) {
+        throw new Error('Veuillez d\'abord ajouter des notes à améliorer');
+      }
+      const response = await apiRequest('POST', `/api/deals/${dealId}/enhance-notes`, {
+        notes: currentNotes,
+        action,
+        context: {
+          companyName: prospectInfo.companyName || account?.name,
+          contactName: prospectInfo.contactName || account?.contactName,
+          dealName: deal?.name,
+        },
+      });
+      return response.json();
+    },
+    onSuccess: (data: { content: string; action: string }) => {
+      form.setValue('notes', data.content, { shouldDirty: true });
+      const actionLabels: Record<string, string> = {
+        structure: 'Notes structurées',
+        summarize: 'Notes résumées',
+        actions: 'Actions extraites',
+        improve: 'Notes améliorées',
+      };
+      toast({
+        title: actionLabels[data.action] || 'Notes améliorées',
+        description: 'L\'IA a amélioré vos notes avec succès.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || 'Impossible d\'améliorer les notes.',
         variant: 'destructive',
       });
     },
@@ -1071,12 +1114,64 @@ export default function DealDetail() {
                     name="notes"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Compte rendu / Notes</FormLabel>
+                        <div className="flex items-center justify-between">
+                          <FormLabel>Compte rendu / Notes</FormLabel>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={enhanceNotesMutation.isPending || !field.value?.trim()}
+                                data-testid="button-ai-notes"
+                              >
+                                {enhanceNotesMutation.isPending ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Sparkles className="mr-2 h-4 w-4" />
+                                )}
+                                IA
+                                <ChevronDown className="ml-1 h-3 w-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => enhanceNotesMutation.mutate({ action: 'structure' })}
+                                data-testid="menu-ai-structure"
+                              >
+                                <AlignLeft className="mr-2 h-4 w-4" />
+                                Structurer les notes
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => enhanceNotesMutation.mutate({ action: 'improve' })}
+                                data-testid="menu-ai-improve"
+                              >
+                                <Wand2 className="mr-2 h-4 w-4" />
+                                Améliorer la rédaction
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => enhanceNotesMutation.mutate({ action: 'summarize' })}
+                                data-testid="menu-ai-summarize"
+                              >
+                                <FileText className="mr-2 h-4 w-4" />
+                                Résumer
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => enhanceNotesMutation.mutate({ action: 'actions' })}
+                                data-testid="menu-ai-actions"
+                              >
+                                <ListChecks className="mr-2 h-4 w-4" />
+                                Extraire les actions
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                         <FormControl>
-                          <Textarea 
+                          <Textarea
                             placeholder="Ajoutez vos notes de réunion, observations, points importants..."
                             className="min-h-[150px]"
-                            {...field} 
+                            {...field}
                             data-testid="input-deal-notes"
                           />
                         </FormControl>
