@@ -105,8 +105,9 @@ const stageConfig = {
   prospect: { label: 'Prospect', color: 'bg-slate-500' },
   meeting: { label: 'RDV', color: 'bg-blue-500' },
   proposal: { label: 'Proposition', color: 'bg-purple-500' },
-  audit: { label: 'Audit', color: 'bg-amber-500' },
+  audit: { label: 'Audit', color: 'bg-violet-500' },
   negotiation: { label: 'Négociation', color: 'bg-orange-500' },
+  pending_validation: { label: 'En attente de validation', color: 'bg-amber-500' },
   won: { label: 'Gagné', color: 'bg-emerald-500' },
   lost: { label: 'Perdu', color: 'bg-red-500' },
 };
@@ -124,6 +125,9 @@ const dealFormSchema = z.object({
   nextAction: z.string().optional(),
   probability: z.string().optional(),
   amount: z.string().optional(),
+  auditAmount: z.string().optional(),
+  developmentAmount: z.string().optional(),
+  recurringAmount: z.string().optional(),
   contactPhone: z.string().optional(),
   contactEmail: z.string().email('Email invalide').optional().or(z.literal('')),
 });
@@ -249,6 +253,9 @@ export default function DealDetail() {
       nextAction: '',
       probability: '10',
       amount: '0',
+      auditAmount: '0',
+      developmentAmount: '0',
+      recurringAmount: '0',
       contactPhone: '',
       contactEmail: '',
     },
@@ -264,6 +271,9 @@ export default function DealDetail() {
           currentValues.nextAction !== (deal.nextAction || '') ||
           currentValues.probability !== String(deal.probability) ||
           currentValues.amount !== (deal.amount || '0') ||
+          currentValues.auditAmount !== (deal.auditAmount || '0') ||
+          currentValues.developmentAmount !== (deal.developmentAmount || '0') ||
+          currentValues.recurringAmount !== (deal.recurringAmount || '0') ||
           currentValues.contactPhone !== (deal.contactPhone || '') ||
           currentValues.contactEmail !== (deal.contactEmail || '')) {
         form.reset({
@@ -272,6 +282,9 @@ export default function DealDetail() {
           nextAction: deal.nextAction || '',
           probability: String(deal.probability),
           amount: deal.amount || '0',
+          auditAmount: deal.auditAmount || '0',
+          developmentAmount: deal.developmentAmount || '0',
+          recurringAmount: deal.recurringAmount || '0',
           contactPhone: deal.contactPhone || '',
           contactEmail: deal.contactEmail || '',
         });
@@ -299,6 +312,9 @@ export default function DealDetail() {
         // Always include numeric fields with safe defaults
         probability: data.probability ? parseInt(data.probability, 10) : deal?.probability ?? 10,
         amount: data.amount || deal?.amount || '0',
+        auditAmount: String(data.auditAmount || '0'),
+        developmentAmount: String(data.developmentAmount || '0'),
+        recurringAmount: String(data.recurringAmount || '0'),
       };
       return apiRequest('PATCH', `/api/deals/${dealId}`, payload);
     },
@@ -755,6 +771,10 @@ export default function DealDetail() {
   const dealProjects = allProjects.filter(p => p.dealId === dealId || p.accountId === deal.accountId);
   const stage = stageConfig[deal.stage];
   const amountNum = parseFloat(deal.amount || '0');
+  const auditAmountNum = parseFloat(deal.auditAmount || '0');
+  const developmentAmountNum = parseFloat(deal.developmentAmount || '0');
+  const recurringAmountNum = parseFloat(deal.recurringAmount || '0');
+  const totalAmount = auditAmountNum + developmentAmountNum + recurringAmountNum;
   const isWonOrLost = deal.stage === 'won' || deal.stage === 'lost';
 
   return (
@@ -849,18 +869,47 @@ export default function DealDetail() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 mb-3">
               <div className="p-2 rounded-lg bg-primary/10">
                 <DollarSign className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Montant</p>
+                <p className="text-sm text-muted-foreground">Total estimé</p>
                 <p className="text-2xl font-bold" data-testid="text-deal-amount">
-                  {amountNum.toLocaleString('fr-FR')}€
+                  {(totalAmount > 0 ? totalAmount : amountNum).toLocaleString('fr-FR')}€
                 </p>
+              </div>
+            </div>
+            <div className="space-y-1.5 border-t pt-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-violet-500" />
+                  Audit
+                </span>
+                <span className="font-medium text-violet-600 dark:text-violet-400">
+                  {auditAmountNum.toLocaleString('fr-FR')}€
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  Développement
+                </span>
+                <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                  {developmentAmountNum.toLocaleString('fr-FR')}€
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-500" />
+                  Recurring
+                </span>
+                <span className="font-medium text-blue-600 dark:text-blue-400">
+                  {recurringAmountNum.toLocaleString('fr-FR')}€
+                </span>
               </div>
             </div>
           </CardContent>
@@ -879,12 +928,7 @@ export default function DealDetail() {
                 </p>
               </div>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
+            <div className="mt-4 flex items-center gap-3">
               <div className="p-2 rounded-lg bg-amber-500/10">
                 <Clock className="h-5 w-5 text-amber-500" />
               </div>
@@ -908,6 +952,17 @@ export default function DealDetail() {
                 <p className="text-sm text-muted-foreground">Documents</p>
                 <p className="text-2xl font-bold" data-testid="text-deal-docs">
                   {dealDocuments.length}
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-purple-500/10">
+                <Briefcase className="h-5 w-5 text-purple-500" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Projets</p>
+                <p className="text-2xl font-bold">
+                  {dealProjects.length}
                 </p>
               </div>
             </div>
@@ -993,22 +1048,25 @@ export default function DealDetail() {
             <CardContent>
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <FormField
                       control={form.control}
-                      name="amount"
+                      name="auditAmount"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Montant estimé (€)</FormLabel>
+                          <FormLabel className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-violet-500" />
+                            Audit (€)
+                          </FormLabel>
                           <FormControl>
                             <div className="relative">
-                              <DollarSign className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                              <Input 
-                                className="pl-9" 
-                                type="number" 
-                                placeholder="5000" 
-                                {...field} 
-                                data-testid="input-deal-amount" 
+                              <DollarSign className="absolute left-3 top-3 h-4 w-4 text-violet-500" />
+                              <Input
+                                className="pl-9"
+                                type="number"
+                                placeholder="0"
+                                {...field}
+                                data-testid="input-deal-audit-amount"
                               />
                             </div>
                           </FormControl>
@@ -1018,30 +1076,81 @@ export default function DealDetail() {
                     />
                     <FormField
                       control={form.control}
-                      name="probability"
+                      name="developmentAmount"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Probabilité (%)</FormLabel>
+                          <FormLabel className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                            Développement (€)
+                          </FormLabel>
                           <FormControl>
-                            <Select onValueChange={field.onChange} value={field.value}>
-                              <SelectTrigger data-testid="select-deal-probability">
-                                <SelectValue placeholder="Probabilité" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="10">10%</SelectItem>
-                                <SelectItem value="25">25%</SelectItem>
-                                <SelectItem value="50">50%</SelectItem>
-                                <SelectItem value="75">75%</SelectItem>
-                                <SelectItem value="90">90%</SelectItem>
-                                <SelectItem value="100">100%</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <div className="relative">
+                              <DollarSign className="absolute left-3 top-3 h-4 w-4 text-emerald-500" />
+                              <Input
+                                className="pl-9"
+                                type="number"
+                                placeholder="0"
+                                {...field}
+                                data-testid="input-deal-dev-amount"
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="recurringAmount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-blue-500" />
+                            Recurring (€)
+                          </FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <DollarSign className="absolute left-3 top-3 h-4 w-4 text-blue-500" />
+                              <Input
+                                className="pl-9"
+                                type="number"
+                                placeholder="0"
+                                {...field}
+                                data-testid="input-deal-recurring-amount"
+                              />
+                            </div>
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
                   </div>
+
+                  <FormField
+                    control={form.control}
+                    name="probability"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Probabilité (%)</FormLabel>
+                        <FormControl>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <SelectTrigger data-testid="select-deal-probability">
+                              <SelectValue placeholder="Probabilité" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="10">10%</SelectItem>
+                              <SelectItem value="25">25%</SelectItem>
+                              <SelectItem value="50">50%</SelectItem>
+                              <SelectItem value="75">75%</SelectItem>
+                              <SelectItem value="90">90%</SelectItem>
+                              <SelectItem value="100">100%</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
                   <FormField
                     control={form.control}

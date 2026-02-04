@@ -1,4 +1,4 @@
-import { useSortable } from '@dnd-kit/sortable';
+import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
@@ -24,6 +24,9 @@ interface DealCardDeal {
   contactEmail?: string | null;
   contactPhone?: string | null;
   amount: string;
+  auditAmount?: string | null;
+  developmentAmount?: string | null;
+  recurringAmount?: string | null;
   probability: number;
   nextAction?: string | null;
   daysInStage: number;
@@ -75,9 +78,10 @@ export function DealCard({ deal, onEmailClick, onDelete, onEditContact }: DealCa
     listeners,
     setNodeRef,
     transform,
-    transition,
     isDragging,
-  } = useSortable({ id: deal.id });
+  } = useDraggable({ id: deal.id });
+
+  const transition = undefined; // useDraggable doesn't provide transition
 
   const handleCardClick = (e: React.MouseEvent) => {
     // Don't navigate if clicking on the drag handle
@@ -99,6 +103,12 @@ export function DealCard({ deal, onEmailClick, onDelete, onEditContact }: DealCa
     .toUpperCase();
 
   const amountNum = typeof deal.amount === 'string' ? parseFloat(deal.amount) : deal.amount;
+  const auditAmountNum = deal.auditAmount ? parseFloat(deal.auditAmount) : 0;
+  const developmentAmountNum = deal.developmentAmount ? parseFloat(deal.developmentAmount) : 0;
+  const recurringAmountNum = deal.recurringAmount ? parseFloat(deal.recurringAmount) : 0;
+  const totalDetailedAmount = auditAmountNum + developmentAmountNum + recurringAmountNum;
+  const hasDetailedAmounts = totalDetailedAmount > 0;
+  const displayTotal = hasDetailedAmounts ? totalDetailedAmount : amountNum;
 
   return (
     <motion.div
@@ -123,9 +133,7 @@ export function DealCard({ deal, onEmailClick, onDelete, onEditContact }: DealCa
               {...attributes}
               {...listeners}
               onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="mt-1 cursor-grab text-muted-foreground/50 hover:text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+              className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-muted-foreground transition-opacity"
               data-testid={`deal-drag-handle-${deal.id}`}
             >
               <GripVertical className="h-4 w-4 pointer-events-none" />
@@ -145,9 +153,24 @@ export function DealCard({ deal, onEmailClick, onDelete, onEditContact }: DealCa
                     {deal.accountName}
                   </h4>
                 </div>
-                <Badge variant="secondary" className="font-bold text-xs shrink-0 bg-primary/10 text-primary border-0">
-                  {amountNum.toLocaleString('fr-FR')}€
-                </Badge>
+                <div className="flex flex-col gap-0.5 items-end shrink-0">
+                  <Badge variant="secondary" className="font-bold text-xs bg-primary/10 text-primary border-0">
+                    {displayTotal.toLocaleString('fr-FR')}€
+                  </Badge>
+                  {hasDetailedAmounts && (
+                    <div className="flex gap-1">
+                      {auditAmountNum > 0 && (
+                        <span className="text-[9px] text-violet-500 font-medium">A:{auditAmountNum.toLocaleString('fr-FR')}</span>
+                      )}
+                      {developmentAmountNum > 0 && (
+                        <span className="text-[9px] text-emerald-500 font-medium">D:{developmentAmountNum.toLocaleString('fr-FR')}</span>
+                      )}
+                      {recurringAmountNum > 0 && (
+                        <span className="text-[9px] text-blue-500 font-medium">R:{recurringAmountNum.toLocaleString('fr-FR')}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
               <p className="text-xs text-muted-foreground truncate mb-1">
                 {deal.contactName}

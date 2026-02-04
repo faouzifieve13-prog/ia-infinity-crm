@@ -1,5 +1,4 @@
 import { useDroppable } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Badge } from '@/components/ui/badge';
 import { DealCard } from './DealCard';
 import type { DealStage, ProspectStatus } from '@/lib/types';
@@ -18,6 +17,9 @@ interface ColumnDeal {
   contactEmail?: string | null;
   contactPhone?: string | null;
   amount: string;
+  auditAmount?: string | null;
+  developmentAmount?: string | null;
+  recurringAmount?: string | null;
   probability: number;
   stage: DealStage;
   nextAction?: string | null;
@@ -40,13 +42,14 @@ interface PipelineColumnProps {
 }
 
 const stageConfig: Record<DealStage, { label: string; color: string }> = {
-  prospect: { label: 'Prospect', color: 'bg-pipeline-prospect' },
-  meeting: { label: 'Meeting', color: 'bg-pipeline-meeting' },
-  proposal: { label: 'Proposal', color: 'bg-pipeline-proposal' },
-  audit: { label: 'Audit', color: 'bg-pipeline-audit' },
-  negotiation: { label: 'Negotiation', color: 'bg-pipeline-negotiation' },
-  won: { label: 'Won', color: 'bg-pipeline-won' },
-  lost: { label: 'Lost', color: 'bg-pipeline-lost' },
+  prospect: { label: 'Prospect', color: 'bg-slate-500' },
+  meeting: { label: 'Meeting', color: 'bg-blue-500' },
+  proposal: { label: 'Proposal', color: 'bg-purple-500' },
+  audit: { label: 'Audit', color: 'bg-violet-500' },
+  negotiation: { label: 'Negotiation', color: 'bg-orange-500' },
+  pending_validation: { label: 'En attente de validation', color: 'bg-amber-500' },
+  won: { label: 'Won', color: 'bg-emerald-500' },
+  lost: { label: 'Lost', color: 'bg-red-500' },
 };
 
 export function PipelineColumn({ stage, deals, totalValue, onEmailClick, onDelete, onEditContact }: PipelineColumnProps) {
@@ -77,11 +80,9 @@ export function PipelineColumn({ stage, deals, totalValue, onEmailClick, onDelet
           isOver ? 'bg-accent/50' : 'bg-muted/30'
         }`}
       >
-        <SortableContext items={deals.map(d => d.id)} strategy={verticalListSortingStrategy}>
-          {deals.map((deal) => (
-            <DealCard key={deal.id} deal={deal} onEmailClick={onEmailClick} onDelete={onDelete} onEditContact={onEditContact} />
-          ))}
-        </SortableContext>
+        {deals.map((deal) => (
+          <DealCard key={deal.id} deal={deal} onEmailClick={onEmailClick} onDelete={onDelete} onEditContact={onEditContact} />
+        ))}
       </div>
     </div>
   );

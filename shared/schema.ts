@@ -6,7 +6,7 @@ import { relations } from "drizzle-orm";
 
 export const userRoleEnum = pgEnum('user_role', ['admin', 'sales', 'delivery', 'finance', 'client_admin', 'client_member', 'vendor']);
 export const spaceEnum = pgEnum('space', ['internal', 'client', 'vendor']);
-export const dealStageEnum = pgEnum('deal_stage', ['prospect', 'meeting', 'proposal', 'audit', 'negotiation', 'won', 'lost']);
+export const dealStageEnum = pgEnum('deal_stage', ['prospect', 'meeting', 'proposal', 'audit', 'negotiation', 'pending_validation', 'won', 'lost']);
 export const projectStatusEnum = pgEnum('project_status', ['active', 'on_hold', 'completed', 'cancelled', 'archived']);
 export const taskStatusEnum = pgEnum('task_status', ['pending', 'in_progress', 'review', 'completed']);
 export const taskPriorityEnum = pgEnum('task_priority', ['low', 'medium', 'high', 'urgent']);
@@ -117,6 +117,9 @@ export const deals = pgTable("deals", {
   ownerId: varchar("owner_id").references(() => users.id),
   name: text("name").notNull().default('Nouvelle opportunité'),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull().default("0"),
+  auditAmount: decimal("audit_amount", { precision: 12, scale: 2 }).default("0"),
+  developmentAmount: decimal("development_amount", { precision: 12, scale: 2 }).default("0"),
+  recurringAmount: decimal("recurring_amount", { precision: 12, scale: 2 }).default("0"),
   probability: integer("probability").notNull().default(0),
   stage: dealStageEnum("stage").notNull().default('prospect'),
   missionTypes: text("mission_types").array().default(sql`ARRAY[]::text[]`),

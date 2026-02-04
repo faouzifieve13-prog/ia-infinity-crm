@@ -46,6 +46,9 @@ interface ProspectContactSheetProps {
     contactEmail?: string | null;
     contactPhone?: string | null;
     amount: string;
+    auditAmount?: string | null;
+    developmentAmount?: string | null;
+    recurringAmount?: string | null;
     probability: number;
     stage: DealStage;
     score?: string | null;
@@ -150,6 +153,10 @@ export function ProspectContactSheet({ open, onOpenChange, prospect }: ProspectC
   if (!prospect) return null;
 
   const amountNum = typeof prospect.amount === 'string' ? parseFloat(prospect.amount) : prospect.amount;
+  const auditAmountNum = prospect.auditAmount ? parseFloat(prospect.auditAmount) : 0;
+  const developmentAmountNum = prospect.developmentAmount ? parseFloat(prospect.developmentAmount) : 0;
+  const recurringAmountNum = prospect.recurringAmount ? parseFloat(prospect.recurringAmount) : 0;
+  const hasDetailedAmounts = auditAmountNum > 0 || developmentAmountNum > 0 || recurringAmountNum > 0;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -172,9 +179,29 @@ export function ProspectContactSheet({ open, onOpenChange, prospect }: ProspectC
           {/* Info badges */}
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline">{stageLabels[prospect.stage]}</Badge>
-            <Badge variant="secondary" className="bg-primary/10 text-primary">
-              {amountNum.toLocaleString('fr-FR')}€
-            </Badge>
+            {hasDetailedAmounts ? (
+              <>
+                {auditAmountNum > 0 && (
+                  <Badge variant="secondary" className="bg-violet-500/15 text-violet-600 dark:text-violet-400">
+                    Audit: {auditAmountNum.toLocaleString('fr-FR')}€
+                  </Badge>
+                )}
+                {developmentAmountNum > 0 && (
+                  <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                    Dev: {developmentAmountNum.toLocaleString('fr-FR')}€
+                  </Badge>
+                )}
+                {recurringAmountNum > 0 && (
+                  <Badge variant="secondary" className="bg-blue-500/15 text-blue-600 dark:text-blue-400">
+                    Recurring: {recurringAmountNum.toLocaleString('fr-FR')}€
+                  </Badge>
+                )}
+              </>
+            ) : (
+              <Badge variant="secondary" className="bg-primary/10 text-primary">
+                {amountNum.toLocaleString('fr-FR')}€
+              </Badge>
+            )}
             <Badge variant="outline" className="text-muted-foreground">
               {prospect.daysInStage}j dans cette étape
             </Badge>

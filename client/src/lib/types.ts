@@ -1,6 +1,6 @@
 export type UserRole = 'admin' | 'sales' | 'delivery' | 'finance' | 'client_admin' | 'client_member' | 'vendor';
 export type Space = 'internal' | 'client' | 'vendor';
-export type DealStage = 'prospect' | 'meeting' | 'proposal' | 'audit' | 'negotiation' | 'won' | 'lost';
+export type DealStage = 'prospect' | 'meeting' | 'proposal' | 'audit' | 'negotiation' | 'pending_validation' | 'won' | 'lost';
 export type ProjectStatus = 'active' | 'on_hold' | 'completed' | 'cancelled' | 'archived';
 export type TaskStatus = 'pending' | 'in_progress' | 'review' | 'completed';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
@@ -70,6 +70,9 @@ export interface Deal {
   ownerId: string;
   name: string;
   amount: string;
+  auditAmount?: string | null;
+  developmentAmount?: string | null;
+  recurringAmount?: string | null;
   probability: number;
   stage: DealStage;
   missionTypes?: string[] | null;

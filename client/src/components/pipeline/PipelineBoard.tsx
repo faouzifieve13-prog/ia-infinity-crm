@@ -27,6 +27,9 @@ interface PipelineDeal {
   contactEmail?: string | null;
   contactPhone?: string | null;
   amount: string;
+  auditAmount?: string | null;
+  developmentAmount?: string | null;
+  recurringAmount?: string | null;
   probability: number;
   stage: DealStage;
   nextAction?: string | null;
@@ -47,7 +50,23 @@ interface PipelineBoardProps {
   onEditContact?: (deal: PipelineDeal) => void;
 }
 
-const stages: DealStage[] = ['prospect', 'meeting', 'proposal', 'audit', 'negotiation', 'won', 'lost'];
+// Stages affichés dans le pipeline
+const displayStages: DealStage[] = ['prospect', 'audit', 'pending_validation', 'won', 'lost'];
+
+// Toutes les étapes valides (pour le drag & drop)
+const allValidStages: DealStage[] = ['prospect', 'meeting', 'proposal', 'audit', 'negotiation', 'pending_validation', 'won', 'lost'];
+
+// Mapping des anciennes étapes vers les nouvelles pour l'affichage
+const stageMapping: Record<DealStage, DealStage> = {
+  'prospect': 'prospect',
+  'meeting': 'prospect',      // Les anciens RDV vont dans Prospect
+  'proposal': 'audit',        // Les anciennes propositions vont dans Audit
+  'audit': 'audit',
+  'negotiation': 'pending_validation', // Les négociations vont dans En attente
+  'pending_validation': 'pending_validation',
+  'won': 'won',
+  'lost': 'lost',
+};
 
 export function PipelineBoard({ deals, onDealMove, onEmailClick, onDelete, onEditContact }: PipelineBoardProps) {
   const [localDeals, setLocalDeals] = useState(deals);
@@ -77,7 +96,7 @@ export function PipelineBoard({ deals, onDealMove, onEmailClick, onDelete, onEdi
     const dealId = active.id as string;
     const newStage = over.id as DealStage;
 
-    if (stages.includes(newStage)) {
+    if (allValidStages.includes(newStage)) {
       setLocalDeals((prev) =>
         prev.map((deal) =>
           deal.id === dealId ? { ...deal, stage: newStage } : deal
@@ -88,11 +107,19 @@ export function PipelineBoard({ deals, onDealMove, onEmailClick, onDelete, onEdi
     }
   };
 
-  const getDealsByStage = (stage: DealStage) =>
-    localDeals.filter((deal) => deal.stage === stage);
+  // Récupère les deals pour une étape affichée (inclut les anciennes étapes mappées)
+  const getDealsByStage = (displayStage: DealStage) =>
+    localDeals.filter((deal) => stageMapping[deal.stage] === displayStage);
 
-  const getTotalValue = (stage: DealStage) =>
-    getDealsByStage(stage).reduce((sum, deal) => sum + parseFloat(deal.amount), 0);
+  const getTotalValue = (displayStage: DealStage) =>
+    getDealsByStage(displayStage).reduce((sum, deal) => {
+      const auditAmount = deal.auditAmount ? parseFloat(deal.auditAmount) : 0;
+      const developmentAmount = deal.developmentAmount ? parseFloat(deal.developmentAmount) : 0;
+      const recurringAmount = deal.recurringAmount ? parseFloat(deal.recurringAmount) : 0;
+      const detailedTotal = auditAmount + developmentAmount + recurringAmount;
+      // Use detailed amounts if available, otherwise fall back to legacy amount field
+      return sum + (detailedTotal > 0 ? detailedTotal : parseFloat(deal.amount));
+    }, 0);
 
   return (
     <DndContext
@@ -102,7 +129,7 @@ export function PipelineBoard({ deals, onDealMove, onEmailClick, onDelete, onEdi
     >
       <ScrollArea className="w-full">
         <div className="flex gap-4 pb-4" data-testid="pipeline-board">
-          {stages.map((stage) => (
+          {displayStages.map((stage) => (
             <PipelineColumn
               key={stage}
               stage={stage}

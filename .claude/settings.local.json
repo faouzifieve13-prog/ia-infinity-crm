@@ -6,7 +6,16 @@
       "Bash(npm run db:push:*)",
       "Bash(timeout 15 npm run dev:*)",
       "Bash(npm run check:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(git checkout:*)",
+      "Bash(nslookup:*)",
+      "Bash(host:*)",
+      "Bash(export DATABASE_URL=\"postgresql://postgres.wcukrnynmhadxyzoljyw:Marseille.13006!@aws-1-eu-west-1.pooler.supabase.com:6543/postgres\")",
+      "Bash(export NEON_URL=\"$DATABASE_URL\")",
+      "Bash(psql:*)",
+      "Bash(export SUPABASE_URL=\"postgresql://postgres.wcukrnynmhadxyzoljyw:Marseille.13006!@aws-1-eu-west-1.pooler.supabase.com:6543/postgres\")",
+      "Bash(PGPASSWORD='Marseille.13006!' psql:*)",
+      "Bash(PGPASSWORD='[Marseille.13006!]' psql:*)"
     ]
   }
 }

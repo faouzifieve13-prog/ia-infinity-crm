@@ -58,6 +58,9 @@ const prospectFormSchema = z.object({
   contactEmail: z.string().email('Email invalide').optional().or(z.literal('')),
   contactPhone: z.string().optional(),
   amount: z.string().optional(),
+  auditAmount: z.string().optional(),
+  developmentAmount: z.string().optional(),
+  recurringAmount: z.string().optional(),
   probability: z.string().optional(),
   nextAction: z.string().optional(),
   missionTypes: z.array(z.string()).default([]),
@@ -79,6 +82,7 @@ interface DealWithRelations extends Deal {
 export default function Pipeline() {
   const [ownerFilter, setOwnerFilter] = useState<string>('all');
   const [scoreFilter, setScoreFilter] = useState<string>('all');
+  const [stageFilter, setStageFilter] = useState<string>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [lostReasonDialogOpen, setLostReasonDialogOpen] = useState(false);
   const [pendingDealMove, setPendingDealMove] = useState<{ dealId: string; newStage: DealStage } | null>(null);
@@ -118,6 +122,9 @@ export default function Pipeline() {
       contactEmail: '',
       contactPhone: '',
       amount: '',
+      auditAmount: '',
+      developmentAmount: '',
+      recurringAmount: '',
       probability: '10',
       nextAction: '',
       missionTypes: [],
@@ -140,6 +147,10 @@ export default function Pipeline() {
     queryKey: ['/api/accounts'],
   });
 
+  const { data: users = [] } = useQuery<{ id: string; name: string; email: string }[]>({
+    queryKey: ['/api/users'],
+  });
+
   const createProspectMutation = useMutation({
     mutationFn: async (data: ProspectFormValues) => {
       // Ne pas créer de compte client pour un prospect
@@ -148,6 +159,9 @@ export default function Pipeline() {
         name: data.name,
         accountId: null, // Pas de compte pour un prospect
         amount: data.amount || '0',
+        auditAmount: String(data.auditAmount || '0'),
+        developmentAmount: String(data.developmentAmount || '0'),
+        recurringAmount: String(data.recurringAmount || '0'),
         probability: data.probability ? parseInt(data.probability) : 10,
         stage: 'prospect',
         missionTypes: data.missionTypes || [],
@@ -282,6 +296,9 @@ export default function Pipeline() {
       contactEmail: deal.contactEmail || prospectInfo.contactEmail || null,
       contactPhone: deal.contactPhone || null,
       amount: deal.amount,
+      auditAmount: deal.auditAmount,
+      developmentAmount: deal.developmentAmount,
+      recurringAmount: deal.recurringAmount,
       probability: deal.probability,
       stage: deal.stage,
       nextAction: deal.nextAction,
@@ -300,9 +317,22 @@ export default function Pipeline() {
     };
   });
 
+  // Mapping des anciennes étapes vers les nouvelles pour le filtrage
+  const stageMapping: Record<string, string> = {
+    'prospect': 'prospect',
+    'meeting': 'prospect',
+    'proposal': 'audit',
+    'audit': 'audit',
+    'negotiation': 'pending_validation',
+    'pending_validation': 'pending_validation',
+    'won': 'won',
+    'lost': 'lost',
+  };
+
   const filteredDeals = dealsWithRelations
     .filter((deal) => ownerFilter === 'all' || deal.owner.id === ownerFilter)
-    .filter((deal) => scoreFilter === 'all' || deal.score === scoreFilter);
+    .filter((deal) => scoreFilter === 'all' || deal.score === scoreFilter)
+    .filter((deal) => stageFilter === 'all' || stageMapping[deal.stage] === stageFilter);
 
   const handleDealMove = (dealId: string, newStage: DealStage) => {
     console.log(`Deal ${dealId} moved to stage ${newStage}`);
@@ -381,6 +411,20 @@ export default function Pipeline() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Select value={stageFilter} onValueChange={setStageFilter}>
+            <SelectTrigger className="w-44" data-testid="select-stage-filter">
+              <SelectValue placeholder="Phase" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes les phases</SelectItem>
+              <SelectItem value="prospect">Prospect</SelectItem>
+              <SelectItem value="audit">Audit</SelectItem>
+              <SelectItem value="pending_validation">En attente</SelectItem>
+              <SelectItem value="won">Won</SelectItem>
+              <SelectItem value="lost">Lost</SelectItem>
+            </SelectContent>
+          </Select>
+
           <Select value={scoreFilter} onValueChange={setScoreFilter}>
             <SelectTrigger className="w-32" data-testid="select-score-filter">
               <SelectValue placeholder="Score" />
@@ -395,20 +439,32 @@ export default function Pipeline() {
 
           <Select value={ownerFilter} onValueChange={setOwnerFilter}>
             <SelectTrigger className="w-40" data-testid="select-owner-filter">
-              <SelectValue placeholder="Filter by owner" />
+              <SelectValue placeholder="Propriétaire" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Owners</SelectItem>
+              <SelectItem value="all">Tous</SelectItem>
+              {users.map((user) => (
+                <SelectItem key={user.id} value={user.id}>
+                  {user.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
 
-          <Button variant="outline" size="icon" data-testid="button-filter">
-            <Filter className="h-4 w-4" />
-          </Button>
-
-          <Button variant="outline" size="icon" data-testid="button-export">
-            <Download className="h-4 w-4" />
-          </Button>
+          {(stageFilter !== 'all' || scoreFilter !== 'all' || ownerFilter !== 'all') && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setStageFilter('all');
+                setScoreFilter('all');
+                setOwnerFilter('all');
+              }}
+              data-testid="button-reset-filters"
+            >
+              Réinitialiser
+            </Button>
+          )}
 
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
@@ -502,17 +558,17 @@ export default function Pipeline() {
                       </FormItem>
                     )}
                   />
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-3">
                     <FormField
                       control={form.control}
-                      name="amount"
+                      name="auditAmount"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Montant estimé (€)</FormLabel>
+                          <FormLabel>Audit (€)</FormLabel>
                           <FormControl>
                             <div className="relative">
-                              <DollarSign className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                              <Input className="pl-9" type="number" placeholder="5000" {...field} data-testid="input-prospect-amount" />
+                              <DollarSign className="absolute left-3 top-3 h-4 w-4 text-violet-500" />
+                              <Input className="pl-9" type="number" placeholder="0" {...field} data-testid="input-prospect-audit-amount" />
                             </div>
                           </FormControl>
                           <FormMessage />
@@ -521,29 +577,61 @@ export default function Pipeline() {
                     />
                     <FormField
                       control={form.control}
-                      name="probability"
+                      name="developmentAmount"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Probabilité (%)</FormLabel>
+                          <FormLabel>Développement (€)</FormLabel>
                           <FormControl>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                              <SelectTrigger data-testid="select-prospect-probability">
-                                <SelectValue placeholder="Probabilité" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="10">10%</SelectItem>
-                                <SelectItem value="25">25%</SelectItem>
-                                <SelectItem value="50">50%</SelectItem>
-                                <SelectItem value="75">75%</SelectItem>
-                                <SelectItem value="90">90%</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <div className="relative">
+                              <DollarSign className="absolute left-3 top-3 h-4 w-4 text-emerald-500" />
+                              <Input className="pl-9" type="number" placeholder="0" {...field} data-testid="input-prospect-dev-amount" />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="recurringAmount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Recurring (€)</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <DollarSign className="absolute left-3 top-3 h-4 w-4 text-blue-500" />
+                              <Input className="pl-9" type="number" placeholder="0" {...field} data-testid="input-prospect-recurring-amount" />
+                            </div>
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
                   </div>
+                  <FormField
+                    control={form.control}
+                    name="probability"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Probabilité (%)</FormLabel>
+                        <FormControl>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <SelectTrigger data-testid="select-prospect-probability">
+                              <SelectValue placeholder="Probabilité" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="10">10%</SelectItem>
+                              <SelectItem value="25">25%</SelectItem>
+                              <SelectItem value="50">50%</SelectItem>
+                              <SelectItem value="75">75%</SelectItem>
+                              <SelectItem value="90">90%</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <FormField
                     control={form.control}
                     name="nextAction"
