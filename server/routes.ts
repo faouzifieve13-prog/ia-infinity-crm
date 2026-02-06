@@ -10044,5 +10044,29 @@ Adapte le ton et le contenu aux instructions fournies par le sous-traitant.`;
     });
   });
 
+  // ============================================
+  // SUPABASE INTEGRATION
+  // ============================================
+
+  app.get("/api/supabase/status", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      const { testSupabaseConnection } = await import("./supabase");
+      const result = await testSupabaseConnection();
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ connected: false, error: error.message });
+    }
+  });
+
+  app.get("/api/supabase/rls-policies", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      const { getRlsPoliciesSQL } = await import("./supabase");
+      const sql = getRlsPoliciesSQL();
+      res.json({ sql });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }
