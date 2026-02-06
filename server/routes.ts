@@ -40,6 +40,7 @@ import {
   getAllProjectsCalendarEvents,
   generateProjectMilestones,
   completeMilestone,
+  updateMilestone,
   createProjectCalendarEvent,
   updateProjectCalendarEvent,
   deleteProjectCalendarEvent,
@@ -1077,6 +1078,25 @@ ${cr.replace(/\n/g, '<br>')}
     } catch (error) {
       console.error("Complete milestone error:", error);
       res.status(500).json({ error: "Failed to complete milestone" });
+    }
+  });
+
+  // Update a milestone (e.g., change planned date)
+  app.patch("/api/milestones/:milestoneId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { milestoneId } = req.params;
+      const { plannedDate, status, notes } = req.body;
+
+      await updateMilestone(milestoneId, {
+        plannedDate: plannedDate ? new Date(plannedDate) : undefined,
+        status,
+        notes,
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Update milestone error:", error);
+      res.status(500).json({ error: "Failed to update milestone" });
     }
   });
 

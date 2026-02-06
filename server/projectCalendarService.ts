@@ -34,11 +34,12 @@ interface CalendarEventFilters {
 }
 
 interface MilestoneConfig {
+  daysToAudit: number;
   daysToV1: number;
-  daysToClientDelivery: number;
-  daysToClientMeeting: number;
-  daysToV2AfterMeeting: number;
-  daysToFinalDelivery: number;
+  daysToV2: number;
+  daysToImplementation: number;
+  daysToClientFeedback: number;
+  daysToFinalVersion: number;
 }
 
 interface CalendarEventResponse {
@@ -57,11 +58,12 @@ interface CalendarEventResponse {
 
 // Configuration par défaut des jalons (en jours)
 const DEFAULT_MILESTONE_CONFIG: MilestoneConfig = {
-  daysToV1: 7,              // V1 interne après 7 jours
-  daysToClientDelivery: 10, // Livraison client après 10 jours
-  daysToClientMeeting: 14,  // RDV client après 14 jours
-  daysToV2AfterMeeting: 5,  // V2 5 jours après le RDV
-  daysToFinalDelivery: 21,  // Livraison finale après 21 jours
+  daysToAudit: 3,           // Audit client après 3 jours
+  daysToV1: 10,             // Production V1 après 10 jours
+  daysToV2: 17,             // Production V2 après 17 jours
+  daysToImplementation: 21, // Implémentation client après 21 jours
+  daysToClientFeedback: 25, // Retour client après 25 jours
+  daysToFinalVersion: 30,   // Version finale après 30 jours
 };
 
 // ============================================================
@@ -287,9 +289,20 @@ export async function generateProjectMilestones(
     visibleToVendor: boolean;
   }> = [
     {
+      stage: "audit_client",
+      title: "Audit Client",
+      description: "Audit et analyse des besoins client",
+      daysOffset: config.daysToAudit,
+      eventType: "meeting",
+      color: "blue",
+      visibleToRoles: ["admin", "client", "vendor"],
+      visibleToClient: true,
+      visibleToVendor: true,
+    },
+    {
       stage: "production_v1",
-      title: "Production V1 - Livrable interne",
-      description: "Deadline de production de la première version par le sous-traitant",
+      title: "Production V1",
+      description: "Deadline de production de la première version",
       daysOffset: config.daysToV1,
       eventType: "deadline_internal",
       color: "yellow",
@@ -298,34 +311,10 @@ export async function generateProjectMilestones(
       visibleToVendor: true,
     },
     {
-      stage: "delivery_v1_client",
-      title: "Presentation V1 au Client",
-      description: "Livraison de la première version au client pour validation",
-      daysOffset: config.daysToClientDelivery,
-      eventType: "deadline_client",
-      color: "red",
-      visibleToRoles: ["admin", "client", "vendor"],
-      visibleToClient: true,
-      visibleToVendor: true,
-    },
-    {
-      stage: "client_meeting",
-      title: "Call de restitution Client",
-      description: "Rendez-vous de restitution avec le client pour collecter les retours",
-      daysOffset: config.daysToClientMeeting,
-      eventType: "meeting",
-      color: "blue",
-      visibleToRoles: ["admin", "client"],
-      visibleToClient: true,
-      visibleToVendor: false,
-    },
-    {
-      stage: "retouches_v2",
-      title: "V2 Corrections - Retouches",
-      description: "Deadline pour les corrections suite au retour client",
-      daysOffset: null, // Calculé dynamiquement après le RDV
-      triggeredBy: "client_meeting",
-      daysAfterTrigger: config.daysToV2AfterMeeting,
+      stage: "production_v2",
+      title: "Production V2",
+      description: "Deadline de production de la deuxième version avec corrections",
+      daysOffset: config.daysToV2,
       eventType: "deadline_internal",
       color: "yellow",
       visibleToRoles: ["admin", "vendor"],
@@ -333,12 +322,34 @@ export async function generateProjectMilestones(
       visibleToVendor: true,
     },
     {
-      stage: "final_delivery",
-      title: "Livraison Version Finale",
-      description: "Deadline de livraison de la version finale validée",
-      daysOffset: config.daysToFinalDelivery,
+      stage: "implementation_client",
+      title: "Implémentation Client",
+      description: "Déploiement et implémentation chez le client",
+      daysOffset: config.daysToImplementation,
       eventType: "deadline_client",
       color: "red",
+      visibleToRoles: ["admin", "client", "vendor"],
+      visibleToClient: true,
+      visibleToVendor: true,
+    },
+    {
+      stage: "client_feedback",
+      title: "Retour Client",
+      description: "Collecte des retours et feedbacks du client",
+      daysOffset: config.daysToClientFeedback,
+      eventType: "meeting",
+      color: "blue",
+      visibleToRoles: ["admin", "client"],
+      visibleToClient: true,
+      visibleToVendor: false,
+    },
+    {
+      stage: "final_version",
+      title: "Version Finale",
+      description: "Livraison de la version finale validée",
+      daysOffset: config.daysToFinalVersion,
+      eventType: "deadline_client",
+      color: "green",
       visibleToRoles: ["admin", "client", "vendor"],
       visibleToClient: true,
       visibleToVendor: true,
@@ -357,7 +368,7 @@ export async function generateProjectMilestones(
       } else if (def.triggeredBy && def.daysAfterTrigger) {
         // Pour les jalons déclenchés, on utilise une date placeholder
         // Elle sera mise à jour quand le jalon déclencheur sera complété
-        plannedDate = addDays(startDate, config.daysToClientMeeting + def.daysAfterTrigger);
+        plannedDate = addDays(startDate, config.daysToClientFeedback + def.daysAfterTrigger);
       } else {
         plannedDate = startDate;
       }
@@ -708,6 +719,41 @@ export async function updateProjectCalendarEvent(
  */
 export async function deleteProjectCalendarEvent(eventId: string): Promise<void> {
   await db.delete(projectCalendarEvents).where(eq(projectCalendarEvents.id, eventId));
+}
+
+/**
+ * Mettre à jour un jalon (principalement la date planifiée)
+ */
+export async function updateMilestone(
+  milestoneId: string,
+  data: Partial<{
+    plannedDate: Date;
+    status: string;
+    notes: string;
+  }>
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    // Mettre à jour le milestone
+    await tx
+      .update(deliveryMilestones)
+      .set({
+        ...data,
+        updatedAt: new Date(),
+      })
+      .where(eq(deliveryMilestones.id, milestoneId));
+
+    // Si la date planifiée a changé, mettre à jour l'événement calendrier associé
+    if (data.plannedDate) {
+      await tx
+        .update(projectCalendarEvents)
+        .set({
+          start: data.plannedDate,
+          end: data.plannedDate,
+          updatedAt: new Date(),
+        })
+        .where(eq(projectCalendarEvents.milestoneId, milestoneId));
+    }
+  });
 }
 
 /**

@@ -56,10 +56,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DeliveryWorkflow } from '@/components/projects/DeliveryWorkflow';
+import { ProjectDeadlineCalendar } from '@/components/projects/ProjectDeadlineCalendar';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useSpace } from '@/hooks/use-space';
-import type { Project, Account, Task, Document, Contact, User } from '@/lib/types';
+import type { Project, Account, Task, Document, Contact, User, DeliveryMilestone } from '@/lib/types';
 
 const statusConfig = {
   active: { label: 'Actif', variant: 'default' as const, color: 'bg-emerald-500' },
@@ -118,6 +119,8 @@ export default function ProjectDetail() {
   const [newDeliverableDescription, setNewDeliverableDescription] = useState('');
   const [newDeliverableType, setNewDeliverableType] = useState<'json' | 'pdf' | 'loom' | 'other'>('loom');
   const [newDeliverableUrl, setNewDeliverableUrl] = useState('');
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const { toast } = useToast();
   const { currentSpace } = useSpace();
 
@@ -173,6 +176,12 @@ export default function ProjectDetail() {
   // Project Deliverables (fichiers livrables)
   const { data: projectDeliverables = [] } = useQuery<{ id: string; title: string; description?: string; type: string; url?: string; fileName?: string; fileSize?: number; createdAt: string }[]>({
     queryKey: [`/api/projects/${projectId}/deliverables`],
+    enabled: !!projectId,
+  });
+
+  // Project Milestones (jalons)
+  const { data: projectMilestones = [] } = useQuery<DeliveryMilestone[]>({
+    queryKey: [`/api/projects/${projectId}/milestones`],
     enabled: !!projectId,
   });
 
@@ -916,6 +925,21 @@ export default function ProjectDetail() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Calendrier des deadlines */}
+          <ProjectDeadlineCalendar
+            project={project}
+            milestones={projectMilestones}
+            currentMonth={calendarMonth}
+            currentYear={calendarYear}
+            onMonthChange={(month, year) => {
+              setCalendarMonth(month);
+              setCalendarYear(year);
+            }}
+            onMilestonesUpdate={() => {
+              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/milestones`] });
+            }}
+          />
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">

@@ -180,6 +180,7 @@ const navCategories: NavCategory[] = [
     spaces: ['internal', 'client', 'vendor'],
     items: [
       { title: 'Vue Projets', url: '/projects', icon: FolderKanban, spaces: ['internal', 'client'] },
+      { title: 'Gestion CRM', url: '/projects/crm', icon: Calendar, spaces: ['internal'] },
       { title: 'Vue Projets', url: '/projects', icon: FolderKanban, spaces: ['vendor'] },
       { title: 'Mes Missions', url: '/missions', icon: UserCog, spaces: ['vendor'] },
     ],

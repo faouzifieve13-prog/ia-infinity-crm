@@ -1848,7 +1848,7 @@ export type InsertProjectCalendarEvent = z.infer<typeof insertProjectCalendarEve
 export type DeadlineAlert = typeof deadlineAlerts.$inferSelect;
 export type InsertDeadlineAlert = z.infer<typeof insertDeadlineAlertSchema>;
 
-export type MilestoneStage = 'production_v1' | 'delivery_v1_client' | 'client_meeting' | 'retouches_v2' | 'final_delivery';
+export type MilestoneStage = 'audit_client' | 'production_v1' | 'production_v2' | 'implementation_client' | 'client_feedback' | 'final_version';
 export type MilestoneStatus = 'pending' | 'in_progress' | 'completed' | 'overdue' | 'cancelled';
 export type ProjectEventType = 'deadline_internal' | 'deadline_client' | 'meeting' | 'milestone' | 'reminder' | 'delivery';
 export type ProjectEventColor = 'blue' | 'red' | 'yellow' | 'green' | 'gray';

@@ -58,6 +58,7 @@ import VendorChannels from "@/pages/VendorChannels";
 import VendorProjectDetail from "@/pages/VendorProjectDetail";
 import VendorProjects from "@/pages/VendorProjects";
 import ClientContracts from "@/pages/ClientContracts";
+import CRMProjectManagement from "@/pages/CRMProjectManagement";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -68,6 +69,7 @@ function Router() {
       <Route path="/deals" component={Pipeline} />
       <Route path="/deals/:id" component={DealDetail} />
       <Route path="/projects" component={Projects} />
+      <Route path="/projects/crm" component={CRMProjectManagement} />
       <Route path="/projects/:id" component={ProjectDetail} />
       <Route path="/tasks" component={Tasks} />
       <Route path="/accounts" component={Accounts} />

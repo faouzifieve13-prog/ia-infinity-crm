@@ -449,3 +449,51 @@ export interface ProjectDeliverable {
   createdById?: string | null;
   createdAt: string;
 }
+
+export type MilestoneStage = 'audit_client' | 'production_v1' | 'production_v2' | 'implementation_client' | 'client_feedback' | 'final_version';
+export type MilestoneStatus = 'pending' | 'in_progress' | 'completed' | 'overdue' | 'cancelled';
+
+export interface DeliveryMilestone {
+  id: string;
+  orgId: string;
+  projectId: string;
+  stage: MilestoneStage;
+  title: string;
+  description?: string | null;
+  plannedDate: string;
+  actualDate?: string | null;
+  status: MilestoneStatus;
+  assignedToVendorId?: string | null;
+  assignedToUserId?: string | null;
+  visibleToClient: boolean;
+  visibleToVendor: boolean;
+  deliverableId?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ProjectEventType = 'deadline_internal' | 'deadline_client' | 'meeting' | 'milestone' | 'review' | 'delivery' | 'custom';
+export type ProjectEventColor = 'red' | 'yellow' | 'green' | 'blue' | 'purple' | 'orange' | 'gray';
+
+export interface ProjectCalendarEvent {
+  id: string;
+  orgId: string;
+  projectId: string;
+  milestoneId?: string | null;
+  title: string;
+  description?: string | null;
+  start: string;
+  end: string;
+  allDay: boolean;
+  eventType: ProjectEventType;
+  color: ProjectEventColor;
+  isCompleted: boolean;
+  completedAt?: string | null;
+  visibleToRoles: string[];
+  assignedToVendorId?: string | null;
+  assignedToUserId?: string | null;
+  createdById?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
