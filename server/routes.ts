@@ -41,6 +41,7 @@ import {
   generateProjectMilestones,
   completeMilestone,
   updateMilestone,
+  upsertMilestonesByDates,
   createProjectCalendarEvent,
   updateProjectCalendarEvent,
   deleteProjectCalendarEvent,
@@ -1040,7 +1041,7 @@ ${cr.replace(/\n/g, '<br>')}
     try {
       const orgId = getOrgId(req);
       const { projectId } = req.params;
-      const { startDate, vendorId, config } = req.body;
+      const { milestones, startDate, vendorId, config } = req.body;
 
       // Check if project exists
       const project = await storage.getProject(projectId, orgId);
@@ -1048,13 +1049,24 @@ ${cr.replace(/\n/g, '<br>')}
         return res.status(404).json({ error: "Project not found" });
       }
 
-      await generateProjectMilestones(
-        orgId,
-        projectId,
-        new Date(startDate || project.startDate || new Date()),
-        vendorId || project.vendorId,
-        config
-      );
+      // New format: frontend sends { milestones: [{stage, plannedDate}] }
+      if (milestones && Array.isArray(milestones)) {
+        await upsertMilestonesByDates(
+          orgId,
+          projectId,
+          milestones.filter((m: any) => m.stage && m.plannedDate),
+          project.vendorId
+        );
+      } else {
+        // Legacy format: { startDate, vendorId, config }
+        await generateProjectMilestones(
+          orgId,
+          projectId,
+          new Date(startDate || project.startDate || new Date()),
+          vendorId || project.vendorId,
+          config
+        );
+      }
 
       res.status(201).json({ success: true, message: "Milestones generated successfully" });
     } catch (error) {
@@ -1813,7 +1825,7 @@ ${cr.replace(/\n/g, '<br>')}
     try {
       const orgId = getOrgId(req);
       const userId = req.session.userId!;
-      const { vendorId, role, notes } = req.body;
+      const { vendorId, role, notes, dailyRate, estimatedDays, fixedPrice } = req.body;
 
       if (!vendorId) {
         return res.status(400).json({ error: "vendorId is required" });
@@ -1823,7 +1835,7 @@ ${cr.replace(/\n/g, '<br>')}
         req.params.id,
         vendorId,
         orgId,
-        { role, notes, assignedById: userId }
+        { role, notes, assignedById: userId, dailyRate, estimatedDays, fixedPrice }
       );
 
       // Send email to vendor when assigned to project
@@ -1896,9 +1908,9 @@ ${cr.replace(/\n/g, '<br>')}
   app.patch("/api/project-vendors/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const orgId = getOrgId(req);
-      const { role, notes } = req.body;
+      const { role, notes, dailyRate, estimatedDays, fixedPrice } = req.body;
 
-      const updated = await storage.updateProjectVendor(req.params.id, orgId, { role, notes });
+      const updated = await storage.updateProjectVendor(req.params.id, orgId, { role, notes, dailyRate, estimatedDays, fixedPrice });
       if (!updated) {
         return res.status(404).json({ error: "Project vendor assignment not found" });
       }
@@ -2683,7 +2695,78 @@ ${cr.replace(/\n/g, '<br>')}
         adminSignedAt: adminSignedAt,
         adminSignedBy: adminSignedBy
       });
-      
+
+      // Auto-generate signature token and send email to client
+      if (!updatedQuote?.clientSignature) {
+        try {
+          // Generate signature token
+          const token = generateToken();
+          const hashedToken = hashToken(token);
+          const tokenExpiresAt = new Date();
+          tokenExpiresAt.setDate(tokenExpiresAt.getDate() + 30); // 30 days
+
+          await storage.updateQuote(quote.id, orgId, {
+            signatureToken: hashedToken,
+            signatureTokenExpiresAt: tokenExpiresAt,
+          });
+
+          // Build signature URL
+          const baseUrl = process.env.REPLIT_DEV_DOMAIN
+            ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+            : req.headers.host?.includes('localhost')
+              ? `http://${req.headers.host}`
+              : `https://${req.headers.host}`;
+          const signatureUrl = `${baseUrl}/sign-quote/${quote.id}?token=${token}`;
+
+          // Send email to customer (get email from account)
+          const account = quote.accountId ? await storage.getAccount(quote.accountId, orgId) : null;
+          const customerEmail = account?.contactEmail;
+          if (customerEmail) {
+            const { sendQuoteSignatureEmail } = await import("./gmail");
+            const org = await storage.getOrganization(orgId);
+
+            await sendQuoteSignatureEmail({
+              to: customerEmail,
+              clientName: account?.contactName || account?.name || '',
+              quoteName: quote.title || 'Devis',
+              quoteNumber: quote.number || `DEVIS-${quote.id.slice(0, 8)}`,
+              quoteAmount: quote.amount || '0',
+              signatureUrl,
+              organizationName: org?.name,
+            });
+
+            console.log(`[Quote] Signature email sent to ${customerEmail} for quote ${quote.id}`);
+          }
+
+          // Create notification for client users
+          if (quote.accountId) {
+            try {
+              const memberships = await storage.getMembershipsByOrg(orgId);
+              const clientMemberships = memberships.filter(
+                m => (m.role === 'client_admin' || m.role === 'client_member') && m.accountId === quote.accountId
+              );
+              for (const membership of clientMemberships) {
+                await storage.createNotification({
+                  orgId,
+                  userId: membership.userId,
+                  title: 'Nouveau devis à signer',
+                  description: `Le devis "${quote.title || quote.number}" (${parseFloat(quote.amount || '0').toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}) est prêt à être signé.`,
+                  type: 'info',
+                  link: `/sign-quote/${quote.id}?token=${token}`,
+                  relatedEntityType: 'quote',
+                  relatedEntityId: quote.id,
+                });
+              }
+            } catch (notifError) {
+              console.error("[Quote] Failed to create client notifications:", notifError);
+            }
+          }
+        } catch (autoSendError) {
+          console.error("[Quote] Failed to auto-send signature email:", autoSendError);
+          // Continue - admin signing succeeded even if email failed
+        }
+      }
+
       // Check if both signatures are present to update status and generate PDF
       if (updatedQuote?.clientSignature && updatedQuote?.adminSignature) {
         await storage.updateQuote(quote.id, orgId, { status: 'signed' });
@@ -5405,6 +5488,80 @@ Génère un contrat complet et professionnel adapté à ce client.`;
     } catch (error) {
       console.error("Revoke invitation error:", error);
       res.status(500).json({ error: "Failed to revoke invitation" });
+    }
+  });
+
+  // Resend invitation: revoke old one, create new with same params, send email
+  app.post("/api/invitations/:id/resend", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const oldInvitation = await storage.getInvitation(req.params.id, orgId);
+      if (!oldInvitation) {
+        return res.status(404).json({ error: "Invitation not found" });
+      }
+
+      // Revoke old invitation if still pending
+      if (oldInvitation.status === 'pending') {
+        await storage.revokeInvitation(oldInvitation.id, orgId);
+      }
+
+      // Create new invitation with same parameters
+      const token = generateToken();
+      const tokenHash = hashToken(token);
+      const expiresAt = new Date(Date.now() + 259200 * 60 * 1000); // 6 months
+
+      const newInvitation = await storage.createInvitation({
+        orgId,
+        email: oldInvitation.email,
+        role: oldInvitation.role as UserRole,
+        space: oldInvitation.space as Space,
+        tokenHash,
+        expiresAt,
+        status: 'pending',
+        accountId: oldInvitation.accountId || null,
+        vendorId: oldInvitation.vendorId || null,
+      });
+
+      const baseUrl = process.env.REPLIT_DEV_DOMAIN
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+        : 'http://localhost:5000';
+      const inviteLink = `${baseUrl}/setup-password?token=${token}`;
+
+      // Send email
+      let emailSent = false;
+      try {
+        const org = await storage.getOrganization(orgId);
+        if (oldInvitation.role === 'vendor') {
+          let vendorName = oldInvitation.email.split('@')[0];
+          if (oldInvitation.vendorId) {
+            const vendor = await storage.getVendor(oldInvitation.vendorId, orgId);
+            if (vendor?.name) vendorName = vendor.name;
+          }
+          emailSent = await sendVendorWelcomeEmail({
+            to: oldInvitation.email,
+            vendorName,
+            portalLink: inviteLink,
+            organizationName: org?.name || 'IA Infinity',
+          });
+        } else {
+          emailSent = await sendInvitationEmail({
+            to: oldInvitation.email,
+            inviteLink,
+            role: oldInvitation.role,
+            space: oldInvitation.space,
+            expiresAt,
+            organizationName: org?.name || 'IA Infinity',
+          });
+        }
+      } catch (emailError) {
+        console.error("[Resend] Email error:", emailError);
+      }
+
+      const { tokenHash: _, ...safeInvitation } = newInvitation;
+      res.json({ ...safeInvitation, inviteLink, emailSent });
+    } catch (error) {
+      console.error("Resend invitation error:", error);
+      res.status(500).json({ error: "Failed to resend invitation" });
     }
   });
 
@@ -8227,6 +8384,102 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
     }
   });
 
+  // Analyze an invoice using AI (OCR extraction)
+  app.post("/api/vendor/invoices/analyze", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const { fileData, mimeType } = req.body;
+
+      if (!fileData) {
+        return res.status(400).json({ error: "Données du fichier requises" });
+      }
+
+      const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ error: "Clé API IA non configurée" });
+      }
+
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({
+        apiKey,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+
+      // Determine image media type for vision
+      const mediaType = mimeType || "image/png";
+      const isImage = mediaType.startsWith("image/");
+
+      // Build message content with vision
+      const userContent: any[] = [
+        {
+          type: "text",
+          text: `Analyse cette facture et extrais les informations suivantes au format JSON:
+- "amount": le montant HT (nombre décimal, sans symbole de devise)
+- "description": l'objet ou la description de la facture (texte court)
+- "invoiceType": le type de facture parmi "prestation", "materiel", "frais" (choisis le plus approprié)
+- "vendorName": le nom du fournisseur/émetteur de la facture
+- "invoiceDate": la date de la facture au format YYYY-MM-DD
+
+Réponds UNIQUEMENT avec un objet JSON valide, sans texte supplémentaire.`
+        }
+      ];
+
+      if (isImage) {
+        userContent.push({
+          type: "image_url",
+          image_url: {
+            url: `data:${mediaType};base64,${fileData}`,
+          }
+        });
+      } else {
+        // For PDFs, we send as image (GPT-4o can handle PDF pages as images)
+        userContent.push({
+          type: "image_url",
+          image_url: {
+            url: `data:application/pdf;base64,${fileData}`,
+          }
+        });
+      }
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: userContent,
+          }
+        ],
+        max_tokens: 500,
+        temperature: 0,
+      });
+
+      const content = response.choices[0]?.message?.content || "";
+
+      // Parse the JSON response
+      try {
+        // Extract JSON from potential markdown code blocks
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          res.json({
+            amount: parsed.amount || null,
+            description: parsed.description || null,
+            invoiceType: parsed.invoiceType || null,
+            vendorName: parsed.vendorName || null,
+            invoiceDate: parsed.invoiceDate || null,
+          });
+        } else {
+          res.json({ amount: null, description: null, invoiceType: null, vendorName: null, invoiceDate: null });
+        }
+      } catch (parseError) {
+        console.error("Failed to parse AI invoice analysis:", content);
+        res.json({ amount: null, description: null, invoiceType: null, vendorName: null, invoiceDate: null });
+      }
+    } catch (error: any) {
+      console.error("Invoice analysis error:", error);
+      res.status(500).json({ error: "Échec de l'analyse de la facture" });
+    }
+  });
+
   // Create a new vendor invoice (vendor submits their own invoice)
   app.post("/api/vendor/invoices", requireVendor, async (req: Request, res: Response) => {
     try {
@@ -8569,6 +8822,22 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       const allDocuments = await storage.getDocuments(orgId);
       const projectDocuments = allDocuments.filter(d => d.projectId === projectId);
 
+      // Get vendor assignment (remuneration) for this vendor on this project
+      let vendorAssignment = null;
+      const contact = await storage.getContact(vendorContactId, orgId);
+      if (contact?.vendorId) {
+        const projectVendorsList = await storage.getProjectVendors(projectId, orgId);
+        const myAssignment = projectVendorsList.find(pv => pv.vendorId === contact.vendorId);
+        if (myAssignment) {
+          vendorAssignment = {
+            dailyRate: myAssignment.dailyRate,
+            estimatedDays: myAssignment.estimatedDays,
+            fixedPrice: myAssignment.fixedPrice,
+            role: myAssignment.role,
+          };
+        }
+      }
+
       res.json({
         project,
         client: account ? {
@@ -8587,6 +8856,7 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
         tasks: projectTasks,
         missions: projectMissions,
         documents: projectDocuments,
+        vendorAssignment,
       });
     } catch (error) {
       console.error("Get vendor project details error:", error);
@@ -10047,6 +10317,163 @@ Adapte le ton et le contenu aux instructions fournies par le sous-traitant.`;
   // ============================================
   // SUPABASE INTEGRATION
   // ============================================
+
+  // ============================================================
+  // Vendor Availabilities - Vendor endpoints
+  // ============================================================
+
+  // Get availabilities for the connected vendor
+  app.get("/api/vendor/availabilities", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.session.vendorContactId;
+      if (!vendorContactId) {
+        return res.status(403).json({ error: "No vendor profile linked" });
+      }
+      const contact = await storage.getContact(vendorContactId, orgId);
+      if (!contact?.vendorId) {
+        return res.json([]);
+      }
+      const availabilities = await storage.getVendorAvailabilities(contact.vendorId, orgId);
+      res.json(availabilities);
+    } catch (error) {
+      console.error("Get vendor availabilities error:", error);
+      res.status(500).json({ error: "Failed to get vendor availabilities" });
+    }
+  });
+
+  // Create a new availability period
+  app.post("/api/vendor/availabilities", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.session.vendorContactId;
+      if (!vendorContactId) {
+        return res.status(403).json({ error: "No vendor profile linked" });
+      }
+      const contact = await storage.getContact(vendorContactId, orgId);
+      if (!contact?.vendorId) {
+        return res.status(403).json({ error: "No vendor ID found" });
+      }
+
+      const { startDate, endDate, status, notes } = req.body;
+      if (!startDate || !endDate) {
+        return res.status(400).json({ error: "startDate and endDate are required" });
+      }
+      if (new Date(startDate) > new Date(endDate)) {
+        return res.status(400).json({ error: "startDate must be before endDate" });
+      }
+
+      const created = await storage.createVendorAvailability({
+        orgId,
+        vendorId: contact.vendorId,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        status: status || 'available',
+        notes: notes || null,
+      });
+      res.json(created);
+    } catch (error) {
+      console.error("Create vendor availability error:", error);
+      res.status(500).json({ error: "Failed to create availability" });
+    }
+  });
+
+  // Update an availability period (vendor ownership check)
+  app.patch("/api/vendor/availabilities/:id", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.session.vendorContactId;
+      if (!vendorContactId) {
+        return res.status(403).json({ error: "No vendor profile linked" });
+      }
+      const contact = await storage.getContact(vendorContactId, orgId);
+      if (!contact?.vendorId) {
+        return res.status(403).json({ error: "No vendor ID found" });
+      }
+
+      const existing = await storage.getVendorAvailability(req.params.id, orgId);
+      if (!existing) {
+        return res.status(404).json({ error: "Availability not found" });
+      }
+      if (existing.vendorId !== contact.vendorId) {
+        return res.status(403).json({ error: "Not authorized to modify this availability" });
+      }
+
+      const { startDate, endDate, status, notes } = req.body;
+      if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+        return res.status(400).json({ error: "startDate must be before endDate" });
+      }
+
+      const updateData: any = {};
+      if (startDate) updateData.startDate = new Date(startDate);
+      if (endDate) updateData.endDate = new Date(endDate);
+      if (status) updateData.status = status;
+      if (notes !== undefined) updateData.notes = notes;
+
+      const updated = await storage.updateVendorAvailability(req.params.id, orgId, updateData);
+      res.json(updated);
+    } catch (error) {
+      console.error("Update vendor availability error:", error);
+      res.status(500).json({ error: "Failed to update availability" });
+    }
+  });
+
+  // Delete an availability period (vendor ownership check)
+  app.delete("/api/vendor/availabilities/:id", requireVendor, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const vendorContactId = req.session.vendorContactId;
+      if (!vendorContactId) {
+        return res.status(403).json({ error: "No vendor profile linked" });
+      }
+      const contact = await storage.getContact(vendorContactId, orgId);
+      if (!contact?.vendorId) {
+        return res.status(403).json({ error: "No vendor ID found" });
+      }
+
+      const existing = await storage.getVendorAvailability(req.params.id, orgId);
+      if (!existing) {
+        return res.status(404).json({ error: "Availability not found" });
+      }
+      if (existing.vendorId !== contact.vendorId) {
+        return res.status(403).json({ error: "Not authorized to delete this availability" });
+      }
+
+      await storage.deleteVendorAvailability(req.params.id, orgId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete vendor availability error:", error);
+      res.status(500).json({ error: "Failed to delete availability" });
+    }
+  });
+
+  // ============================================================
+  // Vendor Availabilities - Admin endpoint
+  // ============================================================
+
+  // Get all vendor availabilities for a date range (admin planning view)
+  app.get("/api/vendor-availabilities", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = getOrgId(req);
+      const { start, end } = req.query;
+      if (!start || !end) {
+        return res.status(400).json({ error: "start and end query params are required" });
+      }
+
+      const startDate = new Date(start as string);
+      const endDate = new Date(end as string);
+
+      const [allVendors, availabilities] = await Promise.all([
+        storage.getVendors(orgId),
+        storage.getVendorAvailabilitiesByDateRange(orgId, startDate, endDate),
+      ]);
+
+      res.json({ vendors: allVendors, availabilities });
+    } catch (error) {
+      console.error("Get admin vendor availabilities error:", error);
+      res.status(500).json({ error: "Failed to get vendor availabilities" });
+    }
+  });
 
   app.get("/api/supabase/status", requireAuth, async (_req: Request, res: Response) => {
     try {

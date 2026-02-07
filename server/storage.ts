@@ -1,13 +1,14 @@
 import { db } from "./db";
 
 export { db };
-import { eq, and, desc, asc, sql, isNotNull, isNull } from "drizzle-orm";
+import { eq, and, desc, asc, sql, isNotNull, isNull, gte, lte } from "drizzle-orm";
 import {
   organizations, users, memberships, accounts, contacts, deals, quotes, quoteLineItems, activities,
   projects, projectVendors, tasks, invoices, invoiceLineItems, vendors, missions, documents,
   workflowRuns, importJobs, contracts, expenses, invitations, emails, calendarEvents, followUpHistory, projectComments,
   channels, channelMessages, channelAttachments, accountLoomVideos, accountUpdates, projectUpdates, projectDeliverables,
   deliverableComplianceSteps, complianceWorkflowTemplates,
+  vendorAvailabilities,
   notifications, vendorProjectEvents, directConversations, directMessages, emailTemplates,
   type Organization, type InsertOrganization,
   type User, type InsertUser,
@@ -48,6 +49,7 @@ import {
   type DirectConversation, type InsertDirectConversation,
   type DirectMessage, type InsertDirectMessage,
   type EmailTemplate, type InsertEmailTemplate,
+  type VendorAvailabilityRecord, type InsertVendorAvailability,
   type ProjectVendor, type InsertProjectVendor, type ProjectVendorRole,
   type DealStage, type TaskStatus, type ProjectStatus, type ContractType, type ContractStatus,
   type ExpenseStatus, type ExpenseCategory, type InvitationStatus, type FollowUpType,
@@ -105,6 +107,8 @@ export interface IStorage {
   
   getProjects(orgId: string, accountId?: string, status?: ProjectStatus): Promise<Project[]>;
   getProjectsByVendor(vendorId: string, orgId: string): Promise<Project[]>;
+  getVendorAssignedProjectIds(vendorId: string, orgId: string): Promise<string[]>;
+  isVendorAssignedToProject(vendorId: string, projectId: string, orgId: string): Promise<boolean>;
   getProject(id: string, orgId: string): Promise<Project | undefined>;
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: string, orgId: string, data: Partial<InsertProject>): Promise<Project | undefined>;
@@ -238,6 +242,14 @@ export interface IStorage {
     pendingInvoices: number;
     pendingInvoicesValue: number;
   }>;
+
+  // Vendor Availabilities
+  getVendorAvailabilities(vendorId: string, orgId: string): Promise<VendorAvailabilityRecord[]>;
+  getVendorAvailabilitiesByDateRange(orgId: string, start: Date, end: Date): Promise<VendorAvailabilityRecord[]>;
+  getVendorAvailability(id: string, orgId: string): Promise<VendorAvailabilityRecord | undefined>;
+  createVendorAvailability(data: InsertVendorAvailability): Promise<VendorAvailabilityRecord>;
+  updateVendorAvailability(id: string, orgId: string, data: Partial<InsertVendorAvailability>): Promise<VendorAvailabilityRecord | undefined>;
+  deleteVendorAvailability(id: string, orgId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -629,13 +641,49 @@ export class DatabaseStorage implements IStorage {
       ))
       .orderBy(desc(projects.createdAt));
 
-    // Combine both result sets (deduplicate by project ID)
-    const allProjects = [...projectsWithVendorId, ...projectsWithContactId];
+    // Also get projects assigned via projectVendors junction table
+    const junctionProjectIds = await this.getVendorAssignedProjectIds(vendorId, orgId);
+    const junctionProjects = junctionProjectIds.length > 0
+      ? await db.select().from(projects)
+          .where(and(
+            eq(projects.orgId, orgId),
+            sql`${projects.id} = ANY(${junctionProjectIds})`
+          ))
+          .orderBy(desc(projects.createdAt))
+      : [];
+
+    // Combine all result sets (deduplicate by project ID)
+    const allProjects = [...projectsWithVendorId, ...projectsWithContactId, ...junctionProjects];
     const uniqueProjects = Array.from(
       new Map(allProjects.map(p => [p.id, p])).values()
     );
 
     return uniqueProjects;
+  }
+
+  async getVendorAssignedProjectIds(vendorId: string, orgId: string): Promise<string[]> {
+    const results = await db.select({ projectId: projectVendors.projectId })
+      .from(projectVendors)
+      .innerJoin(projects, eq(projectVendors.projectId, projects.id))
+      .where(and(
+        eq(projectVendors.vendorId, vendorId),
+        eq(projectVendors.isActive, true),
+        eq(projects.orgId, orgId)
+      ));
+    return results.map(r => r.projectId);
+  }
+
+  async isVendorAssignedToProject(vendorId: string, projectId: string, orgId: string): Promise<boolean> {
+    const project = await this.getProject(projectId, orgId);
+    if (!project) return false;
+
+    const [assignment] = await db.select().from(projectVendors)
+      .where(and(
+        eq(projectVendors.projectId, projectId),
+        eq(projectVendors.vendorId, vendorId),
+        eq(projectVendors.isActive, true)
+      ));
+    return !!assignment;
   }
 
   async getProject(id: string, orgId: string): Promise<Project | undefined> {
@@ -2249,7 +2297,7 @@ export class DatabaseStorage implements IStorage {
     projectId: string,
     vendorId: string,
     orgId: string,
-    data: { role?: ProjectVendorRole; notes?: string; assignedById?: string }
+    data: { role?: ProjectVendorRole; notes?: string; assignedById?: string; dailyRate?: string; estimatedDays?: number; fixedPrice?: string }
   ): Promise<ProjectVendor> {
     // Verify project exists and belongs to org
     const project = await this.getProject(projectId, orgId);
@@ -2274,6 +2322,9 @@ export class DatabaseStorage implements IStorage {
           role: data.role || existing.role,
           notes: data.notes ?? existing.notes,
           assignedById: data.assignedById || existing.assignedById,
+          dailyRate: data.dailyRate ?? existing.dailyRate,
+          estimatedDays: data.estimatedDays ?? existing.estimatedDays,
+          fixedPrice: data.fixedPrice ?? existing.fixedPrice,
           assignedAt: new Date(),
         })
         .where(eq(projectVendors.id, existing.id))
@@ -2288,6 +2339,9 @@ export class DatabaseStorage implements IStorage {
       role: data.role || 'contributor',
       notes: data.notes,
       assignedById: data.assignedById,
+      dailyRate: data.dailyRate || '0',
+      estimatedDays: data.estimatedDays || 0,
+      fixedPrice: data.fixedPrice || '0',
       isActive: true,
     }).returning();
 
@@ -2313,7 +2367,7 @@ export class DatabaseStorage implements IStorage {
   async updateProjectVendor(
     id: string,
     orgId: string,
-    data: { role?: ProjectVendorRole; notes?: string }
+    data: { role?: ProjectVendorRole; notes?: string; dailyRate?: string; estimatedDays?: number; fixedPrice?: string }
   ): Promise<ProjectVendor | undefined> {
     // Get the assignment and verify via project
     const [assignment] = await db.select().from(projectVendors)
@@ -2344,6 +2398,60 @@ export class DatabaseStorage implements IStorage {
     if (!project) return undefined;
 
     return assignment;
+  }
+
+  // Vendor Availabilities
+  async getVendorAvailabilities(vendorId: string, orgId: string): Promise<VendorAvailabilityRecord[]> {
+    return db.select().from(vendorAvailabilities)
+      .where(and(
+        eq(vendorAvailabilities.vendorId, vendorId),
+        eq(vendorAvailabilities.orgId, orgId)
+      ))
+      .orderBy(asc(vendorAvailabilities.startDate));
+  }
+
+  async getVendorAvailabilitiesByDateRange(orgId: string, start: Date, end: Date): Promise<VendorAvailabilityRecord[]> {
+    return db.select().from(vendorAvailabilities)
+      .where(and(
+        eq(vendorAvailabilities.orgId, orgId),
+        lte(vendorAvailabilities.startDate, end),
+        gte(vendorAvailabilities.endDate, start)
+      ))
+      .orderBy(asc(vendorAvailabilities.startDate));
+  }
+
+  async getVendorAvailability(id: string, orgId: string): Promise<VendorAvailabilityRecord | undefined> {
+    const [record] = await db.select().from(vendorAvailabilities)
+      .where(and(
+        eq(vendorAvailabilities.id, id),
+        eq(vendorAvailabilities.orgId, orgId)
+      ));
+    return record;
+  }
+
+  async createVendorAvailability(data: InsertVendorAvailability): Promise<VendorAvailabilityRecord> {
+    const [created] = await db.insert(vendorAvailabilities).values(data).returning();
+    return created;
+  }
+
+  async updateVendorAvailability(id: string, orgId: string, data: Partial<InsertVendorAvailability>): Promise<VendorAvailabilityRecord | undefined> {
+    const [updated] = await db.update(vendorAvailabilities)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(
+        eq(vendorAvailabilities.id, id),
+        eq(vendorAvailabilities.orgId, orgId)
+      ))
+      .returning();
+    return updated;
+  }
+
+  async deleteVendorAvailability(id: string, orgId: string): Promise<boolean> {
+    await db.delete(vendorAvailabilities)
+      .where(and(
+        eq(vendorAvailabilities.id, id),
+        eq(vendorAvailabilities.orgId, orgId)
+      ));
+    return true;
   }
 }
 

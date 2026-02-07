@@ -24,7 +24,8 @@ import {
   Video,
   FileJson,
   File,
-  ExternalLink
+  ExternalLink,
+  Banknote
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -57,10 +58,11 @@ import {
 } from '@/components/ui/select';
 import { DeliveryWorkflow } from '@/components/projects/DeliveryWorkflow';
 import { ProjectDeadlineCalendar } from '@/components/projects/ProjectDeadlineCalendar';
+import { ProjectVendorsSection } from '@/components/vendors/ProjectVendorsSection';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useSpace } from '@/hooks/use-space';
-import type { Project, Account, Task, Document, Contact, User, DeliveryMilestone } from '@/lib/types';
+import type { Project, Account, Task, Document, Contact, User, DeliveryMilestone, Vendor, ProjectVendor } from '@/lib/types';
 
 const statusConfig = {
   active: { label: 'Actif', variant: 'default' as const, color: 'bg-emerald-500' },
@@ -165,6 +167,15 @@ export default function ProjectDetail() {
 
   const { data: users = [] } = useQuery<User[]>({
     queryKey: ['/api/users'],
+  });
+
+  const { data: vendors = [] } = useQuery<Vendor[]>({
+    queryKey: ['/api/vendors'],
+  });
+
+  const { data: projectVendorsList = [] } = useQuery<(ProjectVendor & { vendor: Vendor })[]>({
+    queryKey: [`/api/projects/${projectId}/vendors`],
+    enabled: !!projectId,
   });
 
   // Project Updates (CR de suivi)
@@ -480,6 +491,12 @@ export default function ProjectDetail() {
               </p>
             </CardContent>
           </Card>
+
+          {/* Sous-traitants du projet */}
+          <ProjectVendorsSection
+            projectId={projectId!}
+            vendors={vendors}
+          />
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
@@ -889,6 +906,41 @@ export default function ProjectDetail() {
                 <div>
                   <p className="text-sm text-muted-foreground">Client</p>
                   <p className="font-medium">{account?.name || 'Non assigné'}</p>
+                </div>
+              </div>
+              <Separator />
+              <div className="flex items-start gap-3">
+                <Users className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm text-muted-foreground">Sous-traitants</p>
+                  {projectVendorsList.length > 0 ? (
+                    <div className="space-y-1 mt-1">
+                      {projectVendorsList.map(pv => (
+                        <p key={pv.id} className="font-medium text-sm">
+                          {pv.vendor?.name || 'Inconnu'}
+                          {pv.vendor?.company ? <span className="text-muted-foreground text-xs ml-1">({pv.vendor.company})</span> : null}
+                        </p>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="font-medium text-muted-foreground">Aucun</p>
+                  )}
+                </div>
+              </div>
+              <Separator />
+              <div className="flex items-center gap-3">
+                <Banknote className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Budget sous-traitants</p>
+                  <p className="font-medium">
+                    {projectVendorsList.length > 0
+                      ? `${projectVendorsList.reduce((total, pv) => {
+                          const fixed = Number(pv.fixedPrice) || 0;
+                          if (fixed > 0) return total + fixed;
+                          return total + (Number(pv.dailyRate) || 0) * (pv.estimatedDays || 0);
+                        }, 0).toLocaleString('fr-FR')} \u20ac`
+                      : '-'}
+                  </p>
                 </div>
               </div>
               <Separator />

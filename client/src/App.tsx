@@ -59,6 +59,9 @@ import VendorProjectDetail from "@/pages/VendorProjectDetail";
 import VendorProjects from "@/pages/VendorProjects";
 import ClientContracts from "@/pages/ClientContracts";
 import CRMProjectManagement from "@/pages/CRMProjectManagement";
+import ProjectsCalendar from "@/pages/ProjectsCalendar";
+import VendorAvailability from "@/pages/VendorAvailability";
+import VendorAvailabilityAdmin from "@/pages/VendorAvailabilityAdmin";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -69,6 +72,7 @@ function Router() {
       <Route path="/deals" component={Pipeline} />
       <Route path="/deals/:id" component={DealDetail} />
       <Route path="/projects" component={Projects} />
+      <Route path="/projects/calendar" component={ProjectsCalendar} />
       <Route path="/projects/crm" component={CRMProjectManagement} />
       <Route path="/projects/:id" component={ProjectDetail} />
       <Route path="/tasks" component={Tasks} />
@@ -88,6 +92,7 @@ function Router() {
       <Route path="/calendar" component={Calendar} />
       <Route path="/notion-sync" component={NotionSync} />
       <Route path="/invitations" component={Invitations} />
+      <Route path="/vendor-availability" component={VendorAvailabilityAdmin} />
       <Route path="/channels" component={ChannelsPage} />
       <Route path="/profile" component={Profile} />
       <Route path="/settings" component={Settings} />
@@ -239,6 +244,7 @@ function AppContent() {
     else if (location === "/vendor/missions") PageComponent = Missions;
     else if (location === "/vendor/channels") PageComponent = VendorChannels;
     else if (location === "/vendor/messages") PageComponent = ChannelsPage;
+    else if (location === "/vendor/availability") PageComponent = VendorAvailability;
     else if (location === "/vendor/services") PageComponent = ClientServices;
     else if (location === "/vendor/settings") PageComponent = Settings;
     else if (location === "/vendor/profile") PageComponent = Profile;

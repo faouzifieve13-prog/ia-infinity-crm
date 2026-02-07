@@ -41,6 +41,7 @@ import {
   FileJson,
   File,
   ThumbsUp,
+  Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -92,6 +93,13 @@ interface ClientInfo {
   };
 }
 
+interface VendorAssignment {
+  dailyRate: string;
+  estimatedDays: number;
+  fixedPrice: string;
+  role: string;
+}
+
 interface ProjectDetails {
   project: Project;
   client: ClientInfo | null;
@@ -99,6 +107,7 @@ interface ProjectDetails {
   tasks: Task[];
   missions: Mission[];
   documents: VendorDocument[];
+  vendorAssignment: VendorAssignment | null;
 }
 
 interface WorkflowStep {
@@ -619,7 +628,7 @@ export default function VendorProjectDetail() {
     );
   }
 
-  const { project, client, workflowState, tasks, missions, documents } = details;
+  const { project, client, workflowState, tasks, missions, documents, vendorAssignment } = details;
   const status = statusConfig[project.status as keyof typeof statusConfig] || statusConfig.active;
   const completedTasks = tasks.filter(t => t.status === 'completed').length;
   const workflowStepsFromState = (workflowState?.steps as WorkflowStep[] | undefined) || [];
@@ -817,6 +826,44 @@ export default function VendorProjectDetail() {
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground whitespace-pre-wrap">{project.description}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {vendorAssignment && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-violet-600" />
+              Ma Rémunération
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="capitalize">{vendorAssignment.role}</Badge>
+              </div>
+              {parseFloat(vendorAssignment.fixedPrice) > 0 ? (
+                <div className="p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+                  <div className="grid grid-cols-2 gap-4 text-center">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Montant facturable</p>
+                      <p className="text-2xl font-bold text-emerald-600">
+                        {parseFloat(vendorAssignment.fixedPrice).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Durée de la mission</p>
+                      <p className="text-2xl font-bold text-emerald-600">
+                        {vendorAssignment.estimatedDays > 0 ? `${vendorAssignment.estimatedDays} jours` : '-'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-muted-foreground">Aucune rémunération définie pour le moment.</p>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}

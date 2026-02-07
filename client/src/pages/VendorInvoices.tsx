@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Plus, Search, Loader2, Receipt, FileText, Upload, CheckCircle2, Clock, AlertCircle, Trash2 } from 'lucide-react';
+import { Plus, Search, Loader2, Receipt, FileText, Upload, CheckCircle2, Clock, AlertCircle, Trash2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -54,6 +54,7 @@ export default function VendorInvoices() {
   const [fileData, setFileData] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>('');
   const [uploading, setUploading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [formData, setFormData] = useState({
     description: '',
     amount: '',
@@ -119,11 +120,39 @@ export default function VendorInvoices() {
         const data = await response.json();
         if (response.ok) {
           setFileData(data.fileUrl);
-          setFormData({ ...formData, pdfUrl: data.fileUrl });
+          setFormData(prev => ({ ...prev, pdfUrl: data.fileUrl }));
           toast({
             title: 'Fichier uploadé',
             description: 'Votre fichier a été uploadé avec succès',
           });
+
+          // Auto-analyze the invoice with AI
+          setAnalyzing(true);
+          try {
+            const analyzeResponse = await apiRequest('POST', '/api/vendor/invoices/analyze', {
+              fileData: base64Data,
+              mimeType: file.type,
+            });
+            const analysis = await analyzeResponse.json();
+            if (analyzeResponse.ok && analysis) {
+              setFormData(prev => ({
+                ...prev,
+                pdfUrl: data.fileUrl,
+                description: analysis.description || prev.description,
+                amount: analysis.amount ? String(analysis.amount) : prev.amount,
+                invoiceType: analysis.invoiceType || prev.invoiceType,
+              }));
+              toast({
+                title: 'Analyse IA terminée',
+                description: 'Les champs ont été pré-remplis automatiquement',
+              });
+            }
+          } catch (analyzeError) {
+            // Analysis is optional, don't block the flow
+            console.error('Invoice analysis failed:', analyzeError);
+          } finally {
+            setAnalyzing(false);
+          }
         } else {
           toast({
             title: 'Erreur d\'upload',
@@ -244,7 +273,13 @@ export default function VendorInvoices() {
                   required
                 />
                 {uploading && <p className="text-sm text-gray-500">Upload en cours...</p>}
-                {fileName && <p className="text-sm text-green-600">✓ {fileName}</p>}
+                {analyzing && (
+                  <div className="flex items-center gap-2 text-sm text-violet-600">
+                    <Sparkles className="h-4 w-4 animate-pulse" />
+                    Analyse IA en cours...
+                  </div>
+                )}
+                {fileName && !uploading && !analyzing && <p className="text-sm text-green-600">&#10003; {fileName}</p>}
               </div>
 
               {/* Description/Objet */}

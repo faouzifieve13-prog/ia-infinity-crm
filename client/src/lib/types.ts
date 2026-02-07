@@ -165,7 +165,9 @@ export interface Invoice {
   orgId: string;
   accountId: string;
   projectId?: string | null;
+  vendorId?: string | null;
   invoiceNumber: string;
+  description?: string | null;
   amount: string;
   currency: string;
   status: InvoiceStatus;
@@ -173,6 +175,8 @@ export interface Invoice {
   issuedDate: string;
   paidDate?: string | null;
   customerEmail: string;
+  pdfUrl?: string | null;
+  invoiceType?: string | null;
   stripePaymentIntentId?: string | null;
   stripeInvoiceId?: string | null;
   notionPageId?: string | null;
@@ -215,6 +219,9 @@ export interface ProjectVendor {
   assignedAt: string;
   assignedById?: string | null;
   notes?: string | null;
+  dailyRate: string;
+  estimatedDays: number;
+  fixedPrice: string;
   isActive: boolean;
   createdAt: string;
   vendor?: Vendor;
@@ -468,6 +475,18 @@ export interface DeliveryMilestone {
   visibleToClient: boolean;
   visibleToVendor: boolean;
   deliverableId?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VendorAvailabilityPeriod {
+  id: string;
+  orgId: string;
+  vendorId: string;
+  startDate: string;
+  endDate: string;
+  status: VendorAvailability;
   notes?: string | null;
   createdAt: string;
   updatedAt: string;

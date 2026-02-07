@@ -15,7 +15,11 @@
       "Bash(psql:*)",
       "Bash(export SUPABASE_URL=\"postgresql://postgres.wcukrnynmhadxyzoljyw:Marseille.13006!@aws-1-eu-west-1.pooler.supabase.com:6543/postgres\")",
       "Bash(PGPASSWORD='Marseille.13006!' psql:*)",
-      "Bash(PGPASSWORD='[Marseille.13006!]' psql:*)"
+      "Bash(PGPASSWORD='[Marseille.13006!]' psql:*)",
+      "Bash(npx tsx:*)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(npx vite:*)"
     ]
   }
 }

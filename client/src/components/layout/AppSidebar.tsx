@@ -24,6 +24,8 @@ import {
   Wrench,
   Sparkles,
   Calendar,
+  CalendarClock,
+  CalendarDays,
   TrendingUp,
   UserCheck,
   Handshake,
@@ -133,11 +135,14 @@ const portalConfig: Record<Space, { label: string; icon: typeof Shield; gradient
   },
 };
 
+type UserRole = 'admin' | 'sales' | 'delivery' | 'finance' | 'client_admin' | 'client_member' | 'vendor';
+
 interface NavItem {
   title: string;
   url: string;
   icon: typeof LayoutDashboard;
   spaces: Space[];
+  roles?: UserRole[];
 }
 
 interface NavCategory {
@@ -145,6 +150,7 @@ interface NavCategory {
   icon: typeof LayoutDashboard;
   items: NavItem[];
   spaces: Space[];
+  roles?: UserRole[];
 }
 
 const navCategories: NavCategory[] = [
@@ -153,14 +159,15 @@ const navCategories: NavCategory[] = [
     icon: LayoutDashboard,
     spaces: ['client', 'vendor'],
     items: [
-      { title: 'Tableau de bord', url: '/', icon: LayoutDashboard, spaces: ['client', 'vendor'] },
       { title: 'Nos Services', url: '/services', icon: Sparkles, spaces: ['client', 'vendor'] },
+      { title: 'Mes Disponibilites', url: '/availability', icon: CalendarClock, spaces: ['vendor'] },
     ],
   },
   {
     title: 'Commercial',
     icon: TrendingUp,
     spaces: ['internal'],
+    roles: ['admin', 'sales'],
     items: [
       { title: 'Pipeline', url: '/pipeline', icon: Target, spaces: ['internal'] },
       { title: 'Base Clients', url: '/accounts', icon: Building2, spaces: ['internal'] },
@@ -170,6 +177,7 @@ const navCategories: NavCategory[] = [
     title: 'Contacts',
     icon: Users,
     spaces: ['internal'],
+    roles: ['admin'],
     items: [
       { title: 'Tous les contacts', url: '/contacts', icon: Users, spaces: ['internal'] },
     ],
@@ -178,9 +186,12 @@ const navCategories: NavCategory[] = [
     title: 'Projets',
     icon: FolderKanban,
     spaces: ['internal', 'client', 'vendor'],
+    roles: ['admin'],
     items: [
       { title: 'Vue Projets', url: '/projects', icon: FolderKanban, spaces: ['internal', 'client'] },
       { title: 'Gestion CRM', url: '/projects/crm', icon: Calendar, spaces: ['internal'] },
+      { title: 'Calendrier Projets', url: '/projects/calendar', icon: CalendarDays, spaces: ['internal'] },
+      { title: 'Disponibilites', url: '/vendor-availability', icon: CalendarClock, spaces: ['internal'] },
       { title: 'Vue Projets', url: '/projects', icon: FolderKanban, spaces: ['vendor'] },
       { title: 'Mes Missions', url: '/missions', icon: UserCog, spaces: ['vendor'] },
     ],
@@ -189,6 +200,7 @@ const navCategories: NavCategory[] = [
     title: 'Finance',
     icon: PieChart,
     spaces: ['internal', 'client'],
+    roles: ['admin'],
     items: [
       { title: 'Finance globale', url: '/finance', icon: PieChart, spaces: ['internal'] },
       { title: 'Factures Clients', url: '/invoices', icon: Receipt, spaces: ['internal', 'client'] },
@@ -199,6 +211,7 @@ const navCategories: NavCategory[] = [
     title: 'Tâches',
     icon: ListTodo,
     spaces: ['internal', 'client', 'vendor'],
+    roles: ['admin'],
     items: [
       { title: 'Toutes les tâches', url: '/tasks', icon: ListTodo, spaces: ['internal', 'client'] },
       { title: 'Toutes les tâches', url: '/tasks', icon: ListTodo, spaces: ['vendor'] },
@@ -208,6 +221,7 @@ const navCategories: NavCategory[] = [
     title: 'RDV',
     icon: Calendar,
     spaces: ['internal'],
+    roles: ['admin'],
     items: [
       { title: 'Calendrier', url: '/calendar', icon: Calendar, spaces: ['internal'] },
     ],
@@ -216,6 +230,7 @@ const navCategories: NavCategory[] = [
     title: 'Documents',
     icon: FolderOpen,
     spaces: ['internal', 'client', 'vendor'],
+    roles: ['admin'],
     items: [
       { title: 'Tous les documents', url: '/documents', icon: FileText, spaces: ['internal', 'client'] },
       { title: 'Tous les documents', url: '/documents', icon: FileText, spaces: ['vendor'] },
@@ -229,6 +244,7 @@ const navCategories: NavCategory[] = [
     title: 'Communication',
     icon: MessageSquare,
     spaces: ['internal', 'client', 'vendor'],
+    roles: ['admin'],
     items: [
       { title: 'Canaux', url: '/channels', icon: MessageSquare, spaces: ['internal'] },
       { title: 'Messagerie', url: '/messages', icon: MessageSquare, spaces: ['client'] },
@@ -239,6 +255,7 @@ const navCategories: NavCategory[] = [
     title: 'Administration',
     icon: Shield,
     spaces: ['internal'],
+    roles: ['admin'],
     items: [
       { title: 'Gestion des accès', url: '/invitations', icon: UserPlus, spaces: ['internal'] },
     ],
@@ -252,8 +269,8 @@ const secondaryItems: NavItem[] = [
 
 export function AppSidebar() {
   const [location] = useLocation();
-  const { currentSpace } = useSpace();
-  const [openCategories, setOpenCategories] = useState<string[]>(['Commercial', 'Projets', 'Finance', 'Tâches', 'RDV', 'Documents', 'Communication', 'Administration']);
+  const { currentSpace, currentUser } = useSpace();
+  const [openCategories, setOpenCategories] = useState<string[]>(['Accueil', 'Commercial', 'Projets', 'Finance', 'Tâches', 'RDV', 'Documents', 'Communication', 'Administration']);
 
   const toggleCategory = (category: string) => {
     setOpenCategories(prev => 
@@ -278,11 +295,26 @@ export function AppSidebar() {
     return baseUrl;
   };
 
+  const userRole = (currentUser?.role || 'admin') as UserRole;
+
   const filteredCategories = navCategories
     .filter(cat => cat.spaces.includes(currentSpace))
+    .filter(cat => {
+      // For non-internal spaces, role filtering doesn't apply at category level
+      if (currentSpace !== 'internal') return true;
+      // If no roles specified, only admin sees it
+      if (!cat.roles) return true;
+      return cat.roles.includes(userRole);
+    })
     .map(cat => ({
       ...cat,
-      items: cat.items.filter(item => item.spaces.includes(currentSpace))
+      items: cat.items.filter(item => {
+        if (!item.spaces.includes(currentSpace)) return false;
+        if (item.roles && currentSpace === 'internal') {
+          return item.roles.includes(userRole);
+        }
+        return true;
+      })
     }))
     .filter(cat => cat.items.length > 0);
   

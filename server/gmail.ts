@@ -1216,6 +1216,249 @@ export async function sendVendorWelcomeEmail(params: VendorWelcomeEmailParams): 
   }
 }
 
+export interface DeadlineReminderEmailParams {
+  to: string;
+  vendorName: string;
+  projectName: string;
+  milestoneName: string;
+  plannedDate: string;
+  daysRemaining: number;
+  isOverdue: boolean;
+  organizationName?: string;
+}
+
+export async function sendDeadlineReminderEmail(params: DeadlineReminderEmailParams): Promise<boolean> {
+  try {
+    const gmail = await getUncachableGmailClient();
+
+    const orgName = params.organizationName || 'IA Infinity';
+    const isOverdue = params.isOverdue;
+    const headerGradient = isOverdue
+      ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+      : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)';
+    const headerSubtitle = isOverdue ? 'Deadline dépassée' : 'Rappel de deadline';
+
+    const subject = isOverdue
+      ? `RETARD: ${params.milestoneName} - ${params.projectName} | ${orgName}`
+      : `Rappel: ${params.milestoneName} - ${params.projectName} | ${orgName}`;
+
+    const statusMessage = isOverdue
+      ? `<p style="margin: 0 0 16px 0; color: #dc2626; font-size: 16px; font-weight: 600;">
+          Cette deadline est dépassée de ${Math.abs(params.daysRemaining)} jour(s).
+        </p>`
+      : params.daysRemaining === 1
+        ? `<p style="margin: 0 0 16px 0; color: #ea580c; font-size: 16px; font-weight: 600;">
+            Cette deadline est demain.
+          </p>`
+        : `<p style="margin: 0 0 16px 0; color: #ea580c; font-size: 16px; font-weight: 600;">
+            Il reste ${params.daysRemaining} jour(s) avant cette deadline.
+          </p>`;
+
+    const htmlBody = `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td style="background: ${headerGradient}; padding: 32px 40px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">
+                ${orgName}
+              </h1>
+              <p style="margin: 8px 0 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">
+                ${headerSubtitle}
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 40px;">
+              <h2 style="margin: 0 0 16px 0; color: #18181b; font-size: 20px; font-weight: 600;">
+                Bonjour ${params.vendorName},
+              </h2>
+              <p style="margin: 0 0 24px 0; color: #52525b; font-size: 16px; line-height: 1.6;">
+                La deadline <strong>${params.milestoneName}</strong> pour le projet <strong>${params.projectName}</strong> est prévue le <strong>${params.plannedDate}</strong>.
+              </p>
+              ${statusMessage}
+              <p style="margin: 0; color: #a1a1aa; font-size: 12px; line-height: 1.6;">
+                Pour toute question, n'hésitez pas à nous contacter.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #fafafa; padding: 24px 40px; text-align: center; border-top: 1px solid #e4e4e7;">
+              <p style="margin: 0; color: #a1a1aa; font-size: 12px;">
+                &copy; ${new Date().getFullYear()} ${orgName}. Tous droits réservés.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim();
+
+    const senderEmail = await getSenderEmail();
+    const encodedMessage = createEmailMessage(params.to, subject, htmlBody, senderEmail || undefined, orgName);
+
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage
+      }
+    });
+
+    console.log(`[Gmail] Deadline reminder email sent to ${params.to} for ${params.milestoneName}`);
+    return true;
+  } catch (error) {
+    console.error('[Gmail] Failed to send deadline reminder email:', error);
+    return false;
+  }
+}
+
+export interface QuoteSignatureEmailParams {
+  to: string;
+  clientName: string;
+  quoteName: string;
+  quoteNumber: string;
+  quoteAmount: string;
+  signatureUrl: string;
+  organizationName?: string;
+}
+
+export async function sendQuoteSignatureEmail(params: QuoteSignatureEmailParams): Promise<boolean> {
+  try {
+    const gmail = await getUncachableGmailClient();
+
+    const orgName = params.organizationName || 'IA Infinity';
+    const formattedAmount = parseFloat(params.quoteAmount).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
+
+    const subject = `Devis à signer : ${params.quoteNumber} - ${params.quoteName} | ${orgName}`;
+
+    const htmlBody = `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); padding: 32px 40px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">
+                ${orgName}
+              </h1>
+              <p style="margin: 8px 0 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">
+                Nouveau devis à signer
+              </p>
+            </td>
+          </tr>
+
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <h2 style="margin: 0 0 16px 0; color: #18181b; font-size: 20px; font-weight: 600;">
+                Bonjour${params.clientName ? ` ${params.clientName}` : ''},
+              </h2>
+
+              <p style="margin: 0 0 24px 0; color: #52525b; font-size: 16px; line-height: 1.6;">
+                Un devis a été préparé et signé par notre équipe. Veuillez le consulter et le signer pour valider la prestation.
+              </p>
+
+              <!-- Quote Details Card -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px; border: 1px solid #e4e4e7; border-radius: 8px; overflow: hidden;">
+                <tr>
+                  <td style="background-color: #fafafa; padding: 16px; border-bottom: 1px solid #e4e4e7;">
+                    <h3 style="margin: 0; color: #18181b; font-size: 16px; font-weight: 600;">
+                      ${params.quoteName}
+                    </h3>
+                    <p style="margin: 4px 0 0 0; color: #71717a; font-size: 14px;">
+                      N&deg; ${params.quoteNumber}
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 16px;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="color: #71717a; font-size: 14px;">Montant</td>
+                        <td style="color: #18181b; font-size: 18px; font-weight: 700; text-align: right;">${formattedAmount}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
+                <tr>
+                  <td align="center">
+                    <a href="${params.signatureUrl}" style="display: inline-block; background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-size: 16px; font-weight: 600;">
+                      Signer le devis
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin: 0 0 16px 0; color: #71717a; font-size: 14px; line-height: 1.6;">
+                Si le bouton ne fonctionne pas, copiez et collez ce lien dans votre navigateur :
+              </p>
+
+              <p style="margin: 0 0 24px 0; color: #8b5cf6; font-size: 12px; word-break: break-all; background-color: #f4f4f5; padding: 12px; border-radius: 4px;">
+                ${params.signatureUrl}
+              </p>
+
+              <p style="margin: 0; color: #a1a1aa; font-size: 12px; line-height: 1.6;">
+                Pour toute question, n'h&eacute;sitez pas &agrave; nous contacter. Ce devis n&eacute;cessite votre signature &eacute;lectronique pour &ecirc;tre valid&eacute;.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #fafafa; padding: 24px 40px; text-align: center; border-top: 1px solid #e4e4e7;">
+              <p style="margin: 0; color: #a1a1aa; font-size: 12px;">
+                &copy; ${new Date().getFullYear()} ${orgName}. Tous droits r&eacute;serv&eacute;s.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim();
+
+    const senderEmail = await getSenderEmail();
+    const encodedMessage = createEmailMessage(params.to, subject, htmlBody, senderEmail || undefined, orgName);
+
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage
+      }
+    });
+
+    console.log(`Quote signature email sent to ${params.to} for quote ${params.quoteNumber}`);
+    return true;
+  } catch (error) {
+    console.error('Failed to send quote signature email:', error);
+    return false;
+  }
+}
+
 export async function sendVendorProjectAssignmentEmail(params: VendorProjectAssignmentEmailParams): Promise<boolean> {
   try {
     const gmail = await getUncachableGmailClient();

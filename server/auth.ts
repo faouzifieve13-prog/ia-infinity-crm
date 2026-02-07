@@ -111,9 +111,34 @@ export function registerPasswordAuthRoutes(app: Express) {
       }
 
       // Get ALL memberships for this user
-      const memberships = await storage.getMembershipsByUser(user.id, DEFAULT_ORG_ID);
-      if (!memberships || memberships.length === 0) {
+      const allMemberships = await storage.getMembershipsByUser(user.id, DEFAULT_ORG_ID);
+      if (!allMemberships || allMemberships.length === 0) {
         return res.status(403).json({ error: "Aucun accès à cette organisation" });
+      }
+
+      // Filter out vendor memberships whose vendorContactId points to a deleted vendor
+      const validMemberships: typeof allMemberships = [];
+      for (const m of allMemberships) {
+        if (m.role === 'vendor' && m.vendorContactId) {
+          const contact = await storage.getContact(m.vendorContactId, DEFAULT_ORG_ID);
+          if (!contact) {
+            // Contact no longer exists - skip this membership
+            continue;
+          }
+          if (contact.vendorId) {
+            const vendor = await storage.getVendor(contact.vendorId, DEFAULT_ORG_ID);
+            if (!vendor) {
+              // Vendor no longer exists - skip this membership
+              continue;
+            }
+          }
+        }
+        validMemberships.push(m);
+      }
+
+      const memberships = validMemberships;
+      if (memberships.length === 0) {
+        return res.status(403).json({ error: "Aucun accès actif à cette organisation" });
       }
 
       // If multiple memberships, return them for user to choose
@@ -657,9 +682,17 @@ export async function requireVendorProjectAccess(req: Request, res: Response, ne
     return next();
   }
 
-  // Fallback: If project has no specific vendorContactId, check vendorId (company level)
+  // Priority 2: If project has no specific vendorContactId, check vendorId (company level)
   if (!project.vendorContactId && project.vendorId && project.vendorId === contact.vendorId) {
     return next();
+  }
+
+  // Priority 3: Check projectVendors junction table (new many-to-many system)
+  if (contact.vendorId) {
+    const isAssigned = await storage.isVendorAssignedToProject(contact.vendorId, projectId, orgId);
+    if (isAssigned) {
+      return next();
+    }
   }
 
   return res.status(403).json({ error: "Accès refusé: vous n'êtes pas assigné à ce projet" });

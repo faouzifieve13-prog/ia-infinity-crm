@@ -25,6 +25,15 @@ app.use(
 
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
 
+// Redirect Replit domain to custom domain
+app.use((req, res, next) => {
+  const host = req.get('host');
+  if (host && host.includes('replit.app')) {
+    const newUrl = `https://ia-infinity.app${req.originalUrl}`;
+    return res.redirect(301, newUrl);
+    }
+  next();
+  });
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",

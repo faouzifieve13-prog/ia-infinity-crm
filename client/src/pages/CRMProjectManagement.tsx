@@ -139,6 +139,24 @@ const milestoneStatusConfig = {
   cancelled: { label: "Annulé", color: "text-slate-400", bgColor: "bg-slate-100 dark:bg-slate-800" },
 };
 
+// ── Project Color Palette ────────────────────────────────────────────────
+const PROJECT_COLORS = [
+  { bg: "bg-violet-500", dot: "bg-violet-500", text: "text-violet-600", light: "bg-violet-100 dark:bg-violet-900", hex: "#8B5CF6" },
+  { bg: "bg-sky-500", dot: "bg-sky-500", text: "text-sky-600", light: "bg-sky-100 dark:bg-sky-900", hex: "#0EA5E9" },
+  { bg: "bg-rose-500", dot: "bg-rose-500", text: "text-rose-600", light: "bg-rose-100 dark:bg-rose-900", hex: "#F43F5E" },
+  { bg: "bg-teal-500", dot: "bg-teal-500", text: "text-teal-600", light: "bg-teal-100 dark:bg-teal-900", hex: "#14B8A6" },
+  { bg: "bg-orange-500", dot: "bg-orange-500", text: "text-orange-600", light: "bg-orange-100 dark:bg-orange-900", hex: "#F97316" },
+  { bg: "bg-indigo-500", dot: "bg-indigo-500", text: "text-indigo-600", light: "bg-indigo-100 dark:bg-indigo-900", hex: "#6366F1" },
+  { bg: "bg-pink-500", dot: "bg-pink-500", text: "text-pink-600", light: "bg-pink-100 dark:bg-pink-900", hex: "#EC4899" },
+  { bg: "bg-lime-500", dot: "bg-lime-500", text: "text-lime-600", light: "bg-lime-100 dark:bg-lime-900", hex: "#84CC16" },
+  { bg: "bg-cyan-500", dot: "bg-cyan-500", text: "text-cyan-600", light: "bg-cyan-100 dark:bg-cyan-900", hex: "#06B6D4" },
+  { bg: "bg-fuchsia-500", dot: "bg-fuchsia-500", text: "text-fuchsia-600", light: "bg-fuchsia-100 dark:bg-fuchsia-900", hex: "#D946EF" },
+];
+
+function getProjectColor(index: number) {
+  return PROJECT_COLORS[index % PROJECT_COLORS.length];
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────
 const MONTHS_FR = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 const DAYS_FR = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
@@ -310,11 +328,13 @@ const ProjectMilestoneCard = ({
   milestones,
   tasks,
   onClick,
+  projectColor,
 }: {
   project: Project & { account?: Account };
   milestones: DeliveryMilestone[];
   tasks: Task[];
   onClick?: () => void;
+  projectColor?: typeof PROJECT_COLORS[0];
 }) => {
   const status = statusConfig[project.status];
   const completedMilestones = milestones.filter(m => m.status === "completed").length;
@@ -336,7 +356,7 @@ const ProjectMilestoneCard = ({
       transition={{ duration: 0.2 }}
     >
       <Card
-        className={`cursor-pointer overflow-hidden border-l-4 hover:shadow-lg transition-all ${status.color.replace("bg-", "border-l-")}`}
+        className={`cursor-pointer overflow-hidden border-l-4 hover:shadow-lg transition-all ${projectColor ? projectColor.bg.replace("bg-", "border-l-") : status.color.replace("bg-", "border-l-")}`}
         onClick={onClick}
       >
         <CardHeader className="pb-2">
@@ -494,7 +514,7 @@ const CalendarGrid = ({
                   return (
                     <Tooltip key={j}>
                       <TooltipTrigger>
-                        <div className={`w-2 h-2 rounded-full ${m.status === "completed" ? "bg-emerald-500" : m.status === "overdue" ? "bg-red-500" : config.color}`} />
+                        <div className={`w-2 h-2 rounded-full ${m.status === "completed" ? "bg-emerald-500" : m.status === "overdue" ? "bg-red-500" : m.projectColor}`} />
                       </TooltipTrigger>
                       <TooltipContent>
                         <p className="font-medium">{config.label}</p>
@@ -663,18 +683,27 @@ export default function CRMProjectManagement() {
   // Filter active projects
   const activeProjects = enrichedProjects.filter(p => p.status === "active" || p.status === "on_hold");
 
+  // Stable color map: assign a unique color to each project
+  const projectColorMap = useMemo(() => {
+    const map = new Map<string, typeof PROJECT_COLORS[0]>();
+    enrichedProjects.forEach((p, idx) => {
+      map.set(p.id, getProjectColor(idx));
+    });
+    return map;
+  }, [enrichedProjects]);
+
   // Milestones with project info for calendar
   const milestonesWithProject = useMemo(() => {
     return allMilestones.map(m => {
       const project = enrichedProjects.find(p => p.id === m.projectId);
-      const status = project ? statusConfig[project.status] : statusConfig.active;
+      const pColor = projectColorMap.get(m.projectId) || PROJECT_COLORS[0];
       return {
         ...m,
         projectName: project?.name || "Projet inconnu",
-        projectColor: status.color,
+        projectColor: pColor.dot,
       };
     });
-  }, [allMilestones, enrichedProjects]);
+  }, [allMilestones, enrichedProjects, projectColorMap]);
 
   // Milestones for selected date
   const milestonesForDate = useMemo(() => {
@@ -874,6 +903,7 @@ export default function CRMProjectManagement() {
                       milestones={allMilestones.filter(m => m.projectId === project.id)}
                       tasks={tasks.filter(t => t.projectId === project.id)}
                       onClick={() => navigate(`/projects/${project.id}`)}
+                      projectColor={projectColorMap.get(project.id)}
                     />
                   ))
                 )}
@@ -899,6 +929,7 @@ export default function CRMProjectManagement() {
                       .map(m => {
                         const project = enrichedProjects.find(p => p.id === m.projectId);
                         const config = MILESTONE_CONFIG[m.stage as MilestoneStage];
+                        const pColor = projectColorMap.get(m.projectId) || PROJECT_COLORS[0];
                         const dl = daysUntil(m.plannedDate);
                         const isOverdue = dl < 0;
                         const isUrgent = dl >= 0 && dl <= 7;
@@ -922,7 +953,10 @@ export default function CRMProjectManagement() {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="font-medium text-sm truncate">{config.shortLabel}</p>
-                                <p className="text-xs text-muted-foreground truncate">{project?.name}</p>
+                                <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                                  <span className={`w-1.5 h-1.5 rounded-full inline-block ${pColor.dot}`} />
+                                  {project?.name}
+                                </p>
                               </div>
                               <Badge variant={isOverdue ? "destructive" : isUrgent ? "secondary" : "outline"} className="shrink-0">
                                 {isOverdue ? `+${Math.abs(dl)}j` : `J-${dl}`}
@@ -1017,6 +1051,7 @@ export default function CRMProjectManagement() {
                       <div className="space-y-2">
                         {milestonesForDate.map(m => {
                           const config = MILESTONE_CONFIG[m.stage as MilestoneStage];
+                          const mPColor = projectColorMap.get(m.projectId) || PROJECT_COLORS[0];
                           return (
                             <div
                               key={m.id}
@@ -1024,14 +1059,17 @@ export default function CRMProjectManagement() {
                                 setSelectedMilestone(m);
                                 setMilestoneDialogOpen(true);
                               }}
-                              className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 cursor-pointer hover:bg-muted transition-colors"
+                              className={`flex items-center gap-3 p-3 rounded-lg bg-muted/50 cursor-pointer hover:bg-muted transition-colors border-l-3 ${mPColor.bg.replace("bg-", "border-l-")}`}
                             >
                               <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${config.bgLight}`}>
                                 {config.icon}
                               </div>
                               <div className="flex-1">
                                 <p className="font-medium text-sm">{config.label}</p>
-                                <p className="text-xs text-muted-foreground">{m.projectName}</p>
+                                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <span className={`w-2 h-2 rounded-full inline-block ${mPColor.dot}`} />
+                                  {m.projectName}
+                                </p>
                               </div>
                               <Badge variant={m.status === "completed" ? "outline" : m.status === "overdue" ? "destructive" : "secondary"}>
                                 {milestoneStatusConfig[m.status as keyof typeof milestoneStatusConfig]?.label || m.status}
@@ -1062,35 +1100,47 @@ export default function CRMProjectManagement() {
                     >
                       Tous les projets
                     </Button>
-                    {activeProjects.map(p => (
-                      <Button
-                        key={p.id}
-                        variant={selectedProject === p.id ? "secondary" : "ghost"}
-                        size="sm"
-                        className="w-full justify-start"
-                        onClick={() => setSelectedProject(p.id)}
-                      >
-                        <div className={`w-2 h-2 rounded-full mr-2 ${statusConfig[p.status].dotColor}`} />
-                        <span className="truncate">{p.name}</span>
-                      </Button>
-                    ))}
+                    {enrichedProjects.filter(p => p.status !== "archived").map(p => {
+                      const pColor = projectColorMap.get(p.id) || PROJECT_COLORS[0];
+                      return (
+                        <Button
+                          key={p.id}
+                          variant={selectedProject === p.id ? "secondary" : "ghost"}
+                          size="sm"
+                          className="w-full justify-start"
+                          onClick={() => setSelectedProject(p.id)}
+                        >
+                          <div className={`w-3 h-3 rounded-full mr-2 flex-shrink-0 ${pColor.dot}`} />
+                          <span className="truncate">{p.name}</span>
+                        </Button>
+                      );
+                    })}
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
                 <CardContent className="py-4">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Légende</p>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Couleurs projets</p>
                   <div className="space-y-2">
-                    {MILESTONE_ORDER.map(stage => {
-                      const config = MILESTONE_CONFIG[stage];
+                    {enrichedProjects.filter(p => p.status !== "archived").map(p => {
+                      const pColor = projectColorMap.get(p.id) || PROJECT_COLORS[0];
                       return (
-                        <div key={stage} className="flex items-center gap-2">
-                          <div className={`w-3 h-3 rounded-full ${config.color}`} />
-                          <span className="text-xs">{config.icon} {config.shortLabel}</span>
+                        <div key={p.id} className="flex items-center gap-2">
+                          <div className={`w-3 h-3 rounded-full ${pColor.dot}`} />
+                          <span className="text-xs truncate">{p.name}</span>
                         </div>
                       );
                     })}
+                    <Separator className="my-2" />
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-emerald-500" />
+                      <span className="text-xs">Terminé</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-red-500" />
+                      <span className="text-xs">En retard</span>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -1108,6 +1158,7 @@ export default function CRMProjectManagement() {
                 milestones={allMilestones.filter(m => m.projectId === project.id)}
                 tasks={tasks.filter(t => t.projectId === project.id)}
                 onClick={() => navigate(`/projects/${project.id}`)}
+                projectColor={projectColorMap.get(project.id)}
               />
             ))}
             {enrichedProjects.length === 0 && (

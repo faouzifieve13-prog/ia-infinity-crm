@@ -290,6 +290,9 @@ export const projectVendors = pgTable("project_vendors", {
   assignedAt: timestamp("assigned_at").defaultNow().notNull(),
   assignedById: varchar("assigned_by_id").references(() => users.id),
   notes: text("notes"),
+  dailyRate: decimal("daily_rate", { precision: 10, scale: 2 }).notNull().default("0"),
+  estimatedDays: integer("estimated_days").notNull().default(0),
+  fixedPrice: decimal("fixed_price", { precision: 12, scale: 2 }).notNull().default("0"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
@@ -382,6 +385,18 @@ export const vendors = pgTable("vendors", {
   index("vendors_availability_idx").on(table.orgId, table.availability),
   index("vendors_notion_idx").on(table.notionPageId),
 ]);
+
+export const vendorAvailabilities = pgTable("vendor_availabilities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id),
+  vendorId: varchar("vendor_id").notNull().references(() => vendors.id, { onDelete: "cascade" }),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  status: vendorAvailabilityEnum("status").notNull().default('available'),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
 
 export const missions = pgTable("missions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -907,6 +922,18 @@ export const vendorsRelations = relations(vendors, ({ one, many }) => ({
   missions: many(missions),
   tasks: many(tasks),
   projectVendors: many(projectVendors),
+  availabilities: many(vendorAvailabilities),
+}));
+
+export const vendorAvailabilitiesRelations = relations(vendorAvailabilities, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [vendorAvailabilities.orgId],
+    references: [organizations.id],
+  }),
+  vendor: one(vendors, {
+    fields: [vendorAvailabilities.vendorId],
+    references: [vendors.id],
+  }),
 }));
 
 export const missionsRelations = relations(missions, ({ one }) => ({
@@ -1108,6 +1135,10 @@ export const insertProjectUpdateSchema = createInsertSchema(projectUpdates).omit
 export const insertProjectDeliverableSchema = createInsertSchema(projectDeliverables).omit({ id: true, createdAt: true });
 export const insertComplianceStepSchema = createInsertSchema(deliverableComplianceSteps).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertComplianceTemplateSchema = createInsertSchema(complianceWorkflowTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertVendorAvailabilitySchema = createInsertSchema(vendorAvailabilities).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date(),
+});
 
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -1137,6 +1168,7 @@ export type InsertProjectUpdate = z.infer<typeof insertProjectUpdateSchema>;
 export type InsertProjectDeliverable = z.infer<typeof insertProjectDeliverableSchema>;
 export type InsertComplianceStep = z.infer<typeof insertComplianceStepSchema>;
 export type InsertComplianceTemplate = z.infer<typeof insertComplianceTemplateSchema>;
+export type InsertVendorAvailability = z.infer<typeof insertVendorAvailabilitySchema>;
 
 export type Organization = typeof organizations.$inferSelect;
 export type User = typeof users.$inferSelect;
@@ -1171,6 +1203,7 @@ export type ProjectUpdate = typeof projectUpdates.$inferSelect;
 export type ProjectDeliverable = typeof projectDeliverables.$inferSelect;
 export type ComplianceStep = typeof deliverableComplianceSteps.$inferSelect;
 export type ComplianceTemplate = typeof complianceWorkflowTemplates.$inferSelect;
+export type VendorAvailabilityRecord = typeof vendorAvailabilities.$inferSelect;
 export type ComplianceStepType = 'form_text' | 'form_textarea' | 'checklist' | 'dynamic_list' | 'file_upload' | 'approval' | 'correction_list';
 export type ComplianceStepStatus = 'locked' | 'pending' | 'draft' | 'submitted' | 'approved' | 'rejected' | 'completed';
 
@@ -1567,11 +1600,16 @@ export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
 
 // Enums for delivery milestones
 export const milestoneStageEnum = pgEnum('milestone_stage', [
-  'production_v1',        // Étape 1: Production V1 (Sous-traitant)
-  'delivery_v1_client',   // Étape 2: Livraison V1 au Client
-  'client_meeting',       // Étape 3: RDV Client (Jalon critique)
-  'retouches_v2',         // Étape 4: Retouches V2 (Sous-traitant)
-  'final_delivery'        // Étape 5: Livraison Finale
+  'production_v1',           // Production V1 (Sous-traitant)
+  'delivery_v1_client',      // Livraison V1 au Client
+  'client_meeting',          // RDV Client (Jalon critique)
+  'retouches_v2',            // Retouches V2 (Sous-traitant)
+  'final_delivery',          // Livraison Finale
+  'audit_client',            // Audit Client
+  'production_v2',           // Production V2
+  'implementation_client',   // Implémentation Client
+  'client_feedback',         // Retour Client
+  'final_version'            // Version Finale
 ]);
 
 export const milestoneStatusEnum = pgEnum('milestone_status', [

@@ -67,13 +67,53 @@ export async function processScheduledAlerts(): Promise<AlertResult> {
       try {
         // Envoyer selon le canal configuré
         if (alert.channel === "email" || alert.channel === "both") {
-          // TODO: Implémenter l'envoi d'email via le service Gmail existant
-          // await sendDeadlineAlertEmail({
-          //   to: alert.recipientEmail!,
-          //   subject: alert.subject,
-          //   body: alert.body,
-          // });
-          console.log(`[ALERT] Email would be sent to ${alert.recipientEmail}: ${alert.subject}`);
+          if (alert.recipientEmail) {
+            // Fetch project and user info for the email
+            const [alertProject] = await db
+              .select()
+              .from(projects)
+              .where(eq(projects.id, alert.projectId));
+
+            const [alertUser] = alert.recipientUserId
+              ? await db.select().from(users).where(eq(users.id, alert.recipientUserId))
+              : [null];
+
+            const milestoneName = alert.subject
+              .replace(/^Rappel J-\d+: /, '')
+              .replace(/^RETARD: /, '');
+
+            // Calculate days remaining
+            let daysRemaining = 0;
+            if (alert.milestoneId) {
+              const [milestone] = await db
+                .select()
+                .from(deliveryMilestones)
+                .where(eq(deliveryMilestones.id, alert.milestoneId));
+              if (milestone) {
+                const nowMs = new Date().setHours(0, 0, 0, 0);
+                const targetMs = new Date(milestone.plannedDate).setHours(0, 0, 0, 0);
+                daysRemaining = Math.ceil((targetMs - nowMs) / 86400000);
+              }
+            }
+
+            try {
+              const { sendDeadlineReminderEmail } = await import("./gmail");
+              await sendDeadlineReminderEmail({
+                to: alert.recipientEmail,
+                vendorName: alertUser?.name || alertUser?.email || "Sous-traitant",
+                projectName: alertProject?.name || "Projet",
+                milestoneName,
+                plannedDate: alert.milestoneId
+                  ? new Date(alert.scheduledFor.getTime() + (alert.alertType === "reminder_j2" ? 2 : 1) * 86400000).toLocaleDateString("fr-FR")
+                  : new Date().toLocaleDateString("fr-FR"),
+                daysRemaining,
+                isOverdue: alert.alertType === "overdue",
+              });
+              console.log(`[ALERT] Email sent to ${alert.recipientEmail}: ${alert.subject}`);
+            } catch (emailError) {
+              console.error(`[ALERT] Failed to send email to ${alert.recipientEmail}:`, emailError);
+            }
+          }
         }
 
         if (alert.channel === "in_app" || alert.channel === "both") {

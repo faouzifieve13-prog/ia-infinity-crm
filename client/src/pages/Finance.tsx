@@ -1,9 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
-import { 
-  TrendingUp, 
-  TrendingDown, 
-  DollarSign, 
-  Wallet, 
+import { useQuery, useMutation } from '@tanstack/react-query';
+import {
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  Wallet,
   PieChart,
   Receipt,
   CreditCard,
@@ -15,6 +15,9 @@ import {
   Loader2,
   Clock,
   CheckCircle2,
+  Users,
+  ExternalLink,
+  FileText,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +25,9 @@ import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { Link } from 'wouter';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
 import type { Invoice, Expense } from '@/lib/types';
 
 interface DashboardStats {
@@ -36,6 +42,8 @@ interface DashboardStats {
 }
 
 export default function Finance() {
+  const { toast } = useToast();
+
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ['/api/dashboard/stats'],
   });
@@ -46,6 +54,19 @@ export default function Finance() {
 
   const { data: expenses = [], isLoading: expensesLoading } = useQuery<Expense[]>({
     queryKey: ['/api/expenses'],
+  });
+
+  const markPaidMutation = useMutation({
+    mutationFn: async (invoiceId: string) => {
+      await apiRequest('PATCH', `/api/invoices/${invoiceId}`, { status: 'paid', paidDate: new Date().toISOString() });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/invoices'] });
+      toast({ title: 'Facture marquée comme payée' });
+    },
+    onError: () => {
+      toast({ title: 'Erreur', description: 'Impossible de mettre à jour la facture', variant: 'destructive' });
+    },
   });
 
   const isLoading = statsLoading || invoicesLoading || expensesLoading;
@@ -80,6 +101,7 @@ export default function Finance() {
   const pendingClientInvoices = invoices.filter(inv => inv.status === 'sent' || inv.status === 'overdue');
   const overdueInvoices = invoices.filter(inv => inv.status === 'overdue');
   const pendingVendorExpenses = expenses.filter(exp => exp.status === 'pending');
+  const vendorInvoices = invoices.filter(inv => inv.vendorId);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('fr-FR', {
@@ -282,6 +304,92 @@ export default function Finance() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Vendor Invoices Section */}
+      {vendorInvoices.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-orange-500" />
+                Factures Sous-traitants
+              </CardTitle>
+              <CardDescription>{vendorInvoices.length} facture(s) soumise(s) par les sous-traitants</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>N° Facture</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Montant</TableHead>
+                  <TableHead>Statut</TableHead>
+                  <TableHead>PDF</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {vendorInvoices.map((invoice) => (
+                  <TableRow key={invoice.id}>
+                    <TableCell className="font-medium">
+                      {invoice.invoiceNumber || '-'}
+                    </TableCell>
+                    <TableCell className="max-w-[200px] truncate">
+                      {invoice.description || '-'}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="capitalize text-xs">
+                        {invoice.invoiceType || '-'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {formatCurrency(parseFloat(invoice.amount || '0'))}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          invoice.status === 'paid' ? 'default' :
+                          invoice.status === 'overdue' ? 'destructive' : 'secondary'
+                        }
+                        className="text-xs"
+                      >
+                        {invoice.status === 'paid' ? 'Payée' :
+                         invoice.status === 'sent' ? 'Envoyée' :
+                         invoice.status === 'overdue' ? 'En retard' :
+                         invoice.status === 'draft' ? 'Brouillon' : invoice.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {invoice.pdfUrl ? (
+                        <a href={invoice.pdfUrl} target="_blank" rel="noopener noreferrer">
+                          <Button variant="ghost" size="sm">
+                            <FileText className="h-4 w-4" />
+                          </Button>
+                        </a>
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {invoice.status !== 'paid' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => markPaidMutation.mutate(invoice.id)}
+                          disabled={markPaidMutation.isPending}
+                        >
+                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                          Payée
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Mail, Copy, UserPlus, Clock, CheckCircle, XCircle, RotateCcw, Trash2, Link2, Send, AlertCircle } from 'lucide-react';
+import { Mail, Copy, UserPlus, Clock, CheckCircle, XCircle, RotateCcw, Trash2, Link2, Send, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -212,6 +212,28 @@ export default function Invitations() {
     },
   });
 
+  const resendMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest('POST', `/api/invitations/${id}/resend`);
+      return response.json() as Promise<InvitationWithLink>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/invitations'] });
+      const emailInfo = data.emailSent ? ' Email envoyé avec succès.' : '';
+      toast({
+        title: 'Invitation renvoyée',
+        description: `Un nouveau lien a été créé pour ${data.email}.${emailInfo}`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erreur',
+        description: error.message || "Impossible de renvoyer l'invitation.",
+        variant: 'destructive',
+      });
+    },
+  });
+
   const handleCreateInvite = () => {
     // Debug: Log the exact state at the moment of submission
     console.log("[Invitations] handleCreateInvite called");
@@ -271,9 +293,9 @@ export default function Invitations() {
   const getRoleForSpace = (space: Space): UserRole[] => {
     switch (space) {
       case 'internal':
-        return ['admin', 'sales', 'delivery', 'finance'];
+        return ['admin', 'sales'];
       case 'client':
-        return ['client_admin', 'client_member'];
+        return ['client_admin'];
       case 'vendor':
         return ['vendor'];
       default:
@@ -707,6 +729,18 @@ export default function Invitations() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
+                        {invitation.status !== 'accepted' && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            title="Renvoyer l'invitation"
+                            onClick={() => resendMutation.mutate(invitation.id)}
+                            disabled={resendMutation.isPending}
+                            data-testid={`button-resend-${invitation.id}`}
+                          >
+                            <RefreshCw className={`h-4 w-4 ${resendMutation.isPending ? 'animate-spin' : ''}`} />
+                          </Button>
+                        )}
                         {invitation.status === 'pending' && (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>

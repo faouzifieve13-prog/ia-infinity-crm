@@ -166,7 +166,7 @@ export default function DealDetail() {
   const [driveQuotesDialogOpen, setDriveQuotesDialogOpen] = useState(false);
   const [qontoQuoteDialogOpen, setQontoQuoteDialogOpen] = useState(false);
   const [sendingQuoteId, setSendingQuoteId] = useState<string | null>(null);
-  const [selectedQontoQuoteType, setSelectedQontoQuoteType] = useState<'audit' | 'automatisation'>('audit');
+  const [selectedQontoQuoteType, setSelectedQontoQuoteType] = useState<'audit' | 'prestation'>('audit');
   const [statusFollowUpDate, setStatusFollowUpDate] = useState<string>('');
   const [statusFollowUpNotes, setStatusFollowUpNotes] = useState<string>('');
   const [followUpEmail, setFollowUpEmail] = useState({ to: '', subject: '', body: '' });
@@ -440,7 +440,7 @@ export default function DealDetail() {
         contactEmail: account?.contactEmail || '',
         amount: deal?.amount || '0',
         probability: deal?.probability || 0,
-        missionTypes: ['automatisation'],
+        missionTypes: ['prestation'],
         nextAction: deal?.nextAction || null
       });
       
@@ -826,9 +826,9 @@ export default function DealDetail() {
               </DropdownMenuItem>
               <DropdownMenuItem 
                 onClick={() => {
-                  setSelectedQontoQuoteType('automatisation');
+                  setSelectedQontoQuoteType('prestation');
                   setQontoFormData({
-                    title: "Prestation d'automatisation IA",
+                    title: "Prestation IA",
                     description: "Développement et mise en place de solutions d'automatisation personnalisées",
                     quantity: 1,
                     unitPrice: parseFloat(deal?.amount || '3000'),
@@ -837,10 +837,10 @@ export default function DealDetail() {
                   setQontoQuoteDialogOpen(true);
                 }}
                 disabled={!qontoStatus?.connected}
-                data-testid="menu-qonto-automatisation"
+                data-testid="menu-qonto-prestation"
               >
                 <FileText className="mr-2 h-4 w-4" />
-                Devis Automatisation
+                Devis Prestation
               </DropdownMenuItem>
               {!qontoStatus?.connected && (
                 <div className="px-2 py-1.5 text-xs text-muted-foreground">

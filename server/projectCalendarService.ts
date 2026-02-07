@@ -4,12 +4,13 @@
  */
 
 import { db } from "./db";
-import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
+import { eq, and, gte, lte, sql, inArray, isNull } from "drizzle-orm";
 import {
   projectCalendarEvents,
   deliveryMilestones,
   deadlineAlerts,
   projects,
+  projectVendors,
   vendors,
   users,
   notifications,
@@ -358,6 +359,20 @@ export async function generateProjectMilestones(
 
   // Créer en transaction
   await db.transaction(async (tx) => {
+    // Delete existing milestones for this project to avoid duplicates
+    const existingMilestones = await tx
+      .select({ id: deliveryMilestones.id })
+      .from(deliveryMilestones)
+      .where(eq(deliveryMilestones.projectId, projectId));
+
+    for (const m of existingMilestones) {
+      await tx.delete(projectCalendarEvents).where(eq(projectCalendarEvents.milestoneId, m.id));
+      await tx.delete(deadlineAlerts).where(eq(deadlineAlerts.milestoneId, m.id));
+    }
+    if (existingMilestones.length > 0) {
+      await tx.delete(deliveryMilestones).where(eq(deliveryMilestones.projectId, projectId));
+    }
+
     const createdMilestones: Map<MilestoneStage, string> = new Map();
 
     for (const def of milestoneDefinitions) {
@@ -728,7 +743,7 @@ export async function updateMilestone(
   milestoneId: string,
   data: Partial<{
     plannedDate: Date;
-    status: string;
+    status: 'pending' | 'in_progress' | 'completed' | 'overdue' | 'cancelled';
     notes: string;
   }>
 ): Promise<void> {
@@ -757,14 +772,238 @@ export async function updateMilestone(
 }
 
 /**
- * Récupérer les jalons d'un projet
+ * Créer ou mettre à jour des jalons avec des dates spécifiques
+ * Utilisé par le formulaire frontend qui permet de définir des dates par étape
+ */
+const MILESTONE_TITLES: Record<string, { title: string; description: string; eventType: ProjectEventType; color: ProjectEventColor; visibleToClient: boolean; visibleToVendor: boolean }> = {
+  audit_client: { title: "Audit Client", description: "Audit et analyse des besoins client", eventType: "meeting", color: "blue", visibleToClient: true, visibleToVendor: true },
+  production_v1: { title: "Production V1", description: "Deadline de production de la première version", eventType: "deadline_internal", color: "yellow", visibleToClient: false, visibleToVendor: true },
+  production_v2: { title: "Production V2", description: "Deadline de production de la deuxième version avec corrections", eventType: "deadline_internal", color: "yellow", visibleToClient: false, visibleToVendor: true },
+  implementation_client: { title: "Implémentation Client", description: "Déploiement et implémentation chez le client", eventType: "deadline_client", color: "red", visibleToClient: true, visibleToVendor: true },
+  client_feedback: { title: "Retour Client", description: "Collecte des retours et feedbacks du client", eventType: "meeting", color: "blue", visibleToClient: true, visibleToVendor: false },
+  final_version: { title: "Version Finale", description: "Livraison de la version finale validée", eventType: "deadline_client", color: "green", visibleToClient: true, visibleToVendor: true },
+};
+
+export async function upsertMilestonesByDates(
+  orgId: string,
+  projectId: string,
+  milestones: Array<{ stage: string; plannedDate: string }>,
+  vendorId?: string | null
+): Promise<void> {
+  // Get ALL milestones (not deduplicated) to properly detect and clean duplicates
+  const allExisting = await db
+    .select()
+    .from(deliveryMilestones)
+    .where(eq(deliveryMilestones.projectId, projectId))
+    .orderBy(deliveryMilestones.createdAt);
+
+  // Group by stage - keep the most recent one, collect duplicates for deletion
+  const existingByStage = new Map<string, typeof allExisting[0]>();
+  const duplicatesToDelete: string[] = [];
+  for (const m of allExisting) {
+    if (existingByStage.has(m.stage)) {
+      const current = existingByStage.get(m.stage)!;
+      // Keep the most recently created, mark the other for deletion
+      if (new Date(m.createdAt) > new Date(current.createdAt)) {
+        duplicatesToDelete.push(current.id);
+        existingByStage.set(m.stage, m);
+      } else {
+        duplicatesToDelete.push(m.id);
+      }
+    } else {
+      existingByStage.set(m.stage, m);
+    }
+  }
+
+  await db.transaction(async (tx) => {
+    // Delete duplicate milestones and their calendar events
+    for (const dupId of duplicatesToDelete) {
+      await tx.delete(projectCalendarEvents).where(eq(projectCalendarEvents.milestoneId, dupId));
+      await tx.delete(deadlineAlerts).where(eq(deadlineAlerts.milestoneId, dupId));
+      await tx.delete(deliveryMilestones).where(eq(deliveryMilestones.id, dupId));
+    }
+
+    // Collect milestone IDs and dates for alert creation
+    const milestoneAlertsToCreate: Array<{ milestoneId: string; plannedDate: Date; title: string; isNew: boolean }> = [];
+
+    for (const item of milestones) {
+      const plannedDate = new Date(item.plannedDate);
+      if (isNaN(plannedDate.getTime())) continue;
+
+      const existingMilestone = existingByStage.get(item.stage as MilestoneStage);
+      const config = MILESTONE_TITLES[item.stage];
+      if (!config) continue;
+
+      if (existingMilestone) {
+        // Update existing milestone
+        await tx
+          .update(deliveryMilestones)
+          .set({ plannedDate, updatedAt: new Date() })
+          .where(eq(deliveryMilestones.id, existingMilestone.id));
+
+        // Update associated calendar event
+        await tx
+          .update(projectCalendarEvents)
+          .set({ start: plannedDate, end: plannedDate, updatedAt: new Date() })
+          .where(eq(projectCalendarEvents.milestoneId, existingMilestone.id));
+
+        milestoneAlertsToCreate.push({ milestoneId: existingMilestone.id, plannedDate, title: config.title, isNew: false });
+      } else {
+        // Create new milestone
+        const [milestone] = await tx
+          .insert(deliveryMilestones)
+          .values({
+            orgId,
+            projectId,
+            stage: item.stage as MilestoneStage,
+            title: config.title,
+            description: config.description,
+            plannedDate,
+            assignedToVendorId: vendorId ?? undefined,
+            visibleToClient: config.visibleToClient,
+            visibleToVendor: config.visibleToVendor,
+            status: "pending" as const,
+          })
+          .returning();
+
+        // Create associated calendar event
+        const visibleToRoles: string[] = ["admin"];
+        if (config.visibleToClient) visibleToRoles.push("client");
+        if (config.visibleToVendor) visibleToRoles.push("vendor");
+
+        await tx.insert(projectCalendarEvents).values({
+          orgId,
+          projectId,
+          milestoneId: milestone.id,
+          title: config.title,
+          description: config.description,
+          start: plannedDate,
+          end: plannedDate,
+          allDay: true,
+          eventType: config.eventType,
+          color: config.color,
+          visibleToRoles,
+          assignedToVendorId: vendorId ?? undefined,
+        });
+
+        milestoneAlertsToCreate.push({ milestoneId: milestone.id, plannedDate, title: config.title, isNew: true });
+      }
+    }
+
+    // Create J-2 and J-1 deadline alerts for all assigned vendors
+    const [project] = await tx
+      .select()
+      .from(projects)
+      .where(eq(projects.id, projectId));
+
+    if (!project) return;
+
+    // Get vendors assigned via projectVendors junction table
+    const assignedVendors = await tx
+      .select({ vendor: vendors, user: users })
+      .from(projectVendors)
+      .innerJoin(vendors, eq(projectVendors.vendorId, vendors.id))
+      .innerJoin(users, eq(vendors.userId, users.id))
+      .where(
+        and(
+          eq(projectVendors.projectId, projectId),
+          eq(projectVendors.isActive, true)
+        )
+      );
+
+    // Also check legacy vendorId on project
+    if (project.vendorId) {
+      const [legacyVendor] = await tx
+        .select({ vendor: vendors, user: users })
+        .from(vendors)
+        .innerJoin(users, eq(vendors.userId, users.id))
+        .where(eq(vendors.id, project.vendorId));
+
+      if (legacyVendor) {
+        const alreadyIncluded = assignedVendors.some(av => av.vendor.id === legacyVendor.vendor.id);
+        if (!alreadyIncluded) {
+          assignedVendors.push(legacyVendor);
+        }
+      }
+    }
+
+    if (assignedVendors.length === 0) return;
+
+    const now = new Date();
+
+    for (const { milestoneId, plannedDate, title, isNew } of milestoneAlertsToCreate) {
+      // For updated milestones, delete unsent alerts first
+      if (!isNew) {
+        await tx
+          .delete(deadlineAlerts)
+          .where(
+            and(
+              eq(deadlineAlerts.milestoneId, milestoneId),
+              isNull(deadlineAlerts.sentAt)
+            )
+          );
+      }
+
+      // Create alerts for each vendor
+      for (const { user } of assignedVendors) {
+        // J-2 alert
+        const alertDateJ2 = subtractDays(plannedDate, 2);
+        if (alertDateJ2 > now) {
+          await tx.insert(deadlineAlerts).values({
+            orgId,
+            projectId,
+            milestoneId,
+            recipientUserId: user.id,
+            recipientEmail: user.email,
+            alertType: "reminder_j2",
+            channel: "both",
+            scheduledFor: alertDateJ2,
+            subject: `Rappel J-2: ${title}`,
+            body: `La deadline "${title}" pour le projet "${project.name}" est dans 2 jours (${plannedDate.toLocaleDateString("fr-FR")}).`,
+          });
+        }
+
+        // J-1 alert
+        const alertDateJ1 = subtractDays(plannedDate, 1);
+        if (alertDateJ1 > now) {
+          await tx.insert(deadlineAlerts).values({
+            orgId,
+            projectId,
+            milestoneId,
+            recipientUserId: user.id,
+            recipientEmail: user.email,
+            alertType: "reminder_j1",
+            channel: "both",
+            scheduledFor: alertDateJ1,
+            subject: `Rappel J-1: ${title}`,
+            body: `La deadline "${title}" pour le projet "${project.name}" est demain (${plannedDate.toLocaleDateString("fr-FR")}).`,
+          });
+        }
+      }
+    }
+  });
+}
+
+/**
+ * Récupérer les jalons d'un projet (dédupliqués par stage)
  */
 export async function getProjectMilestones(projectId: string) {
-  return db
+  const all = await db
     .select()
     .from(deliveryMilestones)
     .where(eq(deliveryMilestones.projectId, projectId))
     .orderBy(deliveryMilestones.plannedDate);
+
+  // Dédupliquer par stage - garder le plus récent
+  const byStage = new Map<string, typeof all[0]>();
+  for (const m of all) {
+    if (!byStage.has(m.stage) || new Date(m.createdAt) > new Date(byStage.get(m.stage)!.createdAt)) {
+      byStage.set(m.stage, m);
+    }
+  }
+  return Array.from(byStage.values()).sort(
+    (a, b) => new Date(a.plannedDate).getTime() - new Date(b.plannedDate).getTime()
+  );
 }
 
 /**

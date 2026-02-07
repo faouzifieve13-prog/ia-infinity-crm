@@ -52,7 +52,14 @@ export async function getVendorProjectIds(
       (!p.vendorContactId && p.vendorId === contact.vendorId)
     );
 
-    return vendorProjects.map(p => p.id);
+    const legacyProjectIds = vendorProjects.map(p => p.id);
+
+    // 3. Projects assigned via projectVendors junction table (new many-to-many system)
+    const junctionProjectIds = await storage.getVendorAssignedProjectIds(contact.vendorId, orgId);
+
+    // Combine and deduplicate
+    const combined = legacyProjectIds.concat(junctionProjectIds);
+    return Array.from(new Set(combined));
   } catch (error) {
     console.error("Error getting vendor project IDs:", error);
     return [];
