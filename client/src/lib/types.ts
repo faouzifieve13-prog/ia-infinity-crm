@@ -200,7 +200,7 @@ export interface Vendor {
   orgId: string;
   userId?: string | null;
   name: string;
-  company: string;
+  company: string | null;
   email: string;
   dailyRate: string;
   skills: string[];

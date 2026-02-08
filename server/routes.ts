@@ -50,6 +50,18 @@ import {
 } from "./projectCalendarService";
 import { runDeadlineAlertsJob } from "./deadlineAlertsJob";
 
+const CUSTOM_DOMAIN = "https://ia-infinity.app";
+
+function getBaseUrl(req?: Request): string {
+  if (process.env.NODE_ENV === "production") {
+    return CUSTOM_DOMAIN;
+  }
+  if (process.env.REPLIT_DEV_DOMAIN) {
+    return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  }
+  return 'http://localhost:5000';
+}
+
 function generateToken(): string {
   return randomBytes(32).toString("hex");
 }
@@ -276,9 +288,7 @@ export async function registerRoutes(
         vendorId: null,
       });
 
-      const baseUrl = process.env.REPLIT_DEV_DOMAIN
-        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-        : 'http://localhost:5000';
+      const baseUrl = getBaseUrl(req);
       const portalLink = `${baseUrl}/auth/accept-invite?token=${token}`;
 
       // Use contact name if available, otherwise extract from email
@@ -1253,9 +1263,7 @@ ${cr.replace(/\n/g, '<br>')}
             vendorId: newVendor.id,
           });
 
-          const baseUrl = process.env.REPLIT_DEV_DOMAIN
-            ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-            : 'http://localhost:5000';
+          const baseUrl = getBaseUrl(req);
           const portalLink = `${baseUrl}/setup-password?token=${token}`;
 
           await sendVendorWelcomeEmail({
@@ -2163,9 +2171,7 @@ ${cr.replace(/\n/g, '<br>')}
             vendorId: vendor.id,
           });
 
-          const baseUrl = process.env.REPLIT_DEV_DOMAIN
-            ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-            : 'http://localhost:5000';
+          const baseUrl = getBaseUrl(req);
           const portalLink = `${baseUrl}/setup-password?token=${token}`;
           inviteLink = portalLink;
 
@@ -2711,11 +2717,7 @@ ${cr.replace(/\n/g, '<br>')}
           });
 
           // Build signature URL
-          const baseUrl = process.env.REPLIT_DEV_DOMAIN
-            ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-            : req.headers.host?.includes('localhost')
-              ? `http://${req.headers.host}`
-              : `https://${req.headers.host}`;
+          const baseUrl = getBaseUrl(req);
           const signatureUrl = `${baseUrl}/sign-quote/${quote.id}?token=${token}`;
 
           // Send email to customer (get email from account)
@@ -3306,12 +3308,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
       
       const { sendContractEmail } = await import("./gmail");
       
-      // Use REPLIT_DEV_DOMAIN for consistent URLs across environments
-      const baseUrl = process.env.REPLIT_DEV_DOMAIN 
-        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-        : req.headers.host?.includes('localhost') 
-          ? `http://${req.headers.host}`
-          : `https://${req.headers.host}`;
+      const baseUrl = getBaseUrl(req);
       const signatureLink = `${baseUrl}/contracts/${contract.id}/sign?token=${token}`;
       
       const org = await storage.getOrganization(orgId);
@@ -5288,9 +5285,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
         vendorId: finalVendorId || null,
       });
       
-      const baseUrl = process.env.REPLIT_DEV_DOMAIN
-        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-        : 'http://localhost:5000';
+      const baseUrl = getBaseUrl(req);
       const inviteLink = `${baseUrl}/setup-password?token=${token}`;
 
       console.log("[POST /api/invitations] ========== ENVOI EMAIL ==========");
@@ -5522,9 +5517,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
         vendorId: oldInvitation.vendorId || null,
       });
 
-      const baseUrl = process.env.REPLIT_DEV_DOMAIN
-        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-        : 'http://localhost:5000';
+      const baseUrl = getBaseUrl(req);
       const inviteLink = `${baseUrl}/setup-password?token=${token}`;
 
       // Send email
@@ -5611,9 +5604,7 @@ Génère un contrat complet et professionnel adapté à ce client.`;
       }
 
       // Try to send a test email
-      const baseUrl = process.env.REPLIT_DEV_DOMAIN
-        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-        : 'http://localhost:5000';
+      const baseUrl = getBaseUrl(req);
 
       console.log("[GMAIL TEST] Tentative d'envoi...");
       const result = await sendVendorWelcomeEmail({
@@ -7483,9 +7474,7 @@ Réponds uniquement avec le message WhatsApp complet incluant la signature.`;
       });
 
       // Send invitation email
-      const baseUrl = process.env.REPLIT_DEV_DOMAIN
-        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-        : 'http://localhost:5000';
+      const baseUrl = getBaseUrl(req);
       const inviteLink = `${baseUrl}/auth/accept-invite?token=${token}`;
 
       try {

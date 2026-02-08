@@ -6,6 +6,10 @@ import { setupPasswordAuth, registerPasswordAuthRoutes, registerAdminInitRoute }
 import { startDeadlineAlertsScheduler } from "./deadlineAlertsJob";
 
 const app = express();
+
+// Trust Replit's reverse proxy so secure cookies work on custom domain (ia-infinity.app)
+app.set('trust proxy', 1);
+
 const httpServer = createServer(app);
 
 declare module "http" {

@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Search, ChevronLeft, ChevronRight, Info } from 'lucide-react';
+import { getAuthToken } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, parseISO, isWithinInterval } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { VendorAvailabilityPeriod, Vendor, VendorAvailability } from '@/lib/types';
 
@@ -29,10 +30,14 @@ function getStatusForDay(
 ): { status: VendorAvailability | null; period: VendorAvailabilityPeriod | null } {
   const vendorPeriods = availabilities.filter((a) => a.vendorId === vendorId);
 
+  // Compare date strings (YYYY-MM-DD) to avoid timezone issues
+  // Browser local dates vs UTC dates from server would mismatch with isWithinInterval
+  const dayStr = format(day, 'yyyy-MM-dd');
+
   const covering = vendorPeriods.filter((period) => {
-    const start = parseISO(period.startDate);
-    const end = parseISO(period.endDate);
-    return isWithinInterval(day, { start, end });
+    const startStr = period.startDate.slice(0, 10);
+    const endStr = period.endDate.slice(0, 10);
+    return dayStr >= startStr && dayStr <= endStr;
   });
 
   if (covering.length === 0) {
@@ -85,11 +90,20 @@ export default function VendorAvailabilityAdmin() {
   const startParam = format(monthStart, 'yyyy-MM-dd');
   const endParam = format(monthEnd, 'yyyy-MM-dd');
 
-  const { data, isLoading } = useQuery<AvailabilityResponse>({
+  const { data, isLoading, error } = useQuery<AvailabilityResponse>({
     queryKey: ['/api/vendor-availabilities', startParam, endParam],
     queryFn: async () => {
+      const token = getAuthToken();
+      const headers: HeadersInit = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       const res = await fetch(
         `/api/vendor-availabilities?start=${encodeURIComponent(startParam)}&end=${encodeURIComponent(endParam)}`,
+        {
+          credentials: 'include',
+          headers,
+        },
       );
       if (!res.ok) {
         throw new Error('Failed to fetch vendor availabilities');
@@ -109,14 +123,14 @@ export default function VendorAvailabilityAdmin() {
       result = result.filter(
         (v) =>
           v.name.toLowerCase().includes(q) ||
-          v.company.toLowerCase().includes(q),
+          (v.company && v.company.toLowerCase().includes(q)),
       );
     }
 
     if (skillFilter.trim()) {
       const q = skillFilter.toLowerCase().trim();
       result = result.filter((v) =>
-        v.skills.some((skill) => skill.toLowerCase().includes(q)),
+        v.skills && v.skills.some((skill) => skill.toLowerCase().includes(q)),
       );
     }
 
@@ -206,9 +220,19 @@ export default function VendorAvailabilityAdmin() {
       </div>
 
       {/* Vendor count */}
-      <div className="text-sm text-muted-foreground">
+      <div className="flex items-center gap-3 text-sm text-muted-foreground">
         <Badge variant="secondary">{filteredVendors.length} sous-traitants</Badge>
+        {availabilities.length > 0 && (
+          <Badge variant="outline">{availabilities.length} periode(s) renseignee(s)</Badge>
+        )}
       </div>
+
+      {/* Error message */}
+      {error && (
+        <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 text-sm text-red-700 dark:text-red-400">
+          Erreur lors du chargement des disponibilites. Veuillez rafraichir la page.
+        </div>
+      )}
 
       {/* Planning grid */}
       <Card>

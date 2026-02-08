@@ -37,7 +37,7 @@ export function EmailTemplateDialog({ open, onOpenChange, deal }: EmailTemplateD
   const { data: template, isLoading: templateLoading } = useQuery({
     queryKey: ['/api/email-templates', deal.stage],
     queryFn: async () => {
-      const res = await fetch(`/api/email-templates?stage=${deal.stage}`);
+      const res = await fetch(`/api/email-templates?stage=${deal.stage}`, { credentials: 'include' });
       if (!res.ok) return null;
       return res.json();
     },

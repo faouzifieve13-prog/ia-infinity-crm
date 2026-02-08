@@ -880,7 +880,7 @@ export default function Contracts() {
       form.setValue('vendorId', vendorId);
       form.setValue('clientName', vendor.name);
       form.setValue('clientEmail', vendor.email);
-      form.setValue('clientCompany', vendor.company);
+      form.setValue('clientCompany', vendor.company || '');
     }
   };
 
@@ -954,7 +954,7 @@ export default function Contracts() {
                       <SelectContent>
                         {vendors.map((vendor) => (
                           <SelectItem key={vendor.id} value={vendor.id}>
-                            {vendor.name} - {vendor.company} ({Number(vendor.dailyRate).toLocaleString('fr-FR')} EUR/jour)
+                            {vendor.name}{vendor.company ? ` - ${vendor.company}` : ''} ({Number(vendor.dailyRate).toLocaleString('fr-FR')} EUR/jour)
                           </SelectItem>
                         ))}
                       </SelectContent>

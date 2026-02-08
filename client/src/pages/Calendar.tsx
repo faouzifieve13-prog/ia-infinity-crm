@@ -220,7 +220,7 @@ export default function Calendar() {
     queryFn: async () => {
       const timeMin = startOfMonth(currentMonth).toISOString();
       const timeMax = endOfMonth(addMonths(currentMonth, 1)).toISOString();
-      const response = await fetch(`/api/calendar/events?timeMin=${timeMin}&timeMax=${timeMax}`);
+      const response = await fetch(`/api/calendar/events?timeMin=${timeMin}&timeMax=${timeMax}`, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch events');
       return response.json();
     },
